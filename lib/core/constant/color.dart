@@ -1,8 +1,8 @@
 import 'dart:ui';
 
 class ColorPick {
-  static const Color primary   = Color(0xFF008037);
-  static const Color preview   = Color(0xFF608570);
+  static const Color primary   = Color(0xFFD31426);
+  static final Color preview   = ColorPick.primary.withOpacity(0.5);
   static const Color saveForLater   = Color(0xFF525252);
   static const Color discard   = Color(0xFF797979);
   static const Color background     = Color(0xFFF1F2ED);

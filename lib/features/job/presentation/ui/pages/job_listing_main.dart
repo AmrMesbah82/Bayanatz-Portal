@@ -17,16 +17,21 @@ import 'package:go_router/go_router.dart';
 
 import 'package:web_app_admin/core/custom_svg.dart';
 import 'package:web_app_admin/core/widget/button.dart';
+import 'package:web_app_admin/core/widget/format.dart';
 import 'package:web_app_admin/core/widget/navigator.dart';
 import 'package:web_app_admin/core/widget/network_image_view.dart';
 import 'package:web_app_admin/core/widget/search.dart';
 
 import '../../../../../core/constant/color.dart';
+import '../../../../../core/main_widgets/admin_layout.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/main_widgets/job_listing_filter_dialog.dart';
+import '../../../../departments/presentation/controller/department_cubit.dart';
+import '../../../../departments/presentation/controller/department_state.dart';
+import '../../../../departments/data/models/department_model.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
-import '../../../../about_us/presentation/ui/pages/about_us_company_main.dart';
 import '../../../../careers/presentation/ui/pages/careers_main.dart';
 import '../../../../departments/presentation/ui/pages/department_main.dart';
 import '../../../../main/presentation/controller/main_cubit.dart';
@@ -37,6 +42,7 @@ import '../../controller/job_listing_cubit.dart';
 import '../../controller/job_listing_state.dart';
 import 'job_listing_detail.dart';
 import 'job_listing_edit.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/job_listing_main/svg.dart';
 part '../widgets/job_listing_main/job_card.dart';
@@ -85,11 +91,70 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
     return '';
   }
 
+  // ── Branding primary color from CMS model data ────────────────────────────
+  Color _getPrimaryColor(BuildContext context) {
+    try {
+      final homeState = context.read<MainCmsCubit>().state;
+      final String hex = switch (homeState) {
+        MainCmsLoaded(:final data) => data.branding.primaryColor,
+        MainCmsSaved(:final data)  => data.branding.primaryColor,
+        _                          => '',
+      };
+      final clean = hex.replaceAll('#', '');
+      if (clean.length == 6) return Color(int.parse('FF$clean', radix: 16));
+    } catch (_) {}
+    return ColorPick.primary; // fallback
+  }
+
   // ── Open filter dialog ─────────────────────────────────────────────────────
   Future<void> _openFilterDialog() async {
+    // BUG-43 / BUG-54: offer the REAL departments and locations. The dialog
+    // used to fall back to a fixed fake list (Engineering, Design… /
+    // Cairo, Alexandria, Giza), so real departments could never be picked.
+    final jobs = context.read<JobListingCubit>().allJobs;
+    final deptNames = <String>{};
+    bool deptListKnown = false;
+    try {
+      final cubit = context.read<DepartmentCubit>();
+      final ds = cubit.state;
+      final list = ds is DepartmentLoaded
+          ? ds.departments
+          : (ds is DepartmentError ? (ds.lastDepartments ?? const <DepartmentModel>[]) : const <DepartmentModel>[]);
+      if (ds is DepartmentLoaded || list.isNotEmpty) deptListKnown = true;
+      deptNames.addAll(
+          list.map((d) => d.nameEn.trim()).where((n) => n.isNotEmpty));
+    } catch (_) {}
+    // BUG-54 (re-test): DELETED departments were still offered because every
+    // name any (removed) job ever used was added. Only when the department
+    // list is not available yet do we fall back to names of live jobs.
+    if (!deptListKnown) {
+      deptNames.addAll(jobs
+          .where((j) => j.status != JobStatus.removed)
+          .map((j) => j.department.trim())
+          .where((n) => n.isNotEmpty));
+    }
+    final depts = (deptNames.toList()..sort())
+        .map((n) => {'key': n, 'value': n})
+        .toList();
+
+    final locationNames = jobs
+        .where((j) => j.workType != WorkType.remote)
+        .map((j) => j.location.trim())
+        .where((l) => l.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    final locations = [
+      ...locationNames.map((l) => {'key': l, 'value': l}),
+      if (jobs.any((j) => j.workType == WorkType.remote))
+        {'key': 'remote', 'value': 'Remote'},
+    ];
+
     final result = await showJobListingFilterDialog(
       context,
       initial: _advancedFilter,
+      departments: depts,
+      locations: locations,
     );
     if (result != null) {
       setState(() => _advancedFilter = result);
@@ -102,9 +167,9 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
     return BlocListener<JobListingCubit, JobListingState>(
       listener: (context, state) {
         if (state is JobListingSaved) {
-          if (Navigator.of(context).canPop()) {
-            Navigator.of(context).pop();
-          }
+          // BUG-10 (white screen): this listener used to pop WHATEVER route
+          // was on top, from every mounted Job Listing page. The edit page now
+          // closes itself after a successful save, so we only refresh here.
           context.read<JobListingCubit>().loadJobs();
         }
       },
@@ -113,7 +178,7 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
           if (state is JobListingInitial || state is JobListingLoading) {
             return const Scaffold(
               backgroundColor: ColorPick.background,
-              body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+              body: Center(child: CircleProgress()),
             );
           }
 
@@ -136,11 +201,9 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
 
           return Scaffold(
             backgroundColor: ColorPick.background,
-            body: SingleChildScrollView(
-              child: SizedBox(
-                width: double.infinity,
-                child: Column(
-                  children: [
+            body: AdminStickyBody(
+                reflowOnPhone: true, // BUG-16: real phone layout
+  children: [
                     AppAdminNavbar(
                       activeLabel:    'Job Listing',
                       homePage:       CareersMainPageDashboard(),
@@ -148,12 +211,13 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
                       jobListingPage: JobListingMainPage(),
 
                     ),
-                    SizedBox(height: 20.h),
+
 
                     Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 20.h),
+                      padding: EdgeInsets.symmetric(
+                          horizontal: AdminLayout.sidePadding(context), vertical: 20.h),
                       child: SizedBox(
-                        width: 1000.w,
+                        width: AdminLayout.contentWidth(context), // BUG-16
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -171,7 +235,10 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
                                     customButtonWithImage(
                                       title: 'About Company',
                                       function: () {
-                                        navigateTo(context, AboutCompanyMainPage());
+                                        // Named route (not Navigator.push) so
+                                        // the URL changes and browser Back
+                                        // returns to this page.
+                                        context.pushNamed('about-company');
                                       },
                                       textStyle: StyleText.fontSize12Weight500.copyWith(color: Colors.white),
                                       height: 36.h,
@@ -188,8 +255,9 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
                                     SizedBox(height: 15.h),
                                     customButtonWithImage(
                                       title: 'Departments',
+                                      // BUG-119: named route → URL + Back work.
                                       function: () {
-                                        navigateTo(context, DepartmentMainPage());
+                                        context.pushNamed('departments');
                                       },
                                       textStyle: StyleText.fontSize12Weight500.copyWith(color: Colors.white),
                                       height: 36.h,
@@ -208,7 +276,7 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
                                 const Spacer(),
                                 customButtonWithImage(
                                   title: 'Post Job',
-                                  function: () => navigateTo(context, const JobListingEditPage()),
+                                  function: () => context.pushNamed('job-new'), // BUG-119
                                   textStyle: StyleText.fontSize12Weight500.copyWith(color: Colors.white),
                                   height: 36.h,
                                   space: 6,
@@ -243,7 +311,7 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
                                         ),
                                         child: Text(
                                           f,
-                                          style: TextStyle(
+                                          style: StyleText.fontSize13Weight500.copyWith(
                                             fontSize: 13.sp,
                                             fontWeight: FontWeight.w500,
                                             color: isActive ? Colors.white : AppColors.text,
@@ -264,6 +332,7 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
                                   controller: _searchController,
                                   onChanged: (v) => cubit.setSearch(v),
                                   hintText: 'Search',
+                                  height: 36, // scaled to 36.h — same as Filter button
                                 ),
                                 SizedBox(width: 12.w),
                                 // ── FIXED: Filter button now opens the dialog ──
@@ -307,14 +376,14 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
                                     Expanded(
                                       child: Text(
                                         (state as JobListingError).message,
-                                        style: TextStyle(fontSize: 12.sp, color: const Color(0xFFE53935)),
+                                        style: StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp, color: const Color(0xFFE53935)),
                                       ),
                                     ),
                                     GestureDetector(
                                       onTap: () => cubit.loadJobs(),
                                       child: Text(
                                         'Retry',
-                                        style: TextStyle(
+                                        style: StyleText.fontSize12Weight600.copyWith(
                                           fontSize: 12.sp,
                                           fontWeight: FontWeight.w600,
                                           color: ColorPick.primary,
@@ -332,7 +401,25 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
                               Center(
                                 child: Padding(
                                   padding: EdgeInsets.all(40.sp),
-                                  child: CustomSvg(assetPath: "",width: 150.w,height: 150.h,fit: BoxFit.fill,)
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      CustomSvg(
+                                        assetPath: "assets/images/null.svg",
+                                        width: 200.sp,
+                                        height: 200.sp,
+                                        fit: BoxFit.contain,
+                                      ),
+                                      // BUG-03: say WHY the list is empty.
+                                      SizedBox(height: 12.h),
+                                      Text(
+                                        _emptyJobsMessage(activeFilter),
+                                        textAlign: TextAlign.center,
+                                        style: StyleText.fontSize14Weight500
+                                            .copyWith(color: AppColors.text),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               )
                             else
@@ -343,13 +430,20 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
                       ),
                     ),
                   ],
-                ),
-              ),
-            ),
+),
           );
         },
       ),
     );
+  }
+
+  // BUG-03: empty-state text under the illustration.
+  String _emptyJobsMessage(String activeFilter) {
+    final searching = _searchController.text.trim().isNotEmpty ||
+        (_advancedFilter != null && !_advancedFilter!.isEmpty);
+    if (searching) return 'No jobs match your search or filters.';
+    if (activeFilter == 'All') return 'No jobs found. Click "Post Job" to add one.';
+    return 'No ${activeFilter.toLowerCase()} jobs found.';
   }
 
   // ── Active filter chips (shows what's applied + clear all) ────────────────
@@ -359,7 +453,7 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
     final f = _advancedFilter!;
 
     if (f.department != null) {
-      chips.add(_filterChip('Dept: ${f.department!}', () {
+      chips.add(_filterChip('Dept: ${jobFilterLabel(f.department!)}', () {
         setState(() => _advancedFilter = JobListingFilterData(
           location: f.location,
           employmentType: f.employmentType,
@@ -370,7 +464,7 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
       }));
     }
     if (f.location != null) {
-      chips.add(_filterChip('Loc: ${f.location!}', () {
+      chips.add(_filterChip('Location: ${jobFilterLabel(f.location!)}', () {
         setState(() => _advancedFilter = JobListingFilterData(
           department: f.department,
           employmentType: f.employmentType,
@@ -381,7 +475,7 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
       }));
     }
     if (f.employmentType != null) {
-      chips.add(_filterChip('Type: ${f.employmentType!}', () {
+      chips.add(_filterChip('Type: ${jobFilterLabel(f.employmentType!)}', () {
         setState(() => _advancedFilter = JobListingFilterData(
           department: f.department,
           location: f.location,
@@ -392,7 +486,7 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
       }));
     }
     if (f.yearsOfExperience != null) {
-      chips.add(_filterChip('Exp: ${f.yearsOfExperience!}', () {
+      chips.add(_filterChip('Experience: ${jobFilterLabel(f.yearsOfExperience!)}', () {
         setState(() => _advancedFilter = JobListingFilterData(
           department: f.department,
           location: f.location,
@@ -430,7 +524,7 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
           ),
           child: Text(
             'Clear All',
-            style: TextStyle(
+            style: StyleText.fontSize11Weight600.copyWith(
               fontSize: 11.sp,
               fontWeight: FontWeight.w600,
               color: const Color(0xFFD32F2F),
@@ -455,7 +549,7 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
         children: [
           Text(
             label,
-            style: TextStyle(
+            style: StyleText.fontSize11Weight400.copyWith(
               fontSize: 11.sp,
               fontWeight: FontWeight.w500,
               color: ColorPick.primary,
@@ -479,8 +573,9 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
       children: [
         Text(
           'Bayanatz Jobs',
-          style: StyleText.fontSize28Weight600.copyWith(
-            color: AppColors.text,
+          style: StyleText.fontSize45Weight600.copyWith(
+            color: ColorPick.primary,
+            // fontSize: 28.sp,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -491,37 +586,57 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
   // ── Job Cards Grid (3 columns) ────────────────────────────────────────────
 
   Widget _buildJobGrid(List<JobPostModel> jobs, String logoUrl) {
-    final rows = (jobs.length / 3).ceil();
+    // BUG-16: one card per row on a phone (three squeezed cards before).
+    final int cols = AdminLayout.isPhone(context) ? 1 : 3;
+    final rows = (jobs.length / cols).ceil();
     return Column(
       children: List.generate(rows, (rowIndex) {
-        final start = rowIndex * 3;
+        final start = rowIndex * cols;
         return Padding(
           padding: EdgeInsets.only(bottom: 16.h),
           child: IntrinsicHeight(
+            // BUG-148: the gap used to be padding INSIDE the first two
+            // Expanded cells, so the 3rd card was 13 px wider. Gaps are now
+            // separate boxes → three equal columns.
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: List.generate(3, (colIndex) {
-                final i = start + colIndex;
-                if (i >= jobs.length) return const Expanded(child: SizedBox());
-                return Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(right: colIndex < 2 ? 12.w : 0),
+              children: [
+                for (int colIndex = 0; colIndex < cols; colIndex++) ...[
+                  if (colIndex > 0) SizedBox(width: 12.w),
+                  if (start + colIndex >= jobs.length)
+                    const Expanded(child: SizedBox())
+                  else
+                Expanded(
                     child: _JobCard(
-                      job: jobs[i],
-                      logoUrl: logoUrl,
+                      job: jobs[start + colIndex],
+                      // BUG-86: the department's image when it has one.
+                      logoUrl: _deptImageFor(jobs[start + colIndex], ''), // '' → header logo
                       onTap: () => navigateTo(
                         context,
-                        JobListingDetailPage(jobId: jobs[i].id),
+                        JobListingDetailPage(jobId: jobs[start + colIndex].id),
                       ),
                     ),
                   ),
-                );
-              }),
+                ],
+              ],
             ),
           ),
         );
       }),
     );
+  }
+
+  /// BUG-86: image of the job's department (Departments → Image), falling
+  /// back to the company logo.
+  String _deptImageFor(JobPostModel job, String fallback) {
+    try {
+      final ds = context.read<DepartmentCubit>().state;
+      final list = ds is DepartmentLoaded ? ds.departments : const <DepartmentModel>[];
+      for (final d in list) {
+        if (d.iconUrl.isNotEmpty && d.matchesJob(job.department)) return d.iconUrl;
+      }
+    } catch (_) {}
+    return fallback;
   }
 }
 

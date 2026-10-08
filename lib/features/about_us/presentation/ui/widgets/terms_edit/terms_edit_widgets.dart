@@ -61,7 +61,7 @@ extension _TermsEditWidgets on _TermsEditPageState {
           isRequired: false,
           textDirection: TextDirection.ltr,
           textAlign: TextAlign.start,
-          primaryColor: _kGreenSolid,
+          primaryColor: ColorPick.primary,
           onChanged: (_) => setState(() {}),
         ),
         SizedBox(height: 8.h),
@@ -79,7 +79,7 @@ extension _TermsEditWidgets on _TermsEditPageState {
           isRequired: false,
           textDirection: TextDirection.rtl,
           textAlign: TextAlign.right,
-          primaryColor: _kGreenSolid,
+          primaryColor: ColorPick.primary,
           onChanged: (_) => setState(() {}),
         ),
         SizedBox(height: 16.h),
@@ -166,7 +166,7 @@ extension _TermsEditWidgets on _TermsEditPageState {
             width: double.infinity,
             height: 34.h,
             decoration: BoxDecoration(
-                color: _kGreenSolid,
+                color: ColorPick.primary,
                 borderRadius: BorderRadius.circular(4.r)),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -191,41 +191,20 @@ extension _TermsEditWidgets on _TermsEditPageState {
     required VoidCallback onToggle,
     required Widget child,
   }) {
-    return Column(
-      children: [
-        GestureDetector(
-          onTap: onToggle,
-          child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(horizontal: 15.w, vertical: 14.h),
-            decoration: BoxDecoration(
-                color: _kGreenSolid,
-                borderRadius: BorderRadius.circular(6.r)),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(title,
-                    style: StyleText.fontSize14Weight400
-                        .copyWith(color: Colors.white)),
-                Icon(
-                  isOpen
-                      ? Icons.keyboard_arrow_up
-                      : Icons.keyboard_arrow_down,
-                  color: Colors.white, size: 22.sp,
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (isOpen)
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-                borderRadius: BorderRadius.vertical(
-                    bottom: Radius.circular(12.r))),
-            child: child,
-          ),
-      ],
+    // No style overrides — the shared accordion exactly as every other page in
+    // the admin uses it, so the header colour, radius and chevron all come from
+    // core/custom/3-custom_accordion.dart.
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: onToggle,
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+            borderRadius:
+                BorderRadius.vertical(bottom: Radius.circular(12.r))),
+        child: child,
+      ),
     );
   }
 
@@ -251,7 +230,7 @@ extension _TermsEditWidgets on _TermsEditPageState {
             isRequired: false,
             textDirection: TextDirection.ltr,
             textAlign: TextAlign.start,
-            primaryColor: _kGreenSolid,
+            primaryColor: ColorPick.primary,
             onChanged: (_) => setState(() {}),
           ),
         ),
@@ -268,7 +247,7 @@ extension _TermsEditWidgets on _TermsEditPageState {
             isRequired: false,
             textDirection: TextDirection.rtl,
             textAlign: TextAlign.right,
-            primaryColor: _kGreenSolid,
+            primaryColor: ColorPick.primary,
             onChanged: (_) => setState(() {}),
           ),
         ),
@@ -320,7 +299,7 @@ extension _TermsEditWidgets on _TermsEditPageState {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const CircularProgressIndicator(color: _kGreenSolid),
+            const CircleProgress(),
             SizedBox(height: 12.h),
             Text('Saving...',
                 style: StyleText.fontSize14Weight400

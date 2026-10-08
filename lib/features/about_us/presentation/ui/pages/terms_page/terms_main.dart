@@ -12,6 +12,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../../../core/constant/color.dart';
 import '../../../../../../core/custom_svg.dart';
 import '../../../../../../core/theme/appcolors.dart';
 import '../../../../../../core/theme/new_theme.dart';
@@ -21,6 +22,8 @@ import '../../../../data/models/about_us_model.dart';
 import '../../../controller/about_us_cubit.dart';
 import '../../../controller/about_us_state.dart';
 import 'terms_edit.dart';
+import '../../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../../widgets/terms_main/c.dart';
 
@@ -52,7 +55,7 @@ class _TermsMainViewState extends State<TermsMainView> {
       builder: (context, state) {
         if (state is TermsLoading || state is TermsInitial) {
           return const Center(
-              child: CircularProgressIndicator(color: _C.primary));
+              child: CircleProgress());
         }
 
         final TermsOfServiceModel? model = switch (state) {
@@ -220,10 +223,11 @@ class _TermsMainViewState extends State<TermsMainView> {
         Container(
           padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 8.h),
           decoration: BoxDecoration(
-              color: _C.cardBg, borderRadius: BorderRadius.circular(4.r)),
+              color: ColorPick.white, borderRadius: BorderRadius.circular(4.r)),
           child: Text(
             'Last Updated On ${fmtDate(lastUpdated)}',
-            style: StyleText.fontSize13Weight500.copyWith(color: _C.primary),
+            style: StyleText.fontSize13Weight500
+                .copyWith(color: ColorPick.primary),
           ),
         ),
         const Spacer(),
@@ -243,7 +247,7 @@ class _TermsMainViewState extends State<TermsMainView> {
                 SizedBox(width: 6.w),
                 CustomSvg(assetPath: "assets/control/edit_icon_pick.svg",
                     width: 20.w, height: 20.h,
-                    fit: BoxFit.scaleDown, color: _C.primary),
+                    fit: BoxFit.scaleDown, color: ColorPick.primary),
               ]),
             ),
           ),
@@ -259,41 +263,15 @@ class _TermsMainViewState extends State<TermsMainView> {
     required List<Widget> children,
   }) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(6.r)),
+    // No headerColor override — CustomAccordion's default (ColorPick.primary)
+    // is the shared admin accordion look used by every other CMS screen.
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() => _open[key] = !isOpen),
-            child: Container(
-              width: double.infinity,
-              padding:
-              EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: _C.primary,
-                borderRadius: BorderRadius.circular(6.r),
-              ),
-              child: Row(children: [
-                Expanded(
-                    child: Text(title,
-                        style: StyleText.fontSize14Weight600
-                            .copyWith(color: Colors.white))),
-                Icon(
-                    isOpen
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white,
-                    size: 26.sp),
-              ]),
-            ),
-          ),
-          if (isOpen)
-            Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: children),
-        ],
+        children: children,
       ),
     );
   }

@@ -7,32 +7,38 @@ part of '../../pages/application_main.dart';
 extension _ApplicationMainTable on _ApplicationMainPageState {
   // ── Card Grid (3 columns) ─────────────────────────────────────────────────
   Widget _buildGrid(List<ApplicationModel> apps) {
-    final rows = (apps.length / 3).ceil();
+    // BUG-16: one card per row on a phone.
+    final int cols = AdminLayout.isPhone(context) ? 1 : 3;
+    final rows = (apps.length / cols).ceil();
     return Column(
       children: List.generate(rows, (rowIndex) {
-        final start = rowIndex * 3;
+        final start = rowIndex * cols;
         return Padding(
           padding: EdgeInsets.only(bottom: 12.h),
+          // BUG-148: gaps are separate boxes (they were padding inside the
+          // first two cells, so the 3rd card was 13 px wider).
           child: IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: List.generate(3, (colIndex) {
-                final i = start + colIndex;
-                if (i >= apps.length) return const Expanded(child: SizedBox());
-                return Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(right: colIndex < 2 ? 12.w : 0),
-                    child: _AppCard(
-                      app: apps[i],
-                      onTap: () => navigateTo(
-                          context,
-                          ApplicationDetailPage(
-                              jobId: apps[i].jobId, appId: apps[i].id)),
-                      onDownload: () => _downloadPdf(apps[i]),
+              children: [
+                for (int colIndex = 0; colIndex < cols; colIndex++) ...[
+                  if (colIndex > 0) SizedBox(width: 12.w),
+                  if (start + colIndex >= apps.length)
+                    const Expanded(child: SizedBox())
+                  else
+                    Expanded(
+                      child: _AppCard(
+                        app: apps[start + colIndex],
+                        onTap: () => navigateTo(
+                            context,
+                            ApplicationDetailPage(
+                                jobId: apps[start + colIndex].jobId,
+                                appId: apps[start + colIndex].id)),
+                        onDownload: () => _downloadPdf(apps[start + colIndex]),
+                      ),
                     ),
-                  ),
-                );
-              }),
+                ],
+              ],
             ),
           ),
         );
@@ -40,12 +46,26 @@ extension _ApplicationMainTable on _ApplicationMainPageState {
     );
   }
 
+  /// BUG-120: location of the job an (older) application belongs to.
+  String _jobLocationOf(String jobId) {
+    try {
+      for (final j in context.read<JobListingCubit>().allJobs) {
+        if (j.id == jobId) {
+          if (j.workType == WorkType.remote) return 'Remote';
+          return j.location;
+        }
+      }
+    } catch (_) {}
+    return '';
+  }
+
   // ── Table View ─────────────────────────────────────────────────────────────
   Widget _buildTable(List<ApplicationModel> apps) {
     final headers = [
       'No', 'Candidate', 'Email', 'Phone', 'Department',
       'Job Title', 'Work Type', 'Location', 'Employment Type',
-      'Experience Level', 'Salary Range', 'Application Date', 'Status', 'Download',
+      'Experience Level', 'Salary Range', 'Currency', 'Application Date',
+      'Status', 'Download',
     ];
 
     final columnWidths = <int, TableColumnWidth>{
@@ -60,12 +80,13 @@ extension _ApplicationMainTable on _ApplicationMainPageState {
       8:  FixedColumnWidth(130.sp),
       9:  FixedColumnWidth(120.sp),
       10: FixedColumnWidth(120.sp),
-      11: FixedColumnWidth(110.sp),
+      11: FixedColumnWidth(90.sp),   // Currency
       12: FixedColumnWidth(110.sp),
-      13: FixedColumnWidth(90.sp),
+      13: FixedColumnWidth(110.sp),
+      14: FixedColumnWidth(90.sp),
     };
 
-    TextStyle cellStyle = TextStyle(fontSize: 11.sp, color: AppColors.text);
+    TextStyle cellStyle = StyleText.fontSize11Weight400.copyWith(fontSize: 11.sp, color: AppColors.text);
 
     Widget cell(Widget child) => Container(
       padding: EdgeInsets.symmetric(horizontal: 10.sp, vertical: 8.sp),
@@ -98,10 +119,12 @@ extension _ApplicationMainTable on _ApplicationMainPageState {
       }
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    // BUG-115: the table (≈1,900 px) could not be scrolled to Status / PDF
+    // and had no scrollbar. It now scrolls inside a box of exactly the
+    // available width, with an always-visible horizontal scrollbar.
+    return _HScrollBox(
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(10.sp),
+        borderRadius: BorderRadius.circular(4.r),
         child: Table(
           border: TableBorder.all(color: Colors.transparent),
           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
@@ -115,7 +138,7 @@ extension _ApplicationMainTable on _ApplicationMainPageState {
                 child: Text(
                   h,
                   maxLines: 1,
-                  style: TextStyle(
+                  style: StyleText.fontSize11Weight600.copyWith(
                     fontSize: 11.sp,
                     fontWeight: FontWeight.w600,
                     color: Colors.white,
@@ -130,27 +153,33 @@ extension _ApplicationMainTable on _ApplicationMainPageState {
               final isEven = index.isEven;
               final rowColor = isEven ? const Color(0xFFF7F8FA) : Colors.white;
 
+              // BUG-145: one date format ("4 Oct 2026") everywhere.
               final dateStr = a.applicationDate != null
-                  ? '${a.applicationDate!.day}/${a.applicationDate!.month}/${a.applicationDate!.year}'
+                  ? DateFormat('d MMM yyyy').format(a.applicationDate!)
                   : '-';
 
               final cells = [
                 textCell('${index + 1}'),
                 textCell(a.fullName),
                 textCell(a.email),
-                textCell('${a.countryCode}${a.phone}'),
+                textCell('${a.countryCode} ${a.phone}'.trim()), // BUG-114
                 textCell(a.department),
                 textCell(a.jobTitle),
                 textCell(a.workType),
-                textCell(a.jobLocation),
+                // BUG-120: older applications were saved with an empty
+                // location — fall back to the job's own location.
+                textCell(a.jobLocation.isNotEmpty
+                    ? a.jobLocation
+                    : _jobLocationOf(a.jobId)),
                 textCell(a.employmentType),
                 textCell(a.experienceLevel),
                 textCell(a.salaryRange),
+                textCell(a.currency),
                 textCell(dateStr),
                 cell(
                   Text(
                     a.status.label,
-                    style: TextStyle(
+                    style: StyleText.fontSize11Weight600.copyWith(
                       fontSize: 11.sp,
                       fontWeight: FontWeight.w600,
                       color: statusColor(a.status),
@@ -172,7 +201,7 @@ extension _ApplicationMainTable on _ApplicationMainPageState {
                           Icon(Icons.download_rounded, size: 12.sp, color: Colors.white),
                           SizedBox(width: 2.w),
                           Text('PDF',
-                              style: TextStyle(
+                              style: StyleText.fontSize10Weight700.copyWith(
                                   fontSize: 10.sp,
                                   fontWeight: FontWeight.w600,
                                   color: Colors.white)),
@@ -201,5 +230,48 @@ extension _ApplicationMainTable on _ApplicationMainPageState {
         ),
       ),
     );
+  }
+}
+
+/// BUG-115: horizontal scroller that always gets a FINITE width (the
+/// available one) and shows its scrollbar, so every column is reachable.
+class _HScrollBox extends StatefulWidget {
+  const _HScrollBox({required this.child});
+  final Widget child;
+
+  @override
+  State<_HScrollBox> createState() => _HScrollBoxState();
+}
+
+class _HScrollBoxState extends State<_HScrollBox> {
+  final ScrollController _ctrl = ScrollController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, c) {
+      final double w = c.maxWidth.isFinite
+          ? c.maxWidth
+          : MediaQuery.sizeOf(context).width - 32;
+      return SizedBox(
+        width: w,
+        child: Scrollbar(
+          controller: _ctrl,
+          thumbVisibility: true,
+          trackVisibility: true,
+          child: SingleChildScrollView(
+            controller: _ctrl,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(bottom: 14),
+            child: widget.child,
+          ),
+        ),
+      );
+    });
   }
 }

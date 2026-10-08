@@ -314,6 +314,12 @@ class MainCmsCubit extends Cubit<MainCmsState> {
     }
   }
 
+  /// Navigation labels edited on the Main page are stored in mainPage/main —
+  /// the website reads them from here.
+  void setNavButtons(List<NavButtonModel> navButtons) {
+    _model = _model.copyWith(navButtons: navButtons);
+  }
+
   void updatePrimaryColor(String hex) {
     _model = _model.copyWith(branding: _model.branding.copyWith(primaryColor: hex));
   }

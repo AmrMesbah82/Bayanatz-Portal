@@ -13,6 +13,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/widget/auto_close_dialog.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
@@ -25,12 +26,19 @@ import 'package:web_app_admin/features/about_us/presentation/ui/pages/strategy_p
 import '../../../../../../core/constant/color.dart';
 import '../../../../../../core/custom/circle_progress.dart';
 import '../../../../../../core/custom_dialog.dart';
+import '../../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../../core/main_widgets/edit_action_buttons.dart';
 import '../../../../../../core/theme/appcolors.dart';
 import '../../../../../../core/theme/new_theme.dart';
 import '../../../../data/models/about_us_model.dart';
 import '../../../controller/about_us_cubit.dart';
 import '../../../controller/about_us_state.dart';
+import '../../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/main_widgets/app_admin_navbar.dart';
+import 'package:web_app_admin/features/careers/presentation/ui/pages/careers_main.dart';
+import 'package:web_app_admin/features/main/presentation/ui/pages/main_main.dart';
+import 'package:web_app_admin/features/job/presentation/ui/pages/job_listing_main.dart';
 
 part '../../widgets/strategy_edit/strategy_edit_image_widgets.dart';
 part '../../widgets/strategy_edit/strategy_edit_form_helpers.dart';
@@ -563,9 +571,10 @@ class _StrategyEditPageState extends State<StrategyEditPage> {
     final missing = _getMissingFields();
     if (missing.isEmpty) return;
 
+    // Closes itself after 3 s (AutoCloseDialog) — no OK button.
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AutoCloseDialog(child: AlertDialog(
         title: Row(
           children: [
             Icon(Icons.error_outline, color: const Color(0xFFD32F2F), size: 24.sp),
@@ -591,13 +600,7 @@ class _StrategyEditPageState extends State<StrategyEditPage> {
             )),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
+      )),
     );
   }
 
@@ -751,31 +754,23 @@ class _StrategyEditPageState extends State<StrategyEditPage> {
           backgroundColor: ColorPick.background,
           body: Stack(
             children: [
-              SingleChildScrollView(
-                child: Container(
-                  width: double.infinity,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 1000.w,
-                        child: Column(
-                          children: [
+              AdminStickyBody(
+  contentWidth: 1000.w,
+  children: [
+                            AppAdminNavbar(
+                              activeLabel:    'Web Page',
+                              homePage:       CareersMainPageDashboard(),
+                              webPage:        MainMainPage(),
+                              jobListingPage: JobListingMainPage(),
+                            ),
                             SizedBox(height: 20.h),
                             AdminSubNavBar(activeIndex: 3),
-                            SizedBox(height: 20.h),
                             loading
                                 ? Center(
-                                child: CircularProgressIndicator(
-                                    color: ColorPick.primary))
+                                child: CircleProgress())
                                 : _buildForm(canPublish),
                           ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+),
               if (_isSaving) _savingOverlay(),
             ],
           ),
@@ -870,7 +865,7 @@ class _StrategyEditPageState extends State<StrategyEditPage> {
             ],
           ),
         ),
-
+        _navLabelOpen ? SizedBox(height: 0) : SizedBox(height: 16.h),
         // ── Strategic House — ENG (3 devices) ─────────────────────────────────────────
         _accordion(
           title: 'Strategic House - EN',
@@ -983,71 +978,31 @@ class _StrategyEditPageState extends State<StrategyEditPage> {
         SizedBox(height: 32.h),
 
         // ── Action buttons ────────────────────────────────────────────────
-        _actionRow(canPublish),
-        SizedBox(height: 12.h),
-        _secondaryRow(),
+        _actionButtons(canPublish),
         SizedBox(height: 48.h),
       ],
     );
   }
 
-  // ── Action Buttons Row ────────────────────────────────────────────────────
-  Widget _actionRow(bool canPublish) {
-    return Row(children: [
-      Expanded(
-        child: _btn(
-          label: 'Preview',
-          color: ColorPick.preview,
-          onTap: _onPreview,
-        ),
-      ),
-      SizedBox(width: 400.w),
-      Expanded(
-        child: AbsorbPointer(
-          absorbing: !canPublish,
-          child: Opacity(
-            opacity: canPublish ? 1.0 : 0.6,
-            child: _btn(
-              label: 'Publish',
-              color: canPublish ? ColorPick.primary : ColorPick.primary.withValues(alpha: 0.35),
-              onTap: () {
-                if (!canPublish) {
-                  setState(() => _submitted = true);
-                  _showValidationError();
-                  return;
-                }
-
-                showPublishConfirmDialog(
-                  context: context,
-                  title: 'PUBLISHING STRATEGY',
-                  subtitle: 'Do you want to publish this strategy?',
-                  onConfirm: () async => _save('published'),
-                );
-              },
-            ),
-          ),
-        ),
-      ),
-    ]);
-  }
-
-  // ── Secondary Buttons Row ─────────────────────────────────────────────────
-  Widget _secondaryRow() {
-    return Row(children: [
-      Expanded(
-        child: _btn(
-          label: 'Discard',
-          color: const Color(0xFF9E9E9E),
-          onTap: () {
-            if (Navigator.canPop(context)) {
-              Navigator.pop(context);
-            }
-          },
-        ),
-      ),
-      SizedBox(width: 400.w),
-      Expanded(child: Column())
-    ]);
+  // ── Action Buttons (shared widget — one place for ALL edit pages) ────────
+  Widget _actionButtons(bool canPublish) {
+    return EditActionButtons(
+      publishEnabled: canPublish,
+      onPreview: _onPreview,
+      onPublish: () {
+        showPublishConfirmDialog(
+          context: context,
+          title: 'PUBLISHING STRATEGY',
+          subtitle: 'Do you want to publish this strategy?',
+          onConfirm: () async => _save('published'),
+        );
+      },
+      onDiscard: () {
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      },
+    );
   }
 
   // ── Shared helpers ────────────────────────────────────────────────────────
@@ -1057,43 +1012,19 @@ class _StrategyEditPageState extends State<StrategyEditPage> {
     required VoidCallback onToggle,
     required Widget child,
   }) {
-    return Column(children: [
-      GestureDetector(
-        onTap: onToggle,
-        child: Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 9.h),
-          decoration: BoxDecoration(
-            color: ColorPick.primary,
-            borderRadius: BorderRadius.circular(8.r),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(title,
-                  style: StyleText.fontSize14Weight500.copyWith(
-                      color: Colors.white
-                  )),
-              Icon(
-                  isOpen
-                      ? Icons.keyboard_arrow_up
-                      : Icons.keyboard_arrow_down,
-                  color: Colors.white,
-                  size: 22.sp),
-            ],
-          ),
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: onToggle,
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(12.r)),
         ),
+        padding: EdgeInsets.symmetric(vertical: 16.h),
+        child: child,
       ),
-      if (isOpen)
-        Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(12.r)),
-          ),
-          padding: EdgeInsets.symmetric(vertical: 16.h),
-          child: child,
-        ),
-    ]);
+    );
   }
 
   // ── Device Display Tab Bar ────────────────────────────────────────────────
@@ -1135,7 +1066,7 @@ class _StrategyEditPageState extends State<StrategyEditPage> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          tab('Desktop', DisplayDeviceTab.largeScreen),
+          tab('Large Screen', DisplayDeviceTab.largeScreen),
           tab('Tablet', DisplayDeviceTab.tablet),
           tab('Mobile', DisplayDeviceTab.mobile),
         ],
@@ -1228,7 +1159,7 @@ class _StrategyEditPageState extends State<StrategyEditPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const CircularProgressIndicator(color: ColorPick.primary),
+            const CircleProgress(),
             SizedBox(height: 12.h),
             Text('Saving...',
                 style: TextStyle(

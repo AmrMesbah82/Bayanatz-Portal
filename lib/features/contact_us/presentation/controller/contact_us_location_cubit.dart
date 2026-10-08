@@ -31,6 +31,9 @@ class ContactUsCmsCubit extends Cubit<ContactUsCmsState> {
     }
   }
 
+  /// BUG-53: preview the admin's UNSAVED edits (no Firestore read).
+  void showDraft(ContactUsCmsModel draft) => emit(ContactUsCmsLoaded(draft));
+
   // ── Save contact us CMS data ──────────────────────────────────────────────
 
   Future<void> save({

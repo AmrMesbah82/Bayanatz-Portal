@@ -32,6 +32,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_switch/flutter_switch.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:web_app_admin/core/main_widgets/form_dirty_scope.dart';
 import 'package:intl/intl.dart';
 
 import 'package:web_app_admin/core/custom_svg.dart';
@@ -43,7 +44,9 @@ import '../../../../../core/constant/color.dart';
 import '../../../../../core/widget/branding_helper.dart';
 import '../../../../../core/custom/image_upload_circle.dart';
 import '../../../../../core/custom_dialog.dart';
+import '../../../../../core/main_widgets/admin_page_scaffold.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../core/main_widgets/edit_action_buttons.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -59,6 +62,8 @@ import '../../controller/home_cubit.dart';
 import '../../controller/home_state.dart';
 import 'home_main.dart';
 import 'home_preview.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/home_edit/picked_image.dart';
 part '../widgets/home_edit/nav_btn_item.dart';
@@ -93,12 +98,14 @@ const List<String> _kSectionTitles = [
 ];
 
 const List<Map<String, String>> _kNavRouteOptions = [
+  // BUG-69: the default first button is "Home", so Home must be a destination.
+  {'label': 'Home', 'route': '/'},
   {'label': 'Services', 'route': '/services'},
   {'label': 'About Us', 'route': '/about'},
   {'label': 'Contact Us', 'route': '/contact'},
   {'label': 'Careers', 'route': '/careers'},
   {'label': 'Our Strategy', 'route': '/about?tab=our-strategy'},
-  {'label': 'Terms & Conditions', 'route': '/about?tab=terms-and-conditions'},
+  {'label': 'Terms and Conditions', 'route': '/about?tab=terms-and-conditions'},
   {'label': 'Privacy Policy', 'route': '/about?tab=privacy-policy'},
   {'label': 'Vision', 'route': '/about?tab=vision'},
   {'label': 'Mission', 'route': '/about?tab=mission'},
@@ -114,7 +121,7 @@ const List<Map<String, String>> _kNavRouteOptions = [
 const List<Map<String, String>> _kLabelDestinations = [
   {'key': '',                                    'value': 'None'},
   {'key': '/about?tab=our-strategy',             'value': 'Our Strategy'},
-  {'key': '/about?tab=terms-and-conditions',     'value': 'Terms & Conditions'},
+  {'key': '/about?tab=terms-and-conditions',     'value': 'Terms and Conditions'},
   {'key': '/about?tab=privacy-policy',           'value': 'Privacy Policy'},
   {'key': '/about?tab=vision',                   'value': 'Vision'},
   {'key': '/about?tab=mission',                  'value': 'Mission'},
@@ -136,6 +143,26 @@ class HomeEditPageMaster extends StatefulWidget {
 }
 
 class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
+  /// BUG-75: after Discard, stay on Web Page → Home (not the dashboard).
+  ///
+  /// BUG-106: Discard → Discard reverted the fields but left the EDIT page
+  /// open, because go('/admin/home-page') is a no-op when that is already
+  /// the URL underneath this pushed page. Close this page instead, and reload
+  /// the published version (Preview copies unsaved edits into the cubit).
+  void _goToHomeTab() {
+    final cubit = context.read<HomeCmsCubit>();
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+    } else {
+      GoRouter.of(context).go('/admin/home-page');
+    }
+    cubit.load();
+  }
+
+  /// BUG-76 (same issue on Home): a Visibility switch alone is a change.
+  void _markDirty() => FormDirtyScope.markDirty(context);
+
   bool _submitted = false;
   bool _isSaving = false;
 
@@ -151,7 +178,7 @@ class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
   // NOTE: footer columns, social links and branding/logo are edited on the
   // MAIN page (MainCmsCubit) — they no longer belong to the Home CMS.
   final _copyRightEn = TextEditingController(
-    text: 'COPYRIGHT © 2025 BAYANATZ. ALL-RIGHT RESERVED',
+    text: '© 2026 Bayanatz. All rights reserved.', // BUG-81
   );
   final _copyRightAr = TextEditingController();
   DateTime? _publishDate;
@@ -231,14 +258,29 @@ class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
           });
         }
 
-        // ── Draft saved successfully ────────────────────────────────────
-        if (state is HomeCmsDraftSaved) {
+        // ── Slot already occupied — nothing was written ─────────────────
+        if (state is HomeCmsSlotBusy) {
+          showConfirmDialog(
+            context: context,
+            title: state.slot == HomeVersionSlot.draft
+                ? 'DRAFT ALREADY EXISTS'
+                : 'ALREADY SCHEDULED',
+            subtitle: state.message,
+            confirmLabel: 'OK',
+            cancelLabel: '',
+            onConfirm: () {},
+          );
+        }
+
+        // ── Draft or scheduled version saved successfully ───────────────
+        if (state is HomeCmsDraftSaved || state is HomeCmsScheduledSaved) {
+          final bool isScheduled = state is HomeCmsScheduledSaved;
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  state.data.publishStatus == 'scheduled'
-                      ? 'Scheduled draft saved! Published version is still live.'
+                  isScheduled
+                      ? 'Scheduled! The published version stays live until the scheduled date.'
                       : 'Draft saved! Published version is still live.',
                   style: StyleText.fontSize14Weight400.copyWith(
                     color: Colors.white,
@@ -261,8 +303,8 @@ class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
           });
         }
 
-        // ── Draft deleted (discard) ─────────────────────────────────────
-        if (state is HomeCmsDraftDeleted) {
+        // ── Draft or scheduled version deleted ──────────────────────────
+        if (state is HomeCmsDraftDeleted || state is HomeCmsScheduledDeleted) {
           // Defer navigation OUT of the frame (fixes mouse_tracker
           // !_debugDuringDeviceUpdate assertion on Flutter web debug).
           Future.delayed(Duration.zero, () {
@@ -305,33 +347,21 @@ class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
         if (state is HomeCmsInitial || state is HomeCmsLoading) {
           return const Scaffold(
             backgroundColor: ColorPick.white,
-            body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+            body: Center(child: CircleProgress()),
           );
         }
 
-        return Scaffold(
-          backgroundColor: ColorPick.background,
-          body: SingleChildScrollView(
-            child: SizedBox(
-              width: double.infinity,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  AppAdminNavbar(
-                    activeLabel: 'Web Page',
-                    homePage: CareersMainPageDashboard(),
-                    webPage: MainMainPage(),
-                    jobListingPage: JobListingMainPage(),
-                  ),
-                  SizedBox(height: 20.h),
-                  AdminSubNavBar(activeIndex: 1),
-                  SizedBox(height: 20.h),
-                  SizedBox(
-                    width: 1000.w,
-                    child: Column(
+        // The two top bars stay pinned — only the form scrolls beneath them.
+        return AdminPageScaffold(
+          activeLabel:    'Web Page',
+          homePage:       CareersMainPageDashboard(),
+          webPage:        MainMainPage(),
+          jobListingPage: JobListingMainPage(),
+          subNavIndex:    1,
+          child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SizedBox(height: 20.h),
+
                         // ── Title row with draft badge ─────────────────────
                         Row(
                           children: [
@@ -363,6 +393,8 @@ class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
                             ],
                           ],
                         ),
+                        SizedBox(height: 16.h),
+
                         if (_isEditingDraft)
                           Padding(
                             padding: EdgeInsets.only(top: 4.h),
@@ -374,6 +406,7 @@ class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
                             ),
                           ),
 
+
                         _accordion(
                           key: 'headings',
                           title: 'Headings',
@@ -381,6 +414,13 @@ class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
                             _headingsSection(),
                           ],
                         ),
+
+                        (_open['headings'] ?? true)
+                            ? SizedBox(height: 16.h)
+                            : SizedBox(height: 16.h),
+
+
+
                         _accordion(
                           key: 'navButtons',
                           title: 'Navigation Button',
@@ -388,6 +428,9 @@ class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
                             _navButtonsSection(),
                           ],
                         ),
+                        (_open['navButtons'] ?? true)
+                            ? SizedBox(height: 0.h)
+                            : SizedBox(height: 16.h),
                         ...List.generate(
                           4,
                           (i) => Column(
@@ -397,6 +440,9 @@ class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
                                 title: _kSectionTitles[i],
                                 children: [_sectionEdit(i)],
                               ),
+                              (_open['s$i'] ?? true)
+                                  ? SizedBox(height: 0.h)
+                                  : SizedBox(height: 16.h),
                             ],
                           ),
                         ),
@@ -405,15 +451,14 @@ class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
                           title: 'Publish Schedule',
                           children: [_publishScheduleSection()],
                         ),
+                        (_open['schedule'] ?? true)
+                            ? SizedBox(height: 0.h)
+                            : SizedBox(height: 16.h),
+
                         _bottomButtons(cubit),
                         SizedBox(height: 40.h),
                       ],
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         );
       },
     );

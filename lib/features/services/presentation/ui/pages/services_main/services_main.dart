@@ -27,6 +27,7 @@ import 'package:web_app_admin/features/services/presentation/ui/pages/services_m
 
 import '../../../../../../core/custom/2-custom_textfield.dart';
 import '../../../../../../core/custom_svg.dart';
+import '../../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../../core/theme/appcolors.dart';
@@ -41,8 +42,11 @@ import '../../../controller/blog_state.dart';
 import '../../../controller/services_cubit.dart';
 import '../../../controller/services_state.dart';
 import '../blog_services/blog_edit.dart';
+import '../digital_services/services_digital_layout.dart';
 import '../digital_services/services_digital_main.dart';
 import '../digital_services/services_digital_preview.dart';
+import '../../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../../widgets/services_main/blog_card.dart';
 part '../../widgets/services_main/xhr_image.dart';
@@ -148,7 +152,7 @@ class _ServicesMainPageMasterState extends State<ServicesMainPageMaster> {
         if (state is ServiceCmsLoading) {
           return const Scaffold(
             backgroundColor: ColorPick.background,
-            body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+            body: Center(child: CircleProgress()),
           );
         }
 
@@ -160,12 +164,8 @@ class _ServicesMainPageMasterState extends State<ServicesMainPageMaster> {
 
         return Scaffold(
           backgroundColor: ColorPick.background,
-          body: SingleChildScrollView(
-            child: SizedBox(
-              width: double.infinity,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+          body: AdminStickyBody(
+  children: [
                   AppAdminNavbar(
                     activeLabel:     'Web Page',
                     homePage:       CareersMainPageDashboard(),
@@ -174,17 +174,53 @@ class _ServicesMainPageMasterState extends State<ServicesMainPageMaster> {
                   ),
                   SizedBox(height: 20.h),
                   AdminSubNavBar(activeIndex: 2),
-                  SizedBox(height: 20.h),
                   SizedBox(
                     width: 1000.w,
                     child: _body(model),
                   ),
                 ],
-              ),
-            ),
-          ),
+),
         );
       },
+    );
+  }
+
+  // ── Preview button handler — respects the active tab ───────────────────────
+  //
+  // All three tabs open the real public Services page from package:website_app,
+  // READ-ONLY (showSave: false). The Digital Journey tab opens it through its
+  // own preview screen so the heading matches the tab; Save stays on the edit
+  // screens.
+  void _onPreviewTap(ServicePageModel model) {
+    final cubit = context.read<ServiceCmsCubit>();
+
+    late final Widget page;
+    switch (_statusIndex) {
+      case 1:
+        page = ServicesDigitalJourneyPreviewPage(
+          model:    model,
+          showSave: false,
+          title:    'Preview Digital Journey Details',
+        );
+      case 2:
+        page = ServicesMainPreviewPage(
+          model:    model,
+          showSave: false,
+          title:    'Preview Important Reads Details',
+        );
+      default:
+        page = ServicesMainPreviewPage(
+          model:    model,
+          showSave: false,
+          title:    'Preview Services Details',
+        );
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BlocProvider.value(value: cubit, child: page),
+      ),
     );
   }
 
@@ -202,32 +238,10 @@ class _ServicesMainPageMasterState extends State<ServicesMainPageMaster> {
               ),
             ),
             const Spacer(),
-            // ✅ FIX 2: Hide Preview Screen button on Important Reads tab
-            if (_statusIndex != 2)
-              GestureDetector(
-                onTap: () {
-                  if (_statusIndex == 0) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => BlocProvider.value(
-                          value: context.read<ServiceCmsCubit>(),
-                          child: ServicesMainPreviewPage(model: model),
-                        ),
-                      ),
-                    );
-                  } else if (_statusIndex == 1) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => BlocProvider.value(
-                          value: context.read<ServiceCmsCubit>(),
-                          child: ServicesDigitalJourneyPreviewPage(model: model),
-                        ),
-                      ),
-                    );
-                  }
-                },
+            // Every tab previews the REAL public Services page, read-only:
+            // this button shows what is already live, so it carries no Save.
+            GestureDetector(
+                onTap: () => _onPreviewTap(model),
                 child: Container(
                   width: 130.w,
                   height: 36.h,

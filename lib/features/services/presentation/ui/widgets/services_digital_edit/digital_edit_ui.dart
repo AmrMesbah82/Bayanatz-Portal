@@ -136,118 +136,44 @@ extension _DigitalEditUi on _ServicesDigitalJourneyEditPageState {
     required VoidCallback onToggle,
     required Widget       child,
   }) {
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: onToggle,
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                  color: ColorPick.primary,
-                  borderRadius: BorderRadius.circular(6.r)),
-              child: Row(children: [
-                Expanded(
-                    child: Text(title,
-                        style: StyleText.fontSize14Weight600
-                            .copyWith(color: Colors.white))),
-                Icon(
-                  isOpen
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  color: Colors.white, size: 20.sp,
-                ),
-              ]),
-            ),
-          ),
-          if (isOpen) child,
-        ],
-      ),
+    // Thin wrapper kept so the existing call sites stay unchanged. The widget
+    // itself now lives in core/custom/3-custom_accordion.dart and is shared
+    // across the app.
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: onToggle,
+      child:    child,
     );
   }
 
   // ── Action buttons ────────────────────────────────────────────────────────────
+  // This page used to hand-roll its own ElevatedButtons (green Preview, 8.r
+  // corners, a one-off grey Discard). They no longer matched Home or any other
+  // edit page. Now it uses the SAME shared widget as every other edit page, so
+  // the radius, the colours and the disabled behaviour are defined once in
+  // core/main_widgets/edit_action_buttons.dart.
   Widget _actionButtons() {
-    return Column(children: [
-      Row(children: [
-        Expanded(
-          child: SizedBox(
-            height: 44.h,
-            child: ElevatedButton(
-              onPressed: _onPreview,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF608570),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8.r)),
-              ),
-              child: Text('Preview',
-                  style: StyleText.fontSize14Weight600.copyWith(color: Colors.white)),
-            ),
-          ),
-        ),
-        SizedBox(width: 300.w),
-        Expanded(
-          child: SizedBox(
-            height: 44.h,
-            child: ElevatedButton(
-              // Always tappable (except while saving). On tap we validate and,
-              // if something is missing, tell the user exactly what — instead
-              // of leaving a silently-disabled button.
-              onPressed: _isSaving
-                  ? null
-                  : () {
-                      setState(() => _submitted = true);
-                      if (!_isFormValid()) {
-                        _showValidationError();
-                        return;
-                      }
-                      showPublishConfirmDialog(
-                        context: context,
-                        title: 'EDITING SERVICES DETAILS',
-                        subtitle:
-                            'Do you want to save the changes made to this Service Details?',
-                        confirmLabel: 'PUBLISHED',
-                        onConfirm: _onSave,
-                      );
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ColorPick.primary,
-                disabledBackgroundColor: ColorPick.back,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8.r)),
-              ),
-              child: _isSaving
-                  ? SizedBox(
-                      width: 18.w, height: 18.w,
-                      child: const CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2))
-                  : Text('Published',
-                      style: StyleText.fontSize14Weight600
-                          .copyWith(color: Colors.white)),
-            ),
-          ),
-        ),
-      ]),
-      SizedBox(height: 10.h),
-      Row(children: [
-        Expanded(
-          child: customButton(
-            title: 'Discard',
-            function: _onDiscard,
-            height: 44.h,
-            color: const Color(0xFF797979),
-            radius: 8.r,
-            textColor: Colors.white,
-            textStyle: StyleText.fontSize14Weight600.copyWith(color: Colors.white),
-          ),
-        ),
-        SizedBox(width: 300.w),
-        Expanded(child: Container()),
-      ]),
-    ]);
+    return EditActionButtons(
+      onPreview: _onPreview,
+      onDiscard: _onDiscard,
+      isSaving:  _isSaving,
+      publishLabel:   'Publish', // BUG-80: was 'Published'
+      publishEnabled: _isFormValid(),
+      publishDisabledTooltip:
+          'Fill in all required fields and add an icon to publish',
+      onPublish: () => showPublishConfirmDialog(
+        context: context,
+        title: 'EDITING SERVICES DETAILS',
+        subtitle:
+            'Do you want to save the changes made to this Service Details?',
+        confirmLabel: 'Publish', // BUG-80
+        onConfirm: _onSave,
+      ),
+      // Tapping a blocked Publish already paints the red borders; this also
+      // flips the page's own _submitted flag so its per-field checks agree.
+      onPublishBlocked: () => setState(() => _submitted = true),
+    );
   }
 
   // ── Icon preview widget ───────────────────────────────────────────────────────
@@ -260,7 +186,7 @@ extension _DigitalEditUi on _ServicesDigitalJourneyEditPageState {
         child: Center(
           child: SizedBox(
             width: 24.w, height: 24.h,
-            child: CircularProgressIndicator(strokeWidth: 2, color: ColorPick.primary),
+            child: CircleProgress(),
           ),
         ),
       );

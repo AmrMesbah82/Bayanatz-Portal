@@ -249,6 +249,10 @@ class CareersDashboardData {
   final double malePercent;
   final double femalePercent;
 
+  /// BUG-85: real applicant counts per gender ('Male' / 'Female' /
+  /// 'Not specified') for the "Candidate Gender" chart.
+  final Map<String, double> genderCounts;
+
   const CareersDashboardData({
     required this.statCards,
     required this.appReceivedLabels,
@@ -275,6 +279,7 @@ class CareersDashboardData {
     required this.employmentTypes,
     required this.malePercent,
     required this.femalePercent,
+    this.genderCounts = const {},
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -285,10 +290,21 @@ class CareersDashboardData {
     required List<JobPostModel> jobs,
     required List<ApplicationModel> apps,
   }) {
+    // BUG-22 / BUG-31: every widget below is computed from this ONE list.
+    // Removed jobs are deleted from the admin's point of view, so they are
+    // left out everywhere (they used to keep deleted departments and junk
+    // titles alive on the charts).
+    jobs = jobs.where((j) => j.status != JobStatus.removed).toList();
+
     // ── Stat Cards ────────────────────────────────────────────────────────────
     final totalJobs     = jobs.length;
-    final officeJobs    = jobs.where((j) => j.workType == WorkType.onSite).length;
-    final remoteJobs    = jobs.where((j) => j.workType == WorkType.remote).length;
+    // "Office" = any job that involves the office: On Site AND Hybrid (Hybrid
+    // was counted nowhere, so Office + Remote never equalled All Jobs).
+    final officeJobs    = jobs.where((j) =>
+        !j.isUnset('workType') &&
+        (j.workType == WorkType.onSite || j.workType == WorkType.hybrid)).length;
+    final remoteJobs    = jobs.where((j) =>
+        !j.isUnset('workType') && j.workType == WorkType.remote).length;
     final activeJobs    = jobs.where((j) => j.status == JobStatus.active).length;
     final endedJobs     = jobs.where((j) => j.status == JobStatus.ended).length;
     final draftedJobs   = jobs.where((j) => j.status == JobStatus.drafted).length;
@@ -297,8 +313,9 @@ class CareersDashboardData {
       DashboardStatCard(label: 'All Jobs',          value: totalJobs,   iconAsset: 'assets/images/job_list/all_job.svg'),
       DashboardStatCard(label: 'Office Jobs',       value: officeJobs,  iconAsset: 'assets/images/job_list/office_job.svg'),
       DashboardStatCard(label: 'Remote Jobs',       value: remoteJobs,  iconAsset: 'assets/images/job_list/remote_job.svg'),
-      DashboardStatCard(label: 'Active Job',        value: activeJobs,  iconAsset: 'assets/images/job_list/active_job.svg'),
-      DashboardStatCard(label: 'Recruitment Ended', value: endedJobs,   iconAsset: 'assets/images/job_list/requiement_end.svg'),
+      // BUG-41: plural, like "All Jobs" / "Office Jobs".
+      DashboardStatCard(label: 'Active Jobs',       value: activeJobs,  iconAsset: 'assets/images/job_list/active_job.svg'),
+      DashboardStatCard(label: 'Recruitment End', value: endedJobs,   iconAsset: 'assets/images/job_list/requiement_end.svg'),
       DashboardStatCard(label: 'Drafted',           value: draftedJobs, iconAsset: 'assets/images/job_list/dradt.svg'),
     ];
 
@@ -311,56 +328,65 @@ class CareersDashboardData {
       }
     }
 
-    // ── Job Posting Status — group jobs by status, bucketed by quarter ────────
-    // X-axis: 4 quarters (Q1–Q4). Each bar group has 4 series (active/closed/scheduled/draft).
-    final qActive    = List<double>.filled(4, 0);
-    final qClosed    = List<double>.filled(4, 0);
-    final qScheduled = List<double>.filled(4, 0);
-    final qDraft     = List<double>.filled(4, 0);
-
-    for (final job in jobs) {
-      final date = job.postedDate ?? job.endedDate;
-      final quarter = date != null ? ((date.month - 1) ~/ 3).clamp(0, 3) : 0;
-      switch (job.status) {
-        case JobStatus.active:    qActive[quarter]++;    break;
-        case JobStatus.ended:
-        case JobStatus.removed:
-        case JobStatus.inactive:  qClosed[quarter]++;    break;
-        case JobStatus.scheduled: qScheduled[quarter]++; break;
-        case JobStatus.drafted:   qDraft[quarter]++;     break;
-      }
-    }
+    // ── Job Posting Status — BUG-21: grouped by STATUS (the chart's title and
+    // legend), not by department. One bar per status, coloured per legend.
+    // "Closed" = Ended + Inactive.
+    final deptLabels = <String>['Active', 'Closed', 'Scheduled', 'Draft'];
+    final nActive    = jobs.where((j) => j.status == JobStatus.active).length.toDouble();
+    final nClosed    = jobs.where((j) =>
+        j.status == JobStatus.ended || j.status == JobStatus.inactive).length.toDouble();
+    final nScheduled = jobs.where((j) => j.status == JobStatus.scheduled).length.toDouble();
+    final nDraft     = jobs.where((j) => j.status == JobStatus.drafted).length.toDouble();
+    final qActive    = <double>[nActive, 0, 0, 0];
+    final qClosed    = <double>[0, nClosed, 0, 0];
+    final qScheduled = <double>[0, 0, nScheduled, 0];
+    final qDraft     = <double>[0, 0, 0, nDraft];
 
     // ── Hiring Stage — funnel from application statuses ───────────────────────
-    final shortlisted = apps.where((a) =>
-    a.status == ApplicationStatus.qualified).length;
-    final interviewed = apps.where((a) =>
-    a.status == ApplicationStatus.interviewPassed ||
-        a.status == ApplicationStatus.interviewFailed ||
-        a.status == ApplicationStatus.interviewWithdrew).length;
-    final offerSent = apps.where((a) =>
-    a.status == ApplicationStatus.offerApproved ||
-        a.status == ApplicationStatus.offerPending ||
-        a.status == ApplicationStatus.offerRejected).length;
-    final hired     = apps.where((a) => a.status == ApplicationStatus.hired).length;
+    // An application carries only its CURRENT status, so a hired candidate is
+    // no longer "Offer: Approved" and no longer "Interview: Passed". A funnel
+    // must count everyone who REACHED a stage, not everyone parked on it —
+    // otherwise Hired = 1 sits under Offer Sent = 0, which cannot happen.
+    const interviewStatuses = {
+      ApplicationStatus.interviewPassed,
+      ApplicationStatus.interviewFailed,
+      ApplicationStatus.interviewWithdrew,
+    };
+    const offerStatuses = {
+      ApplicationStatus.offerApproved,
+      ApplicationStatus.offerPending,
+      ApplicationStatus.offerRejected,
+    };
+
+    bool isHired(ApplicationModel a) => a.status == ApplicationStatus.hired;
+    bool reachedOffer(ApplicationModel a) =>
+        offerStatuses.contains(a.status) || isHired(a);
+    bool reachedInterview(ApplicationModel a) =>
+        interviewStatuses.contains(a.status) || reachedOffer(a);
+
+    final applied     = apps.length; // everyone who applied enters the funnel
+    final interviewed = apps.where(reachedInterview).length;
+    final offerSent   = apps.where(reachedOffer).length;
+    final hired       = apps.where(isHired).length;
 
     final hiringStages = [
-      HiringStageItem(label: 'Applied',  value: shortlisted),
+      HiringStageItem(label: 'Applied',  value: applied),
       HiringStageItem(label: 'Interview',  value: interviewed),
       HiringStageItem(label: 'Offer Sent', value: offerSent),
       HiringStageItem(label: 'Hired',      value: hired),
     ];
 
     // ── Job Status — pie chart ────────────────────────────────────────────────
+    // Same buckets as Job Posting Status, so every job is in exactly one.
     final statusCounts = <String, double>{
-      'Active':    jobs.where((j) => j.status == JobStatus.active).length.toDouble(),
-      'Scheduled': jobs.where((j) => j.status == JobStatus.scheduled).length.toDouble(),
-      'Closed':    jobs.where((j) => j.status == JobStatus.ended || j.status == JobStatus.inactive || j.status == JobStatus.removed).length.toDouble(),
-      'Draft':     jobs.where((j) => j.status == JobStatus.drafted).length.toDouble(),
+      'Active':    nActive,
+      'Scheduled': nScheduled,
+      'Closed':    nClosed,
+      'Draft':     nDraft,
     }..removeWhere((_, v) => v == 0);
 
-    // Total unique departments
-    final uniqueDepts = jobs.map((j) => j.department).where((d) => d.isNotEmpty).toSet().length;
+    // BUG-38: the centre of the donut counts JOBS (it said "Total Department").
+    final totalForStatus = jobs.length;
 
     // ── Candidate Quality ─────────────────────────────────────────────────────
     final totalApps      = apps.length;
@@ -372,9 +398,14 @@ class CareersDashboardData {
     final unqualifiedPct = totalApps > 0 ? (unqualifiedCount / totalApps * 100) : 0.0;
 
     // ── Jobs Performance — top 4 job titles by application count ─────────────
+    // BUG-19: never show a raw Firestore id as a job name. Resolve the title
+    // from the job itself, falling back to "Untitled job".
+    final titleById = {for (final j in jobs) j.id: j.displayTitle};
     final jobAppMap = <String, List<ApplicationModel>>{};
     for (final app in apps) {
-      final title = app.jobTitle.isNotEmpty ? app.jobTitle : app.jobId;
+      final title = app.jobTitle.trim().isNotEmpty
+          ? app.jobTitle.trim()
+          : (titleById[app.jobId] ?? 'Untitled job');
       jobAppMap.putIfAbsent(title, () => []).add(app);
     }
 
@@ -385,32 +416,51 @@ class CareersDashboardData {
 
     final perfRoles = top4.map((e) => e.key).toList();
     final perfApps  = top4.map((e) => e.value.length.toDouble()).toList();
-    final perfInterviews = top4.map((e) => e.value.where((a) =>
-    a.status == ApplicationStatus.interviewPassed ||
-        a.status == ApplicationStatus.interviewFailed ||
-        a.status == ApplicationStatus.interviewWithdrew).length.toDouble()).toList();
-    final perfHires = top4.map((e) => e.value.where((a) =>
-    a.status == ApplicationStatus.hired).length.toDouble()).toList();
+    // Same "reached the stage" rule as the funnel: someone now Hired was
+    // interviewed on the way there.
+    final perfInterviews = top4
+        .map((e) => e.value.where(reachedInterview).length.toDouble())
+        .toList();
+    final perfHires =
+        top4.map((e) => e.value.where(isHired).length.toDouble()).toList();
 
     // ── Job Offer ─────────────────────────────────────────────────────────────
-    final offerApproved = apps.where((a) => a.status == ApplicationStatus.offerApproved).length;
+    // A hired candidate approved their offer — their status has simply moved
+    // on to "Hired", so they must still count as Approved here.
+    final offerApproved = apps
+        .where((a) =>
+            a.status == ApplicationStatus.offerApproved || isHired(a))
+        .length;
     final offerPending  = apps.where((a) => a.status == ApplicationStatus.offerPending).length;
     final offerRejected = apps.where((a) => a.status == ApplicationStatus.offerRejected).length;
 
     // ── Score Distribution ────────────────────────────────────────────────────
     // Average score per applicant = mean of all 5 scoring fields (each 0–10 or 0–100)
     // Bucket: Poor(0–20), Weak(21–40), Good(41–60), Very Good(61–80), Excellent(81–100)
+    // BUG-84: each criterion is scored 1–5 (the applicant page shows
+    // 4/3/5/4/4 = 20/25 = 80 %), but this code compared the 1–5 AVERAGE with
+    // 0–100 bands, so every scored applicant landed in "Poor". The score is
+    // now the same percentage the applicant page shows.
     int poor = 0, weak = 0, good = 0, veryGood = 0, excellent = 0;
     for (final app in apps) {
-      final avg = (app.technicalSkills +
-          app.communicationSkills +
-          app.experienceBackground +
-          app.cultureFit +
-          app.leadershipPotential) / 5.0;
-      if (avg <= 20)       poor++;
-      else if (avg <= 40)  weak++;
-      else if (avg <= 60)  good++;
-      else if (avg <= 80)  veryGood++;
+      final scores = [
+        app.technicalSkills,
+        app.communicationSkills,
+        app.experienceBackground,
+        app.cultureFit,
+        app.leadershipPotential,
+      ];
+      final totalScore = scores.fold<int>(0, (s, v) => s + v);
+      // Not scored yet — don't count it in any bucket.
+      if (totalScore == 0) continue;
+      final maxPer = scores.reduce((a, b) => a > b ? a : b);
+      // 1–5 stars (current), older 0–10 or 0–100 data still bucketed right.
+      final double scale = maxPer <= 5 ? 5 : (maxPer <= 10 ? 10 : 100);
+      final pct = totalScore / (scale * scores.length) * 100;
+      if (pct <= 20)       poor++;
+      else if (pct <= 40)  weak++;
+      else if (pct <= 60)  good++;
+      else if (pct <= 80)  veryGood++;
       else                  excellent++;
     }
 
@@ -422,36 +472,61 @@ class CareersDashboardData {
       ScoreDistributionItem(label: 'Excellent', value: excellent, colorHex: '#2E7D32'),
     ];
 
-    // ── Employment Types — from applicant experienceLevel ─────────────────────
-    final internCount     = apps.where((a) => a.experienceLevel.toLowerCase() == 'intern').length.toDouble();
-    final juniorCount     = apps.where((a) => a.experienceLevel.toLowerCase() == 'junior').length.toDouble();
-    final seniorCount     = apps.where((a) => a.experienceLevel.toLowerCase() == 'senior').length.toDouble();
-    final leaderCount     = apps.where((a) => a.experienceLevel.toLowerCase() == 'leadership').length.toDouble();
+    // ── Employment Types — BUG-31: from the JOBS' employment type (the chart
+    // said "No Data" although the jobs were Full Time / Part Time; it was
+    // reading the applicants' experience level instead).
+    final fullTimeCount = jobs.where((j) =>
+        !j.isUnset('employmentType') &&
+        j.employmentType == EmploymentType.fullTime).length.toDouble();
+    final partTimeCount = jobs.where((j) =>
+        !j.isUnset('employmentType') &&
+        j.employmentType == EmploymentType.partTime).length.toDouble();
+    final unspecifiedEmp =
+        jobs.where((j) => j.isUnset('employmentType')).length.toDouble();
 
     final employmentTypes = <String, double>{
-      if (internCount  > 0) 'Intern':     internCount,
-      if (juniorCount  > 0) 'Junior':     juniorCount,
-      if (seniorCount  > 0) 'Senior':     seniorCount,
-      if (leaderCount  > 0) 'Leadership': leaderCount,
+      if (fullTimeCount  > 0) 'Full Time':   fullTimeCount,
+      if (partTimeCount  > 0) 'Part Time':   partTimeCount,
+      if (unspecifiedEmp > 0) 'Unspecified': unspecifiedEmp,
     };
 
-    // ── Candidate Gender — no gender field in model; show 50/50 placeholder ──
-    // TODO: Add gender field to ApplicationModel to make this dynamic.
-    const malePercent   = 50.0;
-    const femalePercent = 50.0;
+    // ── Candidate Gender (BUG-85) — from the applicants' Gender answer on the
+    // public Apply form. Older applications (no answer) = "Not specified".
+    double male = 0, female = 0, unknown = 0;
+    for (final a in apps) {
+      switch (a.gender.trim().toLowerCase()) {
+        case 'male':
+          male++;
+          break;
+        case 'female':
+          female++;
+          break;
+        default:
+          unknown++;
+      }
+    }
+    final genderTotal = male + female + unknown;
+    final malePercent   = genderTotal > 0 ? male / genderTotal * 100 : 0.0;
+    final femalePercent = genderTotal > 0 ? female / genderTotal * 100 : 0.0;
+    final genderCounts = <String, double>{
+      if (male > 0) 'Male': male,
+      if (female > 0) 'Female': female,
+      if (unknown > 0) 'Not specified': unknown,
+    };
 
     return CareersDashboardData(
       statCards: statCards,
       appReceivedLabels: monthLabels,
       appReceivedValues: monthCounts,
-      jobPostingLabels:    ['Q1', 'Q2', 'Q3', 'Q4'],
+      jobPostingLabels:    deptLabels,
       jobPostingActive:    qActive,
       jobPostingClosed:    qClosed,
       jobPostingScheduled: qScheduled,
       jobPostingDraft:     qDraft,
       hiringStages:        hiringStages,
-      jobStatus:           statusCounts.isEmpty ? {'No Data': 1} : statusCounts,
-      jobStatusTotal:      uniqueDepts,
+      // BUG-38: no fake "No Data = 1" slice — the chart shows an empty state.
+      jobStatus:           statusCounts,
+      jobStatusTotal:      totalForStatus,
       qualifiedPercent:    qualifiedPct,
       unqualifiedPercent:  unqualifiedPct,
       totalApplications:   totalApps,
@@ -463,9 +538,10 @@ class CareersDashboardData {
       jobOfferPending:  offerPending,
       jobOfferRejected: offerRejected,
       scoreDistribution: scoreDistribution,
-      employmentTypes:   employmentTypes.isEmpty ? {'No Data': 1} : employmentTypes,
+      employmentTypes:   employmentTypes, // empty → chart shows "No data yet"
       malePercent:   malePercent,
       femalePercent: femalePercent,
+      genderCounts:  genderCounts,
     );
   }
 
@@ -476,7 +552,7 @@ class CareersDashboardData {
       DashboardStatCard(label: 'Office Jobs',       value: 3,    iconAsset: 'assets/images/job_list/office_job.svg'),
       DashboardStatCard(label: 'Remote Jobs',       value: 3,    iconAsset: 'assets/images/job_list/remote_job.svg'),
       DashboardStatCard(label: 'Active Job',        value: 3,    iconAsset: 'assets/images/job_list/active_job.svg'),
-      DashboardStatCard(label: 'Recruitment Ended', value: 3,    iconAsset: 'assets/images/job_list/requiement_end.svg'),
+      DashboardStatCard(label: 'Recruitment End', value: 3,    iconAsset: 'assets/images/job_list/requiement_end.svg'),
       DashboardStatCard(label: 'Drafted',           value: 3,    iconAsset: 'assets/images/job_list/dradt.svg'),
     ],
     appReceivedLabels: const ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],

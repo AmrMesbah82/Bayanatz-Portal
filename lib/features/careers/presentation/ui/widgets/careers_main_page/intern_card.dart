@@ -17,6 +17,21 @@ class _InternCard extends StatefulWidget {
 class _InternCardState extends State<_InternCard> {
   bool _hovered = false;
 
+  // ── CMS branding primary color (from Firebase via MainCmsCubit) ──────────
+  Color _cmsPrimary(BuildContext context) {
+    final MainCmsState state = context.watch<MainCmsCubit>().state;
+    final String hex = switch (state) {
+      MainCmsLoaded(:final data) => data.branding.primaryColor,
+      MainCmsSaved(:final data)  => data.branding.primaryColor,
+      _                          => '',
+    };
+    try {
+      final clean = hex.replaceAll('#', '');
+      if (clean.length == 6) return Color(int.parse('FF$clean', radix: 16));
+    } catch (_) {}
+    return ColorPick.primary; // fallback
+  }
+
   void _openEditPage(BuildContext context) {
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => BlocProvider.value(
@@ -67,6 +82,30 @@ class _InternCardState extends State<_InternCard> {
                   textAlign: TextAlign.center,
                   style: StyleText.fontSize11Weight400.copyWith(
                       fontSize: 9.sp, color: Colors.black45, height: 1.4)),
+              SizedBox(height: 3.h),
+              if (intern.position.isNotEmpty) ...[
+                Container(
+                  decoration: BoxDecoration(
+                    color: ColorPick.primary,
+                    borderRadius: BorderRadius.circular(4.r),
+                  ),
+                  child: Padding(
+                    padding:  EdgeInsets.symmetric(horizontal: 10.sp,vertical: 5.sp),
+                    child: Column(
+                      children: [
+                        SizedBox(height: 3.h),
+                        Text(intern.position,
+                            textAlign: TextAlign.center,
+                            style: StyleText.fontSize11Weight400.copyWith(
+                                fontSize: 9.sp,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                                height: 1.4)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               SizedBox(height: 8.h),
               // Wrap(
               //   spacing: 4.w, runSpacing: 3.h, alignment: WrapAlignment.center,
@@ -93,11 +132,11 @@ class _InternCardState extends State<_InternCard> {
               SizedBox(height: 12.h),
               Text('What Have I Learned',
                   style: StyleText.fontSize13Weight600.copyWith(
-                      fontSize: 11.sp, fontWeight: FontWeight.w700, color: Colors.black87)),
+                      fontSize: 11.sp, fontWeight: FontWeight.w700, color: AppColors.secondaryText)),
               SizedBox(height: 6.h),
               Text(intern.whatHaveILearned,
                   style: StyleText.fontSize12Weight400.copyWith(
-                      fontSize: 10.sp, height: 1.5, color: Colors.black54),
+                      fontSize: 10.sp, height: 1.5, color: AppColors.text),
                   maxLines: 4, overflow: TextOverflow.ellipsis),
             ],
           ),

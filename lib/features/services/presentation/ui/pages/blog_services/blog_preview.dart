@@ -29,11 +29,19 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../../../core/constant/color.dart';
+import '../../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../../core/site_preview/site_preview_frame.dart';
 import '../../../../../../core/theme/appcolors.dart';
 import '../../../../../../core/theme/new_theme.dart';
 import '../../../../data/models/blog_model.dart';
 import '../../../controller/blog_cubit.dart';
+import '../../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
+import 'package:web_app_admin/core/main_widgets/app_admin_navbar.dart';
+import 'package:web_app_admin/features/careers/presentation/ui/pages/careers_main.dart';
+import 'package:web_app_admin/features/main/presentation/ui/pages/main_main.dart';
+import 'package:web_app_admin/features/job/presentation/ui/pages/job_listing_main.dart';
 
 part '../../widgets/blog_preview/card_preview.dart';
 part '../../widgets/blog_preview/read_more_preview.dart';
@@ -166,18 +174,18 @@ class _BlogPreviewPageState extends State<BlogPreviewPage> {
 
     return Scaffold(
       backgroundColor: ColorPick.background,
-      body: SingleChildScrollView(
-        child: Center(
-          child: SizedBox(
-            width: 1000.w,
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 32.h),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+      body: AdminStickyBody(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  contentWidth: 1000.w,
+  children: [
+                  AppAdminNavbar(
+                    activeLabel:    'Web Page',
+                    homePage:       CareersMainPageDashboard(),
+                    webPage:        MainMainPage(),
+                    jobListingPage: JobListingMainPage(),
+                  ),
+                  SizedBox(height: 20.h),
                   AdminSubNavBar(activeIndex: 2),
-                  SizedBox(height: 24.h),
-
                   Text(
                     'Preview Read Details',
                     style: StyleText.fontSize22Weight700.copyWith(
@@ -186,27 +194,30 @@ class _BlogPreviewPageState extends State<BlogPreviewPage> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  SizedBox(height: 24.h),
+                  SizedBox(height: 16.h),
+                  // BUG-94: Desktop / Tablet / Mobile, like every other preview.
+                  _deviceTabBar(),
+                  SizedBox(height: 16.h),
 
                   _accordion(
                     key:   'card',
                     title: 'Card View',
-                    child: _CardPreview(
+                    child: _deviceBox(_CardPreview(
                       post:       p,
                       imageBytes: widget.imageBytes,
                       isPickedSvg: widget.isPickedSvg,
-                    ),
+                    )),
                   ),
                   SizedBox(height: 16.h),
 
                   _accordion(
                     key:   'readMore',
                     title: 'Read More',
-                    child: _ReadMorePreview(
+                    child: _deviceBox(_ReadMorePreview(
                       post:       p,
                       imageBytes: widget.imageBytes,
                       isPickedSvg: widget.isPickedSvg,
-                    ),
+                    )),
                   ),
                   SizedBox(height: 20.h),
 
@@ -214,11 +225,69 @@ class _BlogPreviewPageState extends State<BlogPreviewPage> {
                   _actionButtons(),
                   SizedBox(height: 40.h),
                 ],
+),
+    );
+  }
+
+  // ── BUG-94: device selector ───────────────────────────────────────────────
+  SitePreviewDevice _device = SitePreviewDevice.desktop;
+
+  Widget _deviceBox(Widget child) {
+    final double maxW = switch (_device) {
+      SitePreviewDevice.desktop => double.infinity,
+      SitePreviewDevice.tablet  => 600.w,
+      SitePreviewDevice.mobile  => 320.w,
+    };
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxW),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _deviceTabBar() {
+    const tabs = [
+      SitePreviewDevice.desktop,
+      SitePreviewDevice.tablet,
+      SitePreviewDevice.mobile,
+    ];
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: tabs.map((d) {
+        final bool isActive = _device == d;
+        return Padding(
+          padding: EdgeInsets.only(right: 24.w),
+          child: GestureDetector(
+            onTap: () => setState(() => _device = d),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: IntrinsicWidth(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.only(bottom: 6.h),
+                      child: Text(
+                        d.label,
+                        style: TextStyle(
+                          fontSize: 15.sp,
+                          fontWeight: FontWeight.w500, // Figma 7126:66403 — Cairo Medium for all
+                          color: isActive ? ColorPick.primary : AppColors.secondaryText,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      height: 2,
+                      color: isActive ? ColorPick.primary : Colors.transparent,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      }).toList(),
     );
   }
 
@@ -264,11 +333,7 @@ class _BlogPreviewPageState extends State<BlogPreviewPage> {
                 child: _loading
                     ? const SizedBox(
                   width: 20, height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor:
-                    AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
+                  child: CircleProgress(),
                 )
                     : Text('Publish',
                     style: StyleText.fontSize14Weight600
@@ -328,44 +393,11 @@ class _BlogPreviewPageState extends State<BlogPreviewPage> {
     required Widget child,
   }) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration: BoxDecoration(
-           borderRadius: BorderRadius.circular(6.r)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() => _open[key] = !isOpen),
-            child: Container(
-              width: double.infinity,
-              padding:
-              EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: BorderRadius.circular(6.r),
-              ),
-              child: Row(children: [
-                Expanded(
-                    child: Text(title,
-                        style: StyleText.fontSize14Weight600
-                            .copyWith(color: Colors.white))),
-                Icon(
-                  isOpen
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  color: Colors.white,
-                  size:  20.sp,
-                ),
-              ]),
-            ),
-          ),
-          if (isOpen)
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: 16.h),
-              child: child,
-            ),
-        ],
-      ),
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
+      child:    child,
     );
   }
 }

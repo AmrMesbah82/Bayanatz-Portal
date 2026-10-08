@@ -46,7 +46,7 @@ class _MobilePhoneShell extends StatelessWidget {
               child: Transform.scale(
                 scale:     scale,
                 alignment: Alignment.topLeft,
-                child: _PreviewContent(
+                child: SiteShellPreview(
                   fakeWidth:  _kFakeMobileW,
                   fakeHeight: _kFakeMobileH,
                   isRtl:      isRtl,

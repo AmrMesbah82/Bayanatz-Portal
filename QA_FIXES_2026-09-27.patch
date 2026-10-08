@@ -1,0 +1,4237 @@
+diff -ruN a/lib/core/custom/1-custom_dropdwon.dart b/lib/core/custom/1-custom_dropdwon.dart
+--- a/lib/core/custom/1-custom_dropdwon.dart	2026-09-27 11:48:58.987000887 +0000
++++ b/lib/core/custom/1-custom_dropdwon.dart	2026-09-27 12:07:35.174000013 +0000
+@@ -7,6 +7,7 @@
+ /// Module: core › custom
+ 
+ import 'package:flutter/material.dart';
++import 'package:flutter/services.dart';
+ import 'package:flutter_screenutil/flutter_screenutil.dart';
+ import 'package:flutter_svg/flutter_svg.dart';
+ 
+@@ -109,6 +110,17 @@
+ 
+   OverlayEntry? _overlayEntry;
+   bool _isOpen = false;
++
++  // BUG-36 / BUG-48: only ONE dropdown may be open at a time — opening one
++  // closes the other. They used to stack on top of each other.
++  static _CustomDropdownState? _currentlyOpen;
++
++  // Set when an outside pointer-down closed the menu, so the tap that follows
++  // on this dropdown's own trigger doesn't immediately re-open it.
++  DateTime? _closedByOutsideAt;
++
++  // Drives the always-visible scrollbar of long option lists (BUG-48).
++  final ScrollController _listScroll = ScrollController();
+   late AnimationController _animController;
+   late Animation<double> _fadeAnimation;
+   late Animation<double> _scaleAnimation;
+@@ -141,16 +153,31 @@
+     // it is updating devices (mouse_tracker !_debugDuringDeviceUpdate).
+     _overlayEntry?.remove();
+     _overlayEntry = null;
++    if (identical(_currentlyOpen, this)) _currentlyOpen = null;
+     _animController.dispose();
++    _listScroll.dispose();
+     super.dispose();
+   }
+ 
+   void _toggleDropdown() {
+     if (!widget.enabled) return;
++    final closedAt = _closedByOutsideAt;
++    if (!_isOpen &&
++        closedAt != null &&
++        DateTime.now().difference(closedAt) < const Duration(milliseconds: 300)) {
++      // This tap is the one that just closed us from "outside" — our trigger.
++      _closedByOutsideAt = null;
++      return;
++    }
+     _isOpen ? _closeOverlay() : _openOverlay();
+   }
+ 
+   void _openOverlay() {
++    final other = _currentlyOpen;
++    if (other != null && !identical(other, this) && other.mounted) {
++      other._closeOverlay();
++    }
++    _currentlyOpen = this;
+     final renderBox =
+         _triggerKey.currentContext?.findRenderObject() as RenderBox?;
+     if (renderBox == null) return;
+@@ -190,6 +217,11 @@
+           widget.onChanged?.call(item.value);
+         },
+         onDismiss: _closeOverlay,
++        onOutsidePointerDown: () {
++          _closedByOutsideAt = DateTime.now();
++          _closeOverlay();
++        },
++        scrollController: _listScroll,
+       ),
+     );
+ 
+@@ -200,6 +232,7 @@
+   }
+ 
+   void _closeOverlay() {
++    if (identical(_currentlyOpen, this)) _currentlyOpen = null;
+     if (_overlayEntry == null) return;
+     _animController.reverse().then((_) {
+       _overlayEntry?.remove();
+@@ -419,8 +452,12 @@
+   final T? selectedValue;
+   final ValueChanged<DropdownItem<T>> onSelected;
+   final VoidCallback onDismiss;
++  final VoidCallback onOutsidePointerDown;
++  final ScrollController scrollController;
+ 
+   const _DropdownOverlay({
++    required this.onOutsidePointerDown,
++    required this.scrollController,
+     required this.layerLink,
+     required this.triggerSize,
+     required this.verticalOffset,
+@@ -443,14 +480,27 @@
+ 
+   @override
+   Widget build(BuildContext context) {
+-    return SizedBox.expand(
++    // BUG-36: Escape closes the menu.
++    return Focus(
++      autofocus: true,
++      onKeyEvent: (_, event) {
++        if (event is KeyDownEvent &&
++            event.logicalKey == LogicalKeyboardKey.escape) {
++          onDismiss();
++          return KeyEventResult.handled;
++        }
++        return KeyEventResult.ignored;
++      },
++      child: SizedBox.expand(
+       child: Stack(
+         children: [
+-          // Full-screen dismiss layer
++          // Full-screen dismiss layer. BUG-36: a raw pointer-down (not a tap
++          // gesture competing in the arena) so ANY click outside closes the
++          // menu — including a click on another dropdown, which then opens.
+           Positioned.fill(
+-            child: GestureDetector(
++            child: Listener(
+               behavior: HitTestBehavior.translucent,
+-              onTap: onDismiss,
++              onPointerDown: (_) => onOutsidePointerDown(),
+             ),
+           ),
+ 
+@@ -503,7 +553,13 @@
+                                     ),
+                                   ),
+                             )
+-                          : ListView.separated(
++                          : Scrollbar(
++                              // BUG-48: long lists (e.g. 10 statuses) now
++                              // show that they scroll.
++                              controller: scrollController,
++                              thumbVisibility: items.length * itemHeight > maxHeight,
++                              child: ListView.separated(
++                              controller: scrollController,
+                               padding: EdgeInsets.zero,
+                               shrinkWrap: true,
+                               itemCount: items.length,
+@@ -530,6 +586,7 @@
+                                 );
+                               },
+                             ),
++                            ),
+                     ),
+                   ),
+                 ),
+@@ -538,6 +595,7 @@
+           ),
+         ],
+       ),
++      ),
+     );
+   }
+ }
+diff -ruN a/lib/core/custom/2-custom_textfield.dart b/lib/core/custom/2-custom_textfield.dart
+--- a/lib/core/custom/2-custom_textfield.dart	2026-09-27 11:48:58.987000887 +0000
++++ b/lib/core/custom/2-custom_textfield.dart	2026-09-27 12:07:35.176000013 +0000
+@@ -412,8 +412,13 @@
+   Widget build(BuildContext context) {
+     final resolvedError = _resolvedError;
+     final hasError = resolvedError != null && resolvedError.isNotEmpty;
+-    // Red border yes, text no, when the error is the built-in required check.
+-    final showMessage = hasError && resolvedError != _kRequiredNoMessage;
++    // BUG-27 / BUG-46: an empty required field now also says WHY it is red
++    // ("This field is required.") — a border alone looked like a broken
++    // button, especially when the field was far above Publish/Save.
++    final showMessage = hasError;
++    final String? messageText = resolvedError == _kRequiredNoMessage
++        ? 'This field is required.'
++        : resolvedError;
+     final radius = widget.borderRadius ?? BorderRadius.circular(4.r);
+     final isDisabled = !widget.enabled;
+ 
+@@ -636,7 +641,7 @@
+           SizedBox(height: 4.h),
+           showMessage
+               ? Text(
+-            resolvedError!,
++            messageText!,
+             style: widget.errorStyle ??
+                 StyleText.subTitle.copyWith(color: AppColors.red),
+           )
+diff -ruN a/lib/core/custom/4-custom_dropdwon_calander.dart b/lib/core/custom/4-custom_dropdwon_calander.dart
+--- a/lib/core/custom/4-custom_dropdwon_calander.dart	2026-09-27 11:48:58.987000887 +0000
++++ b/lib/core/custom/4-custom_dropdwon_calander.dart	2026-09-27 12:07:35.178000013 +0000
+@@ -6,6 +6,7 @@
+ import 'package:intl/intl.dart';
+ import 'package:web_app_admin/core/theme/appcolors.dart';
+ import 'package:web_app_admin/core/theme/new_theme.dart';
++import 'package:web_app_admin/core/constant/color.dart'; // BUG-28: brand red, not the theme yellow
+ 
+ 
+ class CustomDropdownCalendar extends StatefulWidget {
+@@ -74,43 +75,48 @@
+         calendarViewMode: CalendarDatePicker2Mode.day,
+         closeDialogOnCancelTapped: true,
+         closeDialogOnOkTapped: true,
+-        currentDate: widget.value ?? DateTime.now(),
++        // Open on a selectable month: a stored date earlier than firstDate
++        // (e.g. an old end date) would otherwise open on a fully disabled month.
++        currentDate: (widget.firstDate != null &&
++                (widget.value ?? DateTime.now()).isBefore(widget.firstDate!))
++            ? widget.firstDate
++            : (widget.value ?? DateTime.now()),
+         centerAlignModePicker: true,
+         dayBorderRadius: BorderRadius.circular(8.r),
+         dayBuilder: _buildDay,
+         customModePickerIcon: SvgPicture.asset(
+           'assets/arrowdown.svg',
+           fit: BoxFit.fitHeight,
+-          colorFilter: ColorFilter.mode(AppColors.primary, BlendMode.srcIn),
++          colorFilter: ColorFilter.mode(ColorPick.primary, BlendMode.srcIn),
+           height: 14.sp,
+         ),
+         lastMonthIcon: Transform.rotate(
+           angle: Get.locale.toString().contains('ar') ? 3.14 : 0,
+           child: SvgPicture.asset(
+             'assets/arrow.svg',
+-            colorFilter: ColorFilter.mode(AppColors.primary, BlendMode.srcIn),
++            colorFilter: ColorFilter.mode(ColorPick.primary, BlendMode.srcIn),
+           ),
+         ),
+         nextMonthIcon: Transform.rotate(
+           angle: Get.locale.toString().contains('ar') ? 0 : 3.14,
+           child: SvgPicture.asset(
+             'assets/arrow.svg',
+-            colorFilter: ColorFilter.mode(AppColors.primary, BlendMode.srcIn),
++            colorFilter: ColorFilter.mode(ColorPick.primary, BlendMode.srcIn),
+           ),
+         ),
+         okButton: _buildActionButton('Set Date'.tr),
+         cancelButton: _buildActionButton('Cancel'.tr, isCancel: true),
+         weekdayLabelTextStyle: StyleText.fontSize16Weight400
+-            .copyWith(color: AppColors.primary),
++            .copyWith(color: ColorPick.primary),
+         controlsTextStyle: StyleText.fontSize14Weight400
+-            .copyWith(color: AppColors.primary),
++            .copyWith(color: ColorPick.primary),
+         selectedYearTextStyle: StyleText.fontSize14Weight400
+-            .copyWith(color: AppColors.primary),
+-        selectedDayHighlightColor: AppColors.primary,
++            .copyWith(color: ColorPick.primary),
++        selectedDayHighlightColor: ColorPick.primary,
+         dayTextStyle:
+         StyleText.fontSize14Weight400.copyWith(color: AppColors.text),
+         selectedDayTextStyle: StyleText.fontSize14Weight400
+-            .copyWith(color: AppColors.textButton),
++            .copyWith(color: Colors.white),
+         yearTextStyle:
+         StyleText.fontSize14Weight400.copyWith(color: AppColors.text),
+         todayTextStyle:
+@@ -143,9 +149,9 @@
+         height: 25.sp,
+         decoration: BoxDecoration(
+           borderRadius: BorderRadius.circular(8.r),
+-          color: isSelected == true ? AppColors.primary : AppColors.field,
++          color: isSelected == true ? ColorPick.primary : AppColors.field,
+           border: Border.all(
+-            color: isTodayDate ? AppColors.primary : Colors.transparent,
++            color: isTodayDate ? ColorPick.primary : Colors.transparent,
+           ),
+         ),
+         child: Center(
+@@ -153,7 +159,7 @@
+             date.day.toString(),
+             style: StyleText.fontSize14Weight400.copyWith(
+               color: isSelected == true
+-                  ? AppColors.textButton
++                  ? Colors.white
+                   : AppColors.secondaryText,
+             ),
+           ),
+@@ -169,13 +175,13 @@
+         width: 120.sp,
+         decoration: BoxDecoration(
+           borderRadius: BorderRadius.circular(8.r),
+-          color: isCancel ? AppColors.secondaryButton : AppColors.primary,
++          color: isCancel ? AppColors.secondaryButton : ColorPick.primary,
+         ),
+         child: Center(
+           child: Text(
+             label,
+             style: StyleText.fontSize14Weight400.copyWith(
+-              color: isCancel ? AppColors.text : AppColors.textButton,
++              color: isCancel ? AppColors.text : Colors.white,
+             ),
+           ),
+         ),
+diff -ruN a/lib/core/main_widgets/admin_back_link.dart b/lib/core/main_widgets/admin_back_link.dart
+--- a/lib/core/main_widgets/admin_back_link.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/core/main_widgets/admin_back_link.dart	2026-09-27 12:07:35.149000013 +0000
+@@ -0,0 +1,59 @@
++// ******************* FILE INFO *******************
++// File Name: admin_back_link.dart
++// Purpose: Small "← Parent" breadcrumb shown at the top of admin sub-pages
++//          (BUG-26). Pops back when there is history, otherwise goes to the
++//          parent section's URL — so it also works after a page reload.
++
++import 'package:flutter/material.dart';
++import 'package:flutter_screenutil/flutter_screenutil.dart';
++import 'package:go_router/go_router.dart';
++
++import '../constant/color.dart';
++import '../theme/new_theme.dart';
++
++class AdminBackLink extends StatelessWidget {
++  const AdminBackLink({
++    super.key,
++    required this.parentLabel,
++    required this.parentRoute,
++  });
++
++  /// e.g. 'Job Listing'
++  final String parentLabel;
++
++  /// e.g. '/jobs'
++  final String parentRoute;
++
++  @override
++  Widget build(BuildContext context) {
++    return Padding(
++      padding: EdgeInsets.only(bottom: 8.h),
++      child: MouseRegion(
++        cursor: SystemMouseCursors.click,
++        child: GestureDetector(
++          onTap: () {
++            final router = GoRouter.of(context);
++            if (router.canPop()) {
++              router.pop();
++            } else {
++              router.go(parentRoute);
++            }
++          },
++          child: Row(
++            mainAxisSize: MainAxisSize.min,
++            children: [
++              Icon(Icons.arrow_back_ios_new_rounded,
++                  size: 14.sp, color: ColorPick.primary),
++              SizedBox(width: 6.w),
++              Text(
++                parentLabel,
++                style: StyleText.fontSize14Weight500
++                    .copyWith(color: ColorPick.primary),
++              ),
++            ],
++          ),
++        ),
++      ),
++    );
++  }
++}
+diff -ruN a/lib/core/main_widgets/admin_sub_navbar.dart b/lib/core/main_widgets/admin_sub_navbar.dart
+--- a/lib/core/main_widgets/admin_sub_navbar.dart	2026-09-27 11:48:58.985000887 +0000
++++ b/lib/core/main_widgets/admin_sub_navbar.dart	2026-09-27 12:07:35.149000013 +0000
+@@ -52,28 +52,14 @@
+     // Services page is pushed via rootNavigator (outside GoRouter tree).
+     // When navigating AWAY from Services, pop it first so it is cleanly
+     // removed before GoRouter takes over, preventing the disposed-view crash.
+-    void goRoute(String location) {
+-      if (activeIndex == 2) {
+-        Navigator.of(context, rootNavigator: true).pop();
+-      }
+-      context.go(location);
+-    }
++    void goRoute(String location) => context.go(location);
+ 
+     switch (i) {
+       case 0: goRoute('/admin/dashboard');
+       case 1: goRoute('/admin/home-page');
+-      case 2:
+-      // Services has no GoRouter route — push via rootNavigator and wrap
+-      // with InheritedGoRouter so context.go() works inside the pushed page.
+-        final router = GoRouter.of(context);
+-        Navigator.of(context, rootNavigator: true).push(
+-          MaterialPageRoute(
+-            builder: (_) => _WithGoRouter(
+-              router: router,
+-              child: const ServicesMainPageMaster(),
+-            ),
+-          ),
+-        );
++      // BUG-05: Services now has its own GoRouter route, so it gets a URL
++      // (reload/back work) like every other Web Page tab.
++      case 2: goRoute('/admin/services');
+       case 3: goRoute('/admin/about-cms');
+       case 4: goRoute('/admin/contact-cms');
+       case 5: goRoute('/admin/careers-cms');
+diff -ruN a/lib/core/main_widgets/app_admin_navbar.dart b/lib/core/main_widgets/app_admin_navbar.dart
+--- a/lib/core/main_widgets/app_admin_navbar.dart	2026-09-27 11:48:58.984000887 +0000
++++ b/lib/core/main_widgets/app_admin_navbar.dart	2026-09-27 12:07:35.138000013 +0000
+@@ -1,6 +1,7 @@
+ import 'package:flutter/material.dart';
+ import 'package:flutter_bloc/flutter_bloc.dart';
+ import 'package:flutter_svg/svg.dart';
++import 'package:go_router/go_router.dart';
+ import 'package:web_app_admin/core/constant/color.dart';
+ import 'package:web_app_admin/core/widget/network_image_view.dart';
+ import 'package:flutter_screenutil/flutter_screenutil.dart';
+@@ -48,22 +49,27 @@
+   return fallback;
+ }
+ 
+-void _pushPage(BuildContext context, Widget page) {
+-  final cubit = context.read<HomeCmsCubit>();
+-  Navigator.of(context).pushReplacement(
+-    MaterialPageRoute(
+-      builder: (_) => BlocProvider.value(
+-        value: cubit,
+-        child: page,
+-      ),
+-    ),
+-  );
++// BUG-05: every top-level section now has its own URL. The navbar used to
++// swap the body with Navigator.pushReplacement(MaterialPageRoute), so the
++// address bar never changed, F5 always landed on Home and the browser Back
++// button left the app. Navigating with go_router paths fixes all three.
++class AdminRoutes {
++  static const String home         = '/';
++  static const String jobListing   = '/jobs';
++  static const String applications = '/applications';
++  static const String inquiries    = '/inquiries';
++  static const String webPage      = '/admin/dashboard';
++}
++
++void _goTo(BuildContext context, String location) {
++  GoRouter.of(context).go(location);
+ }
+ 
+ class _AdminNavItem {
+   final String  label;
++  final String  route;
+   final Widget? page;
+-  const _AdminNavItem({required this.label, this.page});
++  const _AdminNavItem({required this.label, required this.route, this.page});
+ }
+ 
+ class AppAdminNavbar extends StatelessWidget {
+@@ -83,17 +89,34 @@
+   });
+ 
+   List<_AdminNavItem> get _navItems => [
+-    _AdminNavItem(label: 'Home',         page: homePage),
+-    _AdminNavItem(label: 'Job Listing',  page: jobListingPage),
+-    _AdminNavItem(label: 'Applications', page: const ApplicationMainPage()),
+-    _AdminNavItem(label: 'Inquires',     page: const InquiryMainPage()),
++    _AdminNavItem(label: 'Home',         route: AdminRoutes.home,         page: homePage),
++    _AdminNavItem(label: 'Job Listing',  route: AdminRoutes.jobListing,   page: jobListingPage),
++    _AdminNavItem(label: 'Applications', route: AdminRoutes.applications, page: const ApplicationMainPage()),
++    // BUG-40: "Inquires" is a verb — the section is "Inquiries".
++    _AdminNavItem(label: 'Inquiries',    route: AdminRoutes.inquiries,    page: const InquiryMainPage()),
+   ];
+ 
++  // BUG-23 / BUG-40: some pages passed 'web page' (lower case) or the old
++  // 'Inquires' spelling, so nothing was highlighted. Normalise here.
++  String get _normalisedActive {
++    final l = activeLabel.trim().toLowerCase();
++    if (l == 'web page')                      return 'Web Page';
++    if (l == 'inquires' || l == 'inquiries')  return 'Inquiries';
++    if (l == 'job listing')                   return 'Job Listing';
++    if (l == 'applications')                  return 'Applications';
++    if (l == 'home')                          return 'Home';
++    return activeLabel;
++  }
++
+   @override
+   Widget build(BuildContext context) {
++    final String activeLabel = _normalisedActive;
+     return BlocBuilder<MainCmsCubit, MainCmsState>(
+       builder: (context, cmsState) {
+-        final Color  primary  = _primaryFromState(cmsState);
++        // BUG-50: the admin navbar always uses the ADMIN theme colour. It used
++        // to take the public site's CMS primary colour (green), which leaked
++        // into the tablet/mobile selected state.
++        final Color  primary  = ColorPick.primary;
+         final Color  navbarBg = _navbarBgFromState(cmsState);
+         final double w        = MediaQuery.of(context).size.width;
+ 
+@@ -165,7 +188,7 @@
+         child: Row(
+           children: [
+             _AdminLogo(
+-              onTap: () => _pushPage(context, navItems.first.page!),
++              onTap: () => _goTo(context, AdminRoutes.home),
+             ),
+             SizedBox(width: 250.w),
+             Row(
+@@ -174,7 +197,7 @@
+                 if (!showOnlyWebPage)
+                   ...navItems.map((item) => _AdminNavLink(
+                     label:       item.label,
+-                    page:        item.page,
++                    route:       item.route,
+                     activeLabel: activeLabel,
+                     primary:     ColorPick.white,
+                   )),
+@@ -182,7 +205,7 @@
+                 _WebPageButton(
+                   primary:  ColorPick.primary,
+                   isActive: activeLabel == 'Web Page',
+-                  onTap:    () => _pushPage(context, webPage),
++                  onTap:    () => _goTo(context, AdminRoutes.webPage),
+                 ),
+               ],
+             ),
+@@ -227,7 +250,7 @@
+         child: Row(
+           children: [
+             _AdminLogo(
+-              onTap: () => _pushPage(context, navItems.first.page!),
++              onTap: () => _goTo(context, AdminRoutes.home),
+             ),
+             SizedBox(width: 16.w),
+             if (!showOnlyWebPage)
+@@ -238,7 +261,7 @@
+                     children: navItems
+                         .map((item) => _AdminNavLink(
+                       label:       item.label,
+-                      page:        item.page,
++                      route:       item.route,
+                       activeLabel: activeLabel,
+                       primary:     primary,
+                       compact:     true,
+@@ -254,7 +277,7 @@
+               primary:  primary,
+               compact:  true,
+               isActive: activeLabel == 'Web Page',
+-              onTap:    () => _pushPage(context, webPage),
++              onTap:    () => _goTo(context, AdminRoutes.webPage),
+             ),
+           ],
+         ),
+@@ -298,7 +321,7 @@
+           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+           children: [
+             _AdminLogo(
+-              onTap: () => _pushPage(context, navItems.first.page!),
++              onTap: () => _goTo(context, AdminRoutes.home),
+             ),
+             if (!showOnlyWebPage)
+               GestureDetector(
+@@ -318,7 +341,7 @@
+                 primary:  primary,
+                 compact:  true,
+                 isActive: activeLabel == 'Web Page',
+-                onTap:    () => _pushPage(context, webPage),
++                onTap:    () => _goTo(context, AdminRoutes.webPage),
+               ),
+           ],
+         ),
+@@ -382,8 +405,9 @@
+                   _AdminLogo(
+                     rawSize: true,
+                     onTap: () {
++                      final router = GoRouter.of(context);
+                       Navigator.of(context).pop();
+-                      _pushPage(context, navItems.first.page!);
++                      router.go(AdminRoutes.home);
+                     },
+                   ),
+                   GestureDetector(
+@@ -408,14 +432,13 @@
+                 children: [
+                   ...navItems.map((item) {
+                     final bool isActive  = activeLabel == item.label;
+-                    final bool isEnabled = item.page != null;
++                    const bool isEnabled = true;
+                     return GestureDetector(
+-                      onTap: isEnabled
+-                          ? () {
++                      onTap: () {
++                        final router = GoRouter.of(context);
+                         Navigator.of(context).pop();
+-                        _pushPage(context, item.page!);
+-                      }
+-                          : null,
++                        router.go(item.route);
++                      },
+                       child: Opacity(
+                         opacity: isEnabled ? 1.0 : 0.45,
+                         child: Container(
+@@ -444,8 +467,9 @@
+                   SizedBox(height: 12.h),
+                   GestureDetector(
+                     onTap: () {
++                      final router = GoRouter.of(context);
+                       Navigator.of(context).pop();
+-                      _pushPage(context, webPage);
++                      router.go(AdminRoutes.webPage);
+                     },
+                     child: Container(
+                       width:   double.infinity,
+@@ -546,14 +570,14 @@
+ 
+ class _AdminNavLink extends StatefulWidget {
+   final String  label;
+-  final Widget? page;
++  final String  route;
+   final String  activeLabel;
+   final Color   primary;
+   final bool    compact;
+ 
+   const _AdminNavLink({
+     required this.label,
+-    required this.page,
++    required this.route,
+     required this.activeLabel,
+     required this.primary,
+     this.compact = false,
+@@ -567,12 +591,12 @@
+   bool _hovered = false;
+ 
+   bool get _isActive  => widget.activeLabel == widget.label;
+-  bool get _isEnabled => widget.page != null;
++  bool get _isEnabled => true;
+ 
+   @override
+   Widget build(BuildContext context) {
+     return GestureDetector(
+-      onTap: _isEnabled ? () => _pushPage(context, widget.page!) : null,
++      onTap: () => _goTo(context, widget.route),
+       child: Opacity(
+         opacity: _isEnabled ? 1.0 : 0.45,
+         child: Container(
+diff -ruN a/lib/core/main_widgets/application_filter_dialog.dart b/lib/core/main_widgets/application_filter_dialog.dart
+--- a/lib/core/main_widgets/application_filter_dialog.dart	2026-09-27 11:48:58.984000887 +0000
++++ b/lib/core/main_widgets/application_filter_dialog.dart	2026-09-27 12:07:35.151000013 +0000
+@@ -10,7 +10,8 @@
+ import '../../features/job/data/models/application_model.dart';
+ 
+ class _C {
+-  static const Color primary = Color(0xFF008037);
++  // BUG-35: admin red, not the site's green.
++  static const Color primary = Color(0xFFD31426);
+   static const Color cardBg  = Color(0xFFFFFFFF);
+   static const Color label   = Color(0xFF333333);
+   static const Color hint    = Color(0xFFAAAAAA);
+@@ -208,17 +209,23 @@
+                   decoration: const BoxDecoration(
+                     color: _C.primary, shape: BoxShape.circle,
+                   ),
+-                  child: Icon(Icons.sort_rounded, color: Colors.white, size: 18.sp),
++                  child: Icon(Icons.tune_rounded, color: Colors.white, size: 18.sp),
+                 ),
+                 SizedBox(width: 10.w),
+                 Text(
+-                  'Sort',
++                  'Filter', // BUG-35: the Filter button opened a dialog titled "Sort"
+                   style: TextStyle(
+                     fontSize:   20.sp,
+                     fontWeight: FontWeight.w700,
+                     color:      _C.label,
+                   ),
+                 ),
++                const Spacer(),
++                IconButton(
++                  tooltip: 'Close',
++                  icon: Icon(Icons.close_rounded, color: _C.label, size: 20.sp),
++                  onPressed: () => Navigator.of(context).pop(),
++                ),
+               ],
+             ),
+             SizedBox(height: 20.h),
+diff -ruN a/lib/core/main_widgets/csv_export_dialog.dart b/lib/core/main_widgets/csv_export_dialog.dart
+--- a/lib/core/main_widgets/csv_export_dialog.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/core/main_widgets/csv_export_dialog.dart	2026-09-27 12:07:35.150000013 +0000
+@@ -0,0 +1,265 @@
++// ******************* FILE INFO *******************
++// File Name: csv_export_dialog.dart
++// Purpose: One export dialog for the Applications and Inquiries pages
++//          (BUG-32). It always downloads a CSV — header-only when there is
++//          nothing to export — and validates the file name INSIDE the dialog.
++//
++//          The old Inquiries dialog reported problems with a SnackBar, which
++//          is drawn behind the modal barrier, so nothing seemed to happen and
++//          the dialog just stayed open. Applications' Export did nothing at all.
++
++// ignore: avoid_web_libraries_in_flutter
++import 'dart:html' as html;
++import 'dart:convert';
++
++import 'package:flutter/material.dart';
++import 'package:flutter_screenutil/flutter_screenutil.dart';
++
++import '../constant/color.dart';
++import '../theme/appcolors.dart';
++
++/// Triggers a browser download of [rows] as a UTF-8 CSV (with BOM so Excel
++/// opens Arabic text correctly).
++void downloadCsv(List<List<String>> rows, String fileName) {
++  String esc(String v) {
++    final needsQuotes =
++        v.contains(',') || v.contains('"') || v.contains('\n') || v.contains('\r');
++    final s = v.replaceAll('"', '""');
++    return needsQuotes ? '"$s"' : s;
++  }
++
++  final buffer = StringBuffer('﻿');
++  for (final r in rows) {
++    buffer.writeln(r.map(esc).join(','));
++  }
++  final bytes = utf8.encode(buffer.toString());
++  final blob = html.Blob([bytes], 'text/csv;charset=utf-8');
++  final url = html.Url.createObjectUrlFromBlob(blob);
++  final anchor = html.AnchorElement(href: url)
++    ..setAttribute('download', fileName)
++    ..style.display = 'none';
++  // Some browsers ignore click() on an anchor that is not in the document.
++  html.document.body?.children.add(anchor);
++  anchor.click();
++  anchor.remove();
++  // Revoking immediately can cancel the download in some browsers.
++  Future.delayed(const Duration(seconds: 2), () => html.Url.revokeObjectUrl(url));
++}
++
++/// Returns an error message for an invalid file name, or null.
++String? validateExportFileName(String name) {
++  final n = name.trim();
++  if (n.isEmpty) return 'Please enter a file name.';
++  if (n.length > 80) return 'File name is too long (max 80 characters).';
++  if (RegExp(r'[\\/:*?"<>|]').hasMatch(n)) {
++    return 'File name can\'t contain \\ / : * ? " < > |';
++  }
++  return null;
++}
++
++/// Shows the export dialog; on Download builds the CSV from [header] + [rows].
++Future<void> showCsvExportDialog(
++  BuildContext context, {
++  required String defaultFileName,
++  required List<String> header,
++  required List<List<String>> rows,
++  String itemLabel = 'rows',
++}) {
++  return showDialog(
++    context: context,
++    barrierDismissible: true,
++    builder: (_) => _CsvExportDialog(
++      defaultFileName: defaultFileName,
++      header: header,
++      rows: rows,
++      itemLabel: itemLabel,
++    ),
++  );
++}
++
++class _CsvExportDialog extends StatefulWidget {
++  const _CsvExportDialog({
++    required this.defaultFileName,
++    required this.header,
++    required this.rows,
++    required this.itemLabel,
++  });
++
++  final String defaultFileName;
++  final List<String> header;
++  final List<List<String>> rows;
++  final String itemLabel;
++
++  @override
++  State<_CsvExportDialog> createState() => _CsvExportDialogState();
++}
++
++class _CsvExportDialogState extends State<_CsvExportDialog> {
++  late final TextEditingController _name =
++      TextEditingController(text: widget.defaultFileName);
++  String? _error;
++  bool _done = false;
++
++  @override
++  void dispose() {
++    _name.dispose();
++    super.dispose();
++  }
++
++  void _download() {
++    final err = validateExportFileName(_name.text);
++    if (err != null) {
++      setState(() => _error = err);
++      return;
++    }
++    final raw = _name.text.trim();
++    final fileName = raw.toLowerCase().endsWith('.csv') ? raw : '$raw.csv';
++    try {
++      downloadCsv([widget.header, ...widget.rows], fileName);
++      setState(() => _done = true);
++    } catch (e) {
++      setState(() => _error = 'Export failed: $e');
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final count = widget.rows.length;
++    return Dialog(
++      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
++      child: Container(
++        width: 400.w,
++        padding: EdgeInsets.all(20.sp),
++        child: Column(
++          mainAxisSize: MainAxisSize.min,
++          crossAxisAlignment: CrossAxisAlignment.start,
++          children: [
++            Row(
++              children: [
++                Container(
++                  width: 30.sp,
++                  height: 30.sp,
++                  decoration: const BoxDecoration(
++                      shape: BoxShape.circle, color: ColorPick.primary),
++                  child: Icon(Icons.file_download_outlined,
++                      size: 16.sp, color: Colors.white),
++                ),
++                SizedBox(width: 8.sp),
++                Expanded(
++                  child: Text('Export',
++                      style: TextStyle(
++                          fontSize: 16.sp,
++                          fontWeight: FontWeight.w600,
++                          color: AppColors.text)),
++                ),
++                IconButton(
++                  tooltip: 'Close',
++                  icon: Icon(Icons.close, size: 18.sp, color: AppColors.text),
++                  onPressed: () => Navigator.of(context).pop(),
++                ),
++              ],
++            ),
++            SizedBox(height: 12.sp),
++            if (_done) ...[
++              Row(children: [
++                Icon(Icons.check_circle, color: const Color(0xFF008037), size: 20.sp),
++                SizedBox(width: 8.w),
++                Expanded(
++                  child: Text(
++                    count == 0
++                        ? 'Downloaded (header only — there are no ${widget.itemLabel} to export yet).'
++                        : 'Downloaded $count ${widget.itemLabel}.',
++                    style: TextStyle(fontSize: 13.sp, color: AppColors.text),
++                  ),
++                ),
++              ]),
++              SizedBox(height: 16.sp),
++              SizedBox(
++                width: double.infinity,
++                height: 38.h,
++                child: ElevatedButton(
++                  style: ElevatedButton.styleFrom(
++                    backgroundColor: ColorPick.primary,
++                    shape: RoundedRectangleBorder(
++                        borderRadius: BorderRadius.circular(8.r)),
++                  ),
++                  onPressed: () => Navigator.of(context).pop(),
++                  child: Text('OK',
++                      style: TextStyle(fontSize: 14.sp, color: Colors.white)),
++                ),
++              ),
++            ] else ...[
++              Text('File Name',
++                  style: TextStyle(fontSize: 12.sp, color: AppColors.text)),
++              SizedBox(height: 6.sp),
++              TextField(
++                controller: _name,
++                autofocus: true,
++                onChanged: (_) {
++                  if (_error != null) setState(() => _error = null);
++                },
++                onSubmitted: (_) => _download(),
++                style: TextStyle(fontSize: 13.sp),
++                decoration: InputDecoration(
++                  isDense: true,
++                  filled: true,
++                  fillColor: const Color(0xFFF1F2ED),
++                  hintText: 'Enter file name',
++                  suffixText: '.csv',
++                  errorText: _error,
++                  border: OutlineInputBorder(
++                    borderRadius: BorderRadius.circular(6.r),
++                    borderSide: BorderSide.none,
++                  ),
++                ),
++              ),
++              SizedBox(height: 6.sp),
++              Text(
++                count == 0
++                    ? 'Nothing to export yet — the file will contain the column headers only.'
++                    : '$count ${widget.itemLabel} will be exported.',
++                style: TextStyle(fontSize: 11.sp, color: AppColors.secondaryText),
++              ),
++              SizedBox(height: 20.sp),
++              Row(
++                children: [
++                  Expanded(
++                    child: SizedBox(
++                      height: 38.h,
++                      child: TextButton(
++                        style: TextButton.styleFrom(
++                          backgroundColor: Colors.grey.shade300,
++                          shape: RoundedRectangleBorder(
++                              borderRadius: BorderRadius.circular(8.r)),
++                        ),
++                        onPressed: () => Navigator.of(context).pop(),
++                        child: Text('Discard',
++                            style: TextStyle(fontSize: 14.sp, color: AppColors.text)),
++                      ),
++                    ),
++                  ),
++                  SizedBox(width: 15.sp),
++                  Expanded(
++                    child: SizedBox(
++                      height: 38.h,
++                      child: ElevatedButton(
++                        style: ElevatedButton.styleFrom(
++                          backgroundColor: ColorPick.primary,
++                          shape: RoundedRectangleBorder(
++                              borderRadius: BorderRadius.circular(8.r)),
++                        ),
++                        onPressed: _download,
++                        child: Text('Download',
++                            style: TextStyle(fontSize: 14.sp, color: Colors.white)),
++                      ),
++                    ),
++                  ),
++                ],
++              ),
++            ],
++          ],
++        ),
++      ),
++    );
++  }
++}
+diff -ruN a/lib/core/main_widgets/job_listing_filter_dialog.dart b/lib/core/main_widgets/job_listing_filter_dialog.dart
+--- a/lib/core/main_widgets/job_listing_filter_dialog.dart	2026-09-27 11:48:58.984000887 +0000
++++ b/lib/core/main_widgets/job_listing_filter_dialog.dart	2026-09-27 12:07:35.140000013 +0000
+@@ -120,14 +120,25 @@
+   {'key': 'full_time',  'value': 'Full-Time'},
+   {'key': 'part_time',  'value': 'Part-Time'},
+ ];
++// BUG-43: the same Experience Levels as the job form (the filter offered
++// year ranges that don't exist on jobs).
+ const _kYearsOfExp = [
+-  {'key': '0_1',  'value': '0 – 1 year'},
+-  {'key': '1_3',  'value': '1 – 3 years'},
+-  {'key': '3_5',  'value': '3 – 5 years'},
+-  {'key': '5_10', 'value': '5 – 10 years'},
+-  {'key': '10+',  'value': '10+ years'},
++  {'key': 'intern',     'value': 'Intern'},
++  {'key': 'junior',     'value': 'Junior'},
++  {'key': 'senior',     'value': 'Senior'},
++  {'key': 'leadership', 'value': 'Leadership'},
+ ];
+ 
++/// BUG-43: readable label for a filter key (chips showed "part_time").
++String jobFilterLabel(String key) {
++  for (final list in [_kDepts, _kLocations, _kEmpTypes, _kYearsOfExp]) {
++    for (final m in list) {
++      if (m['key'] == key) return m['value'] ?? key;
++    }
++  }
++  return key;
++}
++
+ // ═════════════════════════════════════════════════════════════════════════════
+ //  DIALOG  (private)
+ // ═════════════════════════════════════════════════════════════════════════════
+@@ -243,7 +254,9 @@
+   Widget build(BuildContext context) {
+     return BlocBuilder<MainCmsCubit, MainCmsState>(
+       builder: (context, cmsState) {
+-        final Color primary = _primaryFromState(cmsState);
++        // BUG-42: the admin's own red — not the public site's (green) CMS
++        // colour, which made this dialog look like part of another app.
++        final Color primary = ColorPick.primary;
+ 
+         return Dialog(
+           backgroundColor: Colors.transparent,
+@@ -281,6 +294,13 @@
+                         color:      _C.label,
+                       ),
+                     ),
++                    const Spacer(),
++                    // BUG-42: a visible way to close without applying.
++                    IconButton(
++                      tooltip: 'Close',
++                      icon: Icon(Icons.close_rounded, color: _C.label, size: 22.sp),
++                      onPressed: () => Navigator.of(context).pop(),
++                    ),
+                   ],
+                 ),
+                 SizedBox(height: 24.h),
+diff -ruN a/lib/core/main_widgets/segmented_score_bar_widget.dart b/lib/core/main_widgets/segmented_score_bar_widget.dart
+--- a/lib/core/main_widgets/segmented_score_bar_widget.dart	2026-09-27 11:48:58.985000887 +0000
++++ b/lib/core/main_widgets/segmented_score_bar_widget.dart	2026-09-27 12:07:35.143000013 +0000
+@@ -144,6 +144,18 @@
+           SizedBox(height: 12.sp),
+ 
+           // ── Segmented bar ───────────────────────────────
++          // BUG-31: with every value at 0 the bar used to be drawn as five
++          // equal coloured parts, implying data that doesn't exist. Show an
++          // empty grey track instead.
++          if (totalValue <= 0)
++            Container(
++              height: barHeight.sp,
++              decoration: BoxDecoration(
++                color: const Color(0xFFF0F0F0),
++                borderRadius: BorderRadius.circular(6.r),
++              ),
++            )
++          else
+           ClipRRect(
+             borderRadius: BorderRadius.circular(6.r),
+             child: SizedBox(
+diff -ruN a/lib/core/router/app_router.dart b/lib/core/router/app_router.dart
+--- a/lib/core/router/app_router.dart	2026-09-27 11:48:58.986000887 +0000
++++ b/lib/core/router/app_router.dart	2026-09-27 12:07:35.159000013 +0000
+@@ -22,6 +22,10 @@
+ import '../../features/main/presentation/ui/pages/main_edit.dart';
+ import '../../features/main/presentation/ui/pages/main_main.dart';
+ import '../../features/main/presentation/ui/pages/main_preview.dart';
++import '../../features/job/presentation/ui/pages/job_listing_main.dart';
++import '../../features/job/presentation/ui/pages/application_main.dart';
++import '../../features/inquire/presentation/ui/pages/inquiry_main.dart';
++import '../../features/services/presentation/ui/pages/services_main/services_main.dart';
+ 
+ // ═══════════════════════════════════════════════════════════════════════════════
+ // SLIDE + ANGLE + FADE PAGE TRANSITION
+@@ -115,6 +119,31 @@
+         builder: (context, state) => const CareersMainPageDashboard(),
+       ),
+ 
++      // ── Top-level admin sections (BUG-05) ──────────────────────────────────
++      // Each section has its own URL so F5 keeps you on the same page, the
++      // browser Back button goes to the previous section, and sections can be
++      // bookmarked / shared.
++      GoRoute(
++        path: '/jobs',
++        name: 'jobs',
++        builder: (context, state) => const JobListingMainPage(),
++      ),
++      GoRoute(
++        path: '/applications',
++        name: 'applications',
++        builder: (context, state) => const ApplicationMainPage(),
++      ),
++      GoRoute(
++        path: '/inquiries',
++        name: 'inquiries',
++        builder: (context, state) => const InquiryMainPage(),
++      ),
++      GoRoute(
++        path: '/admin/services',
++        name: 'services-cms',
++        builder: (context, state) => const ServicesMainPageMaster(),
++      ),
++
+       // ── About Us CMS ───────────────────────────────────────────────────────
+       // GoRoute(
+       //   path: '/admin/about-edit',
+diff -ruN a/lib/core/widget/date_pic.dart b/lib/core/widget/date_pic.dart
+--- a/lib/core/widget/date_pic.dart	2026-09-27 11:48:58.983000887 +0000
++++ b/lib/core/widget/date_pic.dart	2026-09-27 12:07:35.133000013 +0000
+@@ -6,6 +6,7 @@
+ 
+ 
+ import '../theme/appcolors.dart';
++import '../constant/color.dart'; // BUG-28/48: admin red, not the theme yellow
+ import '../theme/text.dart';
+ 
+ 
+@@ -27,12 +28,9 @@
+         config: CalendarDatePicker2WithActionButtonsConfig(
+           firstDate: firstDate ?? DateTime(1900),
+           lastDate: DateTime(2100),
+-          selectableDayPredicate: (day) {
+-            final now = DateTime.now();
+-            return !(day.year == now.year &&
+-                day.month == now.month &&
+-                day.day == now.day);
+-          },
++          // BUG-48: today used to be NOT selectable, while callers opened the
++          // picker with today pre-selected — an invalid initial value, so the
++          // dialog failed to open at all ("Calendar opens nothing").
+           dayBuilder: ({
+             required DateTime date,
+             BoxDecoration? decoration,
+@@ -48,13 +46,13 @@
+                   decoration: BoxDecoration(
+                       borderRadius: BorderRadius.circular(8.r),
+                       color: isSelected == true
+-                          ? AppColors.secondaryPrimary
++                          ? ColorPick.primary
+                           : AppColors.field,
+                       border: Border.all(
+                         color: date.day == DateTime.now().day &&
+                             date.month == DateTime.now().month &&
+                             date.year == DateTime.now().year
+-                            ? AppColors.secondaryPrimary
++                            ? ColorPick.primary
+                             : Colors.transparent,
+                       )),
+                   child: Center(
+@@ -62,7 +60,7 @@
+                         date.day.toString(),
+                         style: AppTextStyles.font14BlackCairoRegular.copyWith(
+                           color: isSelected == true
+-                              ? AppColors.textButton
++                              ? Colors.white
+                               : AppColors.text,
+                         ),
+                       ))),
+@@ -78,7 +76,7 @@
+           customModePickerIcon: SvgPicture.asset(
+             'assets/images/downArrow.svg',
+             fit: BoxFit.fitHeight,
+-            color: AppColors.secondaryPrimary,
++            color: ColorPick.primary,
+             height: isTablet ? 16.sp : null,
+           ),
+ 
+@@ -93,14 +91,14 @@
+                   decoration: BoxDecoration(
+ 
+                     borderRadius: BorderRadius.circular(8.r),
+-                    color: AppColors.secondaryPrimary,
++                    color: ColorPick.primary,
+ 
+                   ),
+                   child: Center(
+                     child: Text(
+                       'Set Date'.tr,
+                       style: AppTextStyles.font14BlackCairoRegular
+-                          .copyWith(color: AppColors.textButton),
++                          .copyWith(color: Colors.white),
+                     ),
+                   ),
+                 ),
+@@ -135,7 +133,7 @@
+             child: SvgPicture.asset(
+               'assets/icons/back_icon.svg',
+               // ignore: deprecated_member_use
+-              color: AppColors.secondaryPrimary,
++              color: ColorPick.primary,
+             ),
+           ),
+           nextMonthIcon: Transform.rotate(
+@@ -143,21 +141,21 @@
+             child: SvgPicture.asset(
+               'assets/icons/back_icon.svg',
+               // ignore: deprecated_member_use
+-              color: AppColors.secondaryPrimary,
++              color: ColorPick.primary,
+             ),
+           ),
+           weekdayLabelTextStyle: AppTextStyles.font16BlackRegularCairo
+-              .copyWith(color: AppColors.secondaryPrimary),
++              .copyWith(color: ColorPick.primary),
+ 
+           controlsTextStyle: AppTextStyles.font14BlackCairoRegular
+-              .copyWith(color: AppColors.secondaryPrimary),
++              .copyWith(color: ColorPick.primary),
+           selectedYearTextStyle: AppTextStyles.font14BlackCairoRegular
+-              .copyWith(color: AppColors.secondaryPrimary),
+-          selectedDayHighlightColor: AppColors.secondaryPrimary,
++              .copyWith(color: ColorPick.primary),
++          selectedDayHighlightColor: ColorPick.primary,
+           dayTextStyle: AppTextStyles.font14BlackCairoRegular
+-              .copyWith(color: AppColors.textButton),
++              .copyWith(color: Colors.white),
+           selectedDayTextStyle: AppTextStyles.font14BlackCairoRegular
+-              .copyWith(color: AppColors.textButton),
++              .copyWith(color: Colors.white),
+ 
+           yearTextStyle: AppTextStyles.font14BlackCairoRegular
+               .copyWith(color: AppColors.text),
+@@ -165,7 +163,7 @@
+               .copyWith(color: AppColors.text),
+           buttonPadding:
+           EdgeInsets.symmetric(horizontal: isTablet ? 35.sp : 14.sp),
+-          selectedRangeHighlightColor: AppColors.primary,
++          selectedRangeHighlightColor: ColorPick.primary.withValues(alpha: 0.25),
+           calendarType: calendarType, //CalendarDatePicker2Type.range,
+         ),
+         dialogSize: isTablet ? Size(460.sp, 320.sp) : Size(320.w, 320.h),
+diff -ruN a/lib/features/about_us/presentation/ui/pages/about_us_company_edit.dart b/lib/features/about_us/presentation/ui/pages/about_us_company_edit.dart
+--- a/lib/features/about_us/presentation/ui/pages/about_us_company_edit.dart	2026-09-27 11:48:59.004000887 +0000
++++ b/lib/features/about_us/presentation/ui/pages/about_us_company_edit.dart	2026-09-27 12:07:35.435000013 +0000
+@@ -78,8 +78,16 @@
+     super.dispose();
+   }
+ 
+-  void _onDiscard() {
+-    context.pop();
++  void _onDiscard() => _leave();
++
++  /// After a page reload this page can be the only one in the stack (it has
++  /// its own URL now — BUG-05), so fall back to its parent route.
++  void _leave() {
++    if (context.canPop()) {
++      context.pop();
++    } else {
++      context.go('/admin/about-company');
++    }
+   }
+ 
+   Future<void> _onSave() async {
+@@ -100,7 +108,13 @@
+ 
+       if (mounted) {
+         setState(() => _isSaving = false);
+-        context.pop();
++        // BUG-46: confirm the save.
++        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
++          content: Text('About Company saved'),
++          backgroundColor: Color(0xFF008037),
++          duration: Duration(seconds: 2),
++        ));
++        _leave();
+       }
+     } catch (e) {
+       if (mounted) {
+diff -ruN a/lib/features/about_us/presentation/ui/pages/about_us_company_main.dart b/lib/features/about_us/presentation/ui/pages/about_us_company_main.dart
+--- a/lib/features/about_us/presentation/ui/pages/about_us_company_main.dart	2026-09-27 11:48:59.004000887 +0000
++++ b/lib/features/about_us/presentation/ui/pages/about_us_company_main.dart	2026-09-27 12:07:35.437000013 +0000
+@@ -11,6 +11,7 @@
+ import '../../../../../core/custom_svg.dart';
+ import '../../../../../core/main_widgets/admin_sticky_body.dart';
+ import '../../../../../core/main_widgets/app_admin_navbar.dart';
++import '../../../../../core/main_widgets/admin_back_link.dart';
+ import '../../../../../core/theme/appcolors.dart';
+ import '../../../../../core/theme/new_theme.dart';
+ import '../../../../careers/presentation/ui/pages/careers_main.dart';
+@@ -77,7 +78,8 @@
+           body: AdminStickyBody(
+   children: [
+                   AppAdminNavbar(
+-                    activeLabel:    'Home',
++                    // BUG-26: About Company belongs to the Job Listing section.
++                    activeLabel:    'Job Listing',
+                     homePage:       CareersMainPageDashboard(),
+                     // Web Page tab must open the Web Page section — pointing
+                     // it at this page made the tab look dead.
+@@ -93,6 +95,11 @@
+                       child: Column(
+                         crossAxisAlignment: CrossAxisAlignment.start,
+                         children: [
++                          // BUG-26: breadcrumb back to Job Listing.
++                          const AdminBackLink(
++                            parentLabel: 'Job Listing',
++                            parentRoute: '/jobs',
++                          ),
+                           // ── Title Row ──────────────────────────────
+                           Row(
+                             children: [
+diff -ruN a/lib/features/careers/data/models/careers_model.dart b/lib/features/careers/data/models/careers_model.dart
+--- a/lib/features/careers/data/models/careers_model.dart	2026-09-27 11:48:58.997000887 +0000
++++ b/lib/features/careers/data/models/careers_model.dart	2026-09-27 12:07:35.312000013 +0000
+@@ -285,10 +285,21 @@
+     required List<JobPostModel> jobs,
+     required List<ApplicationModel> apps,
+   }) {
++    // BUG-22 / BUG-31: every widget below is computed from this ONE list.
++    // Removed jobs are deleted from the admin's point of view, so they are
++    // left out everywhere (they used to keep deleted departments and junk
++    // titles alive on the charts).
++    jobs = jobs.where((j) => j.status != JobStatus.removed).toList();
++
+     // ── Stat Cards ────────────────────────────────────────────────────────────
+     final totalJobs     = jobs.length;
+-    final officeJobs    = jobs.where((j) => j.workType == WorkType.onSite).length;
+-    final remoteJobs    = jobs.where((j) => j.workType == WorkType.remote).length;
++    // "Office" = any job that involves the office: On Site AND Hybrid (Hybrid
++    // was counted nowhere, so Office + Remote never equalled All Jobs).
++    final officeJobs    = jobs.where((j) =>
++        !j.isUnset('workType') &&
++        (j.workType == WorkType.onSite || j.workType == WorkType.hybrid)).length;
++    final remoteJobs    = jobs.where((j) =>
++        !j.isUnset('workType') && j.workType == WorkType.remote).length;
+     final activeJobs    = jobs.where((j) => j.status == JobStatus.active).length;
+     final endedJobs     = jobs.where((j) => j.status == JobStatus.ended).length;
+     final draftedJobs   = jobs.where((j) => j.status == JobStatus.drafted).length;
+@@ -297,7 +308,8 @@
+       DashboardStatCard(label: 'All Jobs',          value: totalJobs,   iconAsset: 'assets/images/job_list/all_job.svg'),
+       DashboardStatCard(label: 'Office Jobs',       value: officeJobs,  iconAsset: 'assets/images/job_list/office_job.svg'),
+       DashboardStatCard(label: 'Remote Jobs',       value: remoteJobs,  iconAsset: 'assets/images/job_list/remote_job.svg'),
+-      DashboardStatCard(label: 'Active Job',        value: activeJobs,  iconAsset: 'assets/images/job_list/active_job.svg'),
++      // BUG-41: plural, like "All Jobs" / "Office Jobs".
++      DashboardStatCard(label: 'Active Jobs',       value: activeJobs,  iconAsset: 'assets/images/job_list/active_job.svg'),
+       DashboardStatCard(label: 'Recruitment End', value: endedJobs,   iconAsset: 'assets/images/job_list/requiement_end.svg'),
+       DashboardStatCard(label: 'Drafted',           value: draftedJobs, iconAsset: 'assets/images/job_list/dradt.svg'),
+     ];
+@@ -311,30 +323,19 @@
+       }
+     }
+ 
+-    // ── Job Posting Status — group jobs by status, bucketed by department ─────
+-    // X-axis: departments. Each bar group has 4 series (active/closed/scheduled/draft).
+-    final deptLabels = jobs
+-        .map((j) => j.department.isNotEmpty ? j.department : 'Other')
+-        .toSet()
+-        .toList();
+-    if (deptLabels.isEmpty) deptLabels.add('No Data');
+-    final qActive    = List<double>.filled(deptLabels.length, 0);
+-    final qClosed    = List<double>.filled(deptLabels.length, 0);
+-    final qScheduled = List<double>.filled(deptLabels.length, 0);
+-    final qDraft     = List<double>.filled(deptLabels.length, 0);
+-
+-    for (final job in jobs) {
+-      final dept = job.department.isNotEmpty ? job.department : 'Other';
+-      final i = deptLabels.indexOf(dept);
+-      switch (job.status) {
+-        case JobStatus.active:    qActive[i]++;    break;
+-        case JobStatus.ended:
+-        case JobStatus.removed:
+-        case JobStatus.inactive:  qClosed[i]++;    break;
+-        case JobStatus.scheduled: qScheduled[i]++; break;
+-        case JobStatus.drafted:   qDraft[i]++;     break;
+-      }
+-    }
++    // ── Job Posting Status — BUG-21: grouped by STATUS (the chart's title and
++    // legend), not by department. One bar per status, coloured per legend.
++    // "Closed" = Ended + Inactive.
++    final deptLabels = <String>['Active', 'Closed', 'Scheduled', 'Draft'];
++    final nActive    = jobs.where((j) => j.status == JobStatus.active).length.toDouble();
++    final nClosed    = jobs.where((j) =>
++        j.status == JobStatus.ended || j.status == JobStatus.inactive).length.toDouble();
++    final nScheduled = jobs.where((j) => j.status == JobStatus.scheduled).length.toDouble();
++    final nDraft     = jobs.where((j) => j.status == JobStatus.drafted).length.toDouble();
++    final qActive    = <double>[nActive, 0, 0, 0];
++    final qClosed    = <double>[0, nClosed, 0, 0];
++    final qScheduled = <double>[0, 0, nScheduled, 0];
++    final qDraft     = <double>[0, 0, 0, nDraft];
+ 
+     // ── Hiring Stage — funnel from application statuses ───────────────────────
+     // An application carries only its CURRENT status, so a hired candidate is
+@@ -371,15 +372,16 @@
+     ];
+ 
+     // ── Job Status — pie chart ────────────────────────────────────────────────
++    // Same buckets as Job Posting Status, so every job is in exactly one.
+     final statusCounts = <String, double>{
+-      'Active':    jobs.where((j) => j.status == JobStatus.active).length.toDouble(),
+-      'Scheduled': jobs.where((j) => j.status == JobStatus.scheduled).length.toDouble(),
+-      'Closed':    jobs.where((j) => j.status == JobStatus.ended || j.status == JobStatus.inactive || j.status == JobStatus.removed).length.toDouble(),
+-      'Draft':     jobs.where((j) => j.status == JobStatus.drafted).length.toDouble(),
++      'Active':    nActive,
++      'Scheduled': nScheduled,
++      'Closed':    nClosed,
++      'Draft':     nDraft,
+     }..removeWhere((_, v) => v == 0);
+ 
+-    // Total unique departments
+-    final uniqueDepts = jobs.map((j) => j.department).where((d) => d.isNotEmpty).toSet().length;
++    // BUG-38: the centre of the donut counts JOBS (it said "Total Department").
++    final totalForStatus = jobs.length;
+ 
+     // ── Candidate Quality ─────────────────────────────────────────────────────
+     final totalApps      = apps.length;
+@@ -391,9 +393,14 @@
+     final unqualifiedPct = totalApps > 0 ? (unqualifiedCount / totalApps * 100) : 0.0;
+ 
+     // ── Jobs Performance — top 4 job titles by application count ─────────────
++    // BUG-19: never show a raw Firestore id as a job name. Resolve the title
++    // from the job itself, falling back to "Untitled job".
++    final titleById = {for (final j in jobs) j.id: j.displayTitle};
+     final jobAppMap = <String, List<ApplicationModel>>{};
+     for (final app in apps) {
+-      final title = app.jobTitle.isNotEmpty ? app.jobTitle : app.jobId;
++      final title = app.jobTitle.trim().isNotEmpty
++          ? app.jobTitle.trim()
++          : (titleById[app.jobId] ?? 'Untitled job');
+       jobAppMap.putIfAbsent(title, () => []).add(app);
+     }
+ 
+@@ -451,17 +458,22 @@
+       ScoreDistributionItem(label: 'Excellent', value: excellent, colorHex: '#2E7D32'),
+     ];
+ 
+-    // ── Employment Types — from applicant experienceLevel ─────────────────────
+-    final internCount     = apps.where((a) => a.experienceLevel.toLowerCase() == 'intern').length.toDouble();
+-    final juniorCount     = apps.where((a) => a.experienceLevel.toLowerCase() == 'junior').length.toDouble();
+-    final seniorCount     = apps.where((a) => a.experienceLevel.toLowerCase() == 'senior').length.toDouble();
+-    final leaderCount     = apps.where((a) => a.experienceLevel.toLowerCase() == 'leadership').length.toDouble();
++    // ── Employment Types — BUG-31: from the JOBS' employment type (the chart
++    // said "No Data" although the jobs were Full Time / Part Time; it was
++    // reading the applicants' experience level instead).
++    final fullTimeCount = jobs.where((j) =>
++        !j.isUnset('employmentType') &&
++        j.employmentType == EmploymentType.fullTime).length.toDouble();
++    final partTimeCount = jobs.where((j) =>
++        !j.isUnset('employmentType') &&
++        j.employmentType == EmploymentType.partTime).length.toDouble();
++    final unspecifiedEmp =
++        jobs.where((j) => j.isUnset('employmentType')).length.toDouble();
+ 
+     final employmentTypes = <String, double>{
+-      if (internCount  > 0) 'Intern':     internCount,
+-      if (juniorCount  > 0) 'Junior':     juniorCount,
+-      if (seniorCount  > 0) 'Senior':     seniorCount,
+-      if (leaderCount  > 0) 'Leadership': leaderCount,
++      if (fullTimeCount  > 0) 'Full Time':   fullTimeCount,
++      if (partTimeCount  > 0) 'Part Time':   partTimeCount,
++      if (unspecifiedEmp > 0) 'Unspecified': unspecifiedEmp,
+     };
+ 
+     // ── Candidate Gender — no gender field in model; show 50/50 placeholder ──
+@@ -479,8 +491,9 @@
+       jobPostingScheduled: qScheduled,
+       jobPostingDraft:     qDraft,
+       hiringStages:        hiringStages,
+-      jobStatus:           statusCounts.isEmpty ? {'No Data': 1} : statusCounts,
+-      jobStatusTotal:      uniqueDepts,
++      // BUG-38: no fake "No Data = 1" slice — the chart shows an empty state.
++      jobStatus:           statusCounts,
++      jobStatusTotal:      totalForStatus,
+       qualifiedPercent:    qualifiedPct,
+       unqualifiedPercent:  unqualifiedPct,
+       totalApplications:   totalApps,
+@@ -492,7 +505,7 @@
+       jobOfferPending:  offerPending,
+       jobOfferRejected: offerRejected,
+       scoreDistribution: scoreDistribution,
+-      employmentTypes:   employmentTypes.isEmpty ? {'No Data': 1} : employmentTypes,
++      employmentTypes:   employmentTypes, // empty → chart shows "No data yet"
+       malePercent:   malePercent,
+       femalePercent: femalePercent,
+     );
+diff -ruN a/lib/features/careers/presentation/controller/careers_cubit.dart b/lib/features/careers/presentation/controller/careers_cubit.dart
+--- a/lib/features/careers/presentation/controller/careers_cubit.dart	2026-09-27 11:48:59.001000887 +0000
++++ b/lib/features/careers/presentation/controller/careers_cubit.dart	2026-09-27 12:07:35.374000013 +0000
+@@ -85,6 +85,9 @@
+   List<String> get availableDepartments {
+     final seen = <String, String>{}; // lowercase → original casing
+     for (final j in _rawJobs) {
++      // Removed jobs are left out of the dashboard (BUG-31) — and so are
++      // departments that only they still reference.
++      if (j.status == JobStatus.removed) continue;
+       final d = j.department.trim();
+       if (d.isNotEmpty) seen.putIfAbsent(d.toLowerCase(), () => d);
+     }
+@@ -172,10 +175,22 @@
+     emit(CareersCmsLoading());
+     try {
+       // Fetch CMS content (overview, statistics) + real-time data in parallel
+-      final results = await Future.wait([
+-        _repo.fetch(),
+-        _jobRepo.fetchAllJobs(),
+-        _appRepo.fetchAllApplications(),
++      // BUG-22 / BUG-31: each source is loaded independently. Before, ONE
++      // failing read (e.g. applications) threw the whole dashboard into the
++      // empty fallback, so some loads showed all-zero KPIs and others didn't.
++      Future<T> safe<T>(Future<T> f, T fallback) async {
++        try {
++          return await f;
++        } catch (_) {
++          return fallback;
++        }
++      }
++
++      final results = await Future.wait<Object>([
++        safe<CareersCmsModel>(_repo.fetch(), CareersCmsModel.empty()),
++        safe<List<JobPostModel>>(_jobRepo.fetchAllJobs(), const <JobPostModel>[]),
++        safe<List<ApplicationModel>>(
++            _appRepo.fetchAllApplications(), const <ApplicationModel>[]),
+       ]);
+ 
+       final cmsModel        = results[0] as CareersCmsModel;
+diff -ruN a/lib/features/careers/presentation/ui/pages/careers_main.dart b/lib/features/careers/presentation/ui/pages/careers_main.dart
+--- a/lib/features/careers/presentation/ui/pages/careers_main.dart	2026-09-27 11:48:59.000000887 +0000
++++ b/lib/features/careers/presentation/ui/pages/careers_main.dart	2026-09-27 12:07:35.361000013 +0000
+@@ -49,8 +49,11 @@
+   @override
+   void initState() {
+     super.initState();
++    // BUG-31: the dashboard was computed ONCE at app start, so jobs added or
++    // edited afterwards never showed up until a full page reload. Recompute
++    // it every time Home is opened.
+     final cubit = context.read<CareersCmsCubit>();
+-    if (cubit.state is CareersCmsInitial) {
++    if (cubit.state is! CareersCmsLoading) {
+       cubit.loadRealData();
+     }
+   }
+diff -ruN a/lib/features/careers/presentation/ui/widgets/careers_main/careers_charts.dart b/lib/features/careers/presentation/ui/widgets/careers_main/careers_charts.dart
+--- a/lib/features/careers/presentation/ui/widgets/careers_main/careers_charts.dart	2026-09-27 11:48:58.998000887 +0000
++++ b/lib/features/careers/presentation/ui/widgets/careers_main/careers_charts.dart	2026-09-27 12:07:35.338000013 +0000
+@@ -92,13 +92,22 @@
+       _LegendItem('Scheduled', ColorPick.scheduled),
+       _LegendItem('Draft', ColorPick.draftColor),
+     ];
+-    final allValues = [
+-      ...dash.jobPostingActive,
+-      ...dash.jobPostingClosed,
+-      ...dash.jobPostingScheduled,
+-      ...dash.jobPostingDraft,
++    // BUG-21: one bar per STATUS, coloured like the legend.
++    final barColors = [
++      ColorPick.activeColor,
++      ColorPick.red,
++      ColorPick.scheduled,
++      ColorPick.draftColor,
+     ];
+-    final maxY = _niceMax(allValues);
++    final totals = List<double>.generate(
++      dash.jobPostingLabels.length,
++      (i) =>
++          dash.jobPostingActive[i] +
++          dash.jobPostingClosed[i] +
++          dash.jobPostingScheduled[i] +
++          dash.jobPostingDraft[i],
++    );
++    final maxY = _niceMax(totals);
+ 
+     return _chartCard(
+       title: 'Job Posting Status',
+@@ -112,12 +121,13 @@
+             barGroups: List.generate(dash.jobPostingLabels.length, (i) {
+               return BarChartGroupData(
+                 x: i,
+-                barsSpace: 3.sp,
+                 barRods: [
+-                  BarChartRodData(toY: dash.jobPostingActive[i], width: 10.sp, color: ColorPick.activeColor, borderRadius: BorderRadius.circular(2.r)),
+-                  BarChartRodData(toY: dash.jobPostingClosed[i], width: 10.sp, color: ColorPick.red, borderRadius: BorderRadius.circular(2.r)),
+-                  BarChartRodData(toY: dash.jobPostingScheduled[i], width: 10.sp, color: ColorPick.scheduled, borderRadius: BorderRadius.circular(2.r)),
+-                  BarChartRodData(toY: dash.jobPostingDraft[i], width: 10.sp, color: ColorPick.draftColor, borderRadius: BorderRadius.circular(2.r)),
++                  BarChartRodData(
++                    toY: totals[i],
++                    width: 22.sp,
++                    color: barColors[i % barColors.length],
++                    borderRadius: BorderRadius.circular(3.r),
++                  ),
+                 ],
+               );
+             }),
+@@ -186,7 +196,19 @@
+       'Closed': ColorPick.primary.withOpacity(0.4),
+       'Draft': ColorPick.primary.withOpacity(0.2),
+     };
+-    final total = dash.jobStatusTotal > 0 ? dash.jobStatusTotal : 1;
++    // BUG-38: percentages are part / total of the slices (they could read
++    // "100%, 100%, 200%"), the centre says "Total Jobs", and an empty dataset
++    // shows an empty state instead of a fake "No Data — 1" slice.
++    final sliceTotal =
++        dash.jobStatus.values.fold<double>(0, (s, v) => s + v);
++    if (sliceTotal <= 0) {
++      return _chartCard(
++        title: 'Job Status',
++        height: 280,
++        child: Expanded(child: _emptyState('No jobs yet')),
++      );
++    }
++    final total = sliceTotal;
+ 
+     return _chartCard(
+       title: 'Job Status',
+@@ -237,10 +259,12 @@
+                           radius: 28.sp,
+                           title: '$percent%',
+                           showTitle: true,
++                          // Outside the ring so it is never squeezed onto the
++                          // edge (BUG-38).
+                           titleStyle: StyleText.fontSize10Weight500.copyWith(
+                               fontWeight: FontWeight.w600,
+-                              color: ColorPick.white),
+-                          titlePositionPercentageOffset: 0.55,
++                              color: Colors.black87),
++                          titlePositionPercentageOffset: 1.55,
+                         );
+                       }).toList(),
+                     ),
+@@ -248,7 +272,7 @@
+                   Column(
+                     mainAxisSize: MainAxisSize.min,
+                     children: [
+-                      Text('Total\nDepartment', textAlign: TextAlign.center,
++                      Text('Total\nJobs', textAlign: TextAlign.center,
+                           style: StyleText.fontSize10Weight400.copyWith(fontSize: 9.sp, color: Colors.black87)),
+                       Text(dash.jobStatusTotal.toString(),
+                           style: StyleText.fontSize18Weight500.copyWith(
+@@ -367,12 +391,38 @@
+             final rowCount = rowValues.length;
+             final cellHeight = (availableHeight - (cellSpacing * (rowCount - 1))) / rowCount;
+ 
++            // BUG-39: each row is labelled (Applications / Interviews / Hires)
++            // instead of relying on three near-identical shades of red.
++            const rowLabels = ['Applications', 'Interviews', 'Hires'];
++            final double labelColW = 70.w;
++            final double rowH = cellHeight.clamp(24.0, 60.0);
+             return Column(
+               children: [
+                 Expanded(
+                   child: Row(
+                     crossAxisAlignment: CrossAxisAlignment.end,
+-                    children: List.generate(roleCount, (colIndex) {
++                    children: [
++                      SizedBox(
++                        width: labelColW,
++                        child: Column(
++                          mainAxisAlignment: MainAxisAlignment.end,
++                          crossAxisAlignment: CrossAxisAlignment.start,
++                          children: List.generate(rowCount, (r) => Padding(
++                            padding: EdgeInsets.only(
++                                bottom: r < rowCount - 1 ? cellSpacing : 0),
++                            child: SizedBox(
++                              height: rowH,
++                              child: Align(
++                                alignment: Alignment.centerLeft,
++                                child: Text(rowLabels[r],
++                                    style: StyleText.fontSize10Weight400
++                                        .copyWith(fontSize: 9.sp, color: Colors.grey.shade800)),
++                              ),
++                            ),
++                          )),
++                        ),
++                      ),
++                      ...List.generate(roleCount, (colIndex) {
+                       return Expanded(
+                         child: Padding(
+                           padding: EdgeInsets.symmetric(horizontal: 3.w),
+@@ -384,31 +434,39 @@
+                                   : 0;
+                               return Padding(
+                                 padding: EdgeInsets.only(bottom: rowIndex < rowCount - 1 ? cellSpacing : 0),
+-                                child: Container(
++                                child: Tooltip(
++                                  message: '${rowLabels[rowIndex]}: $value',
++                                  child: Container(
+                                   width: double.infinity,
+-                                  height: cellHeight.clamp(24.0, 60.0),
++                                  height: rowH,
+                                   decoration: BoxDecoration(color: rowColors[rowIndex], borderRadius: BorderRadius.circular(4.r)),
+                                   child: Center(child: Text(value.toString(),
+                                       style: StyleText.fontSize12Weight600
+                                           .copyWith(color: ColorPick.white))),
+                                 ),
++                                ),
+                               );
+                             }),
+                           ),
+                         ),
+                       );
+                     }),
++                    ],
+                   ),
+                 ),
+                 SizedBox(height: 8.sp),
+                 Row(
+-                  children: List.generate(roleCount, (i) {
++                  children: [
++                    SizedBox(width: labelColW),
++                    ...List.generate(roleCount, (i) {
+                     return Expanded(
+-                      child: Text(FormatHelper.capitalize(dash.performanceRoles[i]), textAlign: TextAlign.center,
++                      // Job titles as typed (no auto Title-Case).
++                      child: Text(dash.performanceRoles[i], textAlign: TextAlign.center,
+                           maxLines: 2, overflow: TextOverflow.ellipsis,
+                           style: StyleText.fontSize10Weight400.copyWith(fontSize: 9.sp, color: Colors.grey.shade800)),
+                     );
+                   }),
++                  ],
+                 ),
+               ],
+             );
+@@ -501,6 +559,13 @@
+   Widget _buildEmploymentTypesChart(CareersDashboardData dash) {
+     final entries = dash.employmentTypes.entries.toList();
+     final total = entries.fold<double>(0, (sum, e) => sum + e.value);
++    if (total <= 0) {
++      return _chartCard(
++        title: 'Employment Types',
++        height: 280,
++        child: Expanded(child: _emptyState('No jobs yet')),
++      );
++    }
+     final typeColors = [
+       ColorPick.primary,
+       ColorPick.primary.withValues(alpha: 0.75),
+@@ -624,11 +689,20 @@
+     );
+   }
+ 
++  /// Shared empty state for charts with no data.
++  Widget _emptyState(String text) => Center(
++        child: Text(text,
++            style: StyleText.fontSize12Weight400
++                .copyWith(color: AppColors.secondaryText)),
++      );
++
+   double _niceMax(List<double> values) {
+     if (values.isEmpty) return 10;
+     final dataMax = values.reduce((a, b) => a > b ? a : b);
+-    if (dataMax == 0) return 10;
++    // BUG-21: auto-scale small values (every bar = 1 used to get a 0–10 axis).
++    if (dataMax <= 0) return 1;
+     final intMax = dataMax.ceil();
++    if (intMax <= 5) return intMax.toDouble();
+     if (intMax <= 10) return 10;
+     if (intMax <= 20) return 20;
+     if (intMax <= 50) return ((intMax / 10).ceil() * 10).toDouble();
+diff -ruN a/lib/features/departments/presentation/ui/pages/department_create.dart b/lib/features/departments/presentation/ui/pages/department_create.dart
+--- a/lib/features/departments/presentation/ui/pages/department_create.dart	2026-09-27 11:48:58.996000887 +0000
++++ b/lib/features/departments/presentation/ui/pages/department_create.dart	2026-09-27 12:07:35.298000013 +0000
+@@ -242,7 +242,7 @@
+             AdminStickyBody(
+   children: [
+                     AppAdminNavbar(
+-                      activeLabel:    'Home',
++                      activeLabel:    'Job Listing', // BUG-46: was 'Home'
+                       homePage:       CareersMainPageDashboard(),
+                       webPage:        MainMainPage(),
+                       jobListingPage: JobListingMainPage(),
+@@ -421,7 +421,7 @@
+                       textDirection: TextDirection.ltr,
+                       textAlign: TextAlign.start,
+                       showCharCount: false,
+-                      maxLength: 200,
++                      maxLength: 60, // BUG-46: cap name length
+                       minLength: 0,
+                       submitted: _submitted,
+                       primaryColor: ColorPick.primary,
+@@ -460,7 +460,7 @@
+                         textDirection: TextDirection.rtl,
+                         textAlign: TextAlign.start,
+                         showCharCount: false,
+-                        maxLength: 200,
++                        maxLength: 60, // BUG-46: cap name length
+                         minLength: 0,
+                         submitted: _submitted,
+                         primaryColor: ColorPick.primary,
+diff -ruN a/lib/features/departments/presentation/ui/pages/department_edit.dart b/lib/features/departments/presentation/ui/pages/department_edit.dart
+--- a/lib/features/departments/presentation/ui/pages/department_edit.dart	2026-09-27 11:48:58.996000887 +0000
++++ b/lib/features/departments/presentation/ui/pages/department_edit.dart	2026-09-27 12:07:35.297000013 +0000
+@@ -19,6 +19,8 @@
+ import '../../../../../core/theme/new_theme.dart';
+ import '../../../../careers/presentation/ui/pages/careers_main.dart';
+ import '../../../../job/presentation/ui/pages/job_listing_main.dart';
++import '../../../../job/data/models/job_listing_model.dart';
++import '../../../../job/presentation/controller/job_listing_cubit.dart';
+ import '../../../../main/presentation/ui/pages/main_main.dart';
+ import '../../../data/models/department_model.dart';
+ import '../../controller/department_cubit.dart';
+@@ -55,6 +57,60 @@
+ 
+   bool _submitted = false;
+   bool _isSaving  = false;
++  String? _nameEnError;
++  String? _nameArError;
++
++  /// BUG-46: a sane cap (168-character names were accepted).
++  static const int _kMaxNameLength = 60;
++
++  /// Jobs (not removed) that still point at this department.
++  List<JobPostModel> _jobsInDepartment() {
++    try {
++      return context
++          .read<JobListingCubit>()
++          .allJobs
++          .where((j) =>
++              j.status != JobStatus.removed &&
++              widget.department.matchesJob(j.department))
++          .toList();
++    } catch (_) {
++      return const [];
++    }
++  }
++
++  /// BUG-46: same rules as the Create form, with visible error text.
++  bool _validate() {
++    final cubit  = context.read<DepartmentCubit>();
++    final nameEn = _nameEnController.text.trim();
++    final nameAr = _nameArController.text.trim();
++    String? enError;
++    String? arError;
++    if (nameEn.isEmpty) {
++      enError = 'This field is required.';
++    } else if (cubit.nameExists(nameEn, excludeId: widget.department.id)) {
++      enError = 'A department with this name already exists.';
++    }
++    if (nameAr.isEmpty) {
++      arError = 'هذا الحقل مطلوب.';
++    } else if (cubit.nameExists(nameAr, excludeId: widget.department.id)) {
++      arError = 'يوجد قسم بهذا الاسم بالفعل.';
++    }
++    setState(() {
++      _nameEnError = enError;
++      _nameArError = arError;
++    });
++    return enError == null && arError == null;
++  }
++
++  Widget _errorText(String? message) => message == null
++      ? const SizedBox.shrink()
++      : Padding(
++          padding: EdgeInsets.only(top: 4.h),
++          child: Text(
++            message,
++            style: StyleText.fontSize11Weight400.copyWith(color: ColorPick.red),
++          ),
++        );
+ 
+   @override
+   void initState() {
+@@ -78,10 +134,9 @@
+   // ── Save ──────────────────────────────────────────────────────────────────
+   void _onSave() {
+     setState(() => _submitted = true);
+-
+-    if (_nameEnController.text.trim().isEmpty ||
+-        _nameArController.text.trim().isEmpty) return;
+-
++    // BUG-46: Save with an empty name used to do nothing at all.
++    if (!_validate()) return;
++    final String oldEn = widget.department.nameEn;
+     _showConfirmDialog(
+       title:        'EDITING DEPARTMENT DETAILS',
+       message:      'Do you want to save the changes made to this Department information?',
+@@ -91,17 +146,43 @@
+         Navigator.of(context).pop(); // close dialog
+         setState(() => _isSaving = true);
+ 
++        final affected = _jobsInDepartment();
++        final jobCubit = context.read<JobListingCubit>();
++        final newEn = _nameEnController.text.trim();
+         await context.read<DepartmentCubit>().updateDepartment(
+           id:     widget.department.id,
+-          nameEn: _nameEnController.text.trim(),
++          nameEn: newEn,
+           nameAr: _nameArController.text.trim(),
+         );
++        // BUG-30: jobs store the department NAME, so a rename used to orphan
++        // them ("Select Department" in the job form). Move them along.
++        if (newEn != oldEn) {
++          for (final j in affected) {
++            await jobCubit.updateJob(j.copyWith(department: newEn));
++          }
++        }
+       },
+     );
+   }
+ 
+   // ── Remove ────────────────────────────────────────────────────────────────
+   void _onRemove() {
++    // BUG-30: deleting a department that still has jobs broke those jobs
++    // (JS errors, "Select Department", ghost department on the dashboard).
++    final jobs = _jobsInDepartment();
++    if (jobs.isNotEmpty) {
++      _showConfirmDialog(
++        title:        'CAN\'T DELETE DEPARTMENT',
++        message:
++        'This department has ${jobs.length} job${jobs.length == 1 ? '' : 's'}. '
++            'Move ${jobs.length == 1 ? 'it' : 'them'} to another department '
++            '(or remove ${jobs.length == 1 ? 'it' : 'them'}) first.',
++        confirmLabel: 'OK',
++        confirmColor: ColorPick.primary,
++        onConfirm:    () => Navigator.of(context).pop(),
++      );
++      return;
++    }
+     _showConfirmDialog(
+       title:        'DELETE DEPARTMENT',
+       message:
+@@ -220,6 +301,14 @@
+         }
+         if (state is DepartmentUpdated || state is DepartmentDeleted) {
+           setState(() => _isSaving = false);
++          // BUG-46: confirm the save.
++          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
++            content: Text(state is DepartmentDeleted
++                ? 'Department deleted'
++                : 'Department saved'),
++            backgroundColor: const Color(0xFF008037),
++            duration: const Duration(seconds: 2),
++          ));
+           // pop twice: edit page → detail page → main page
+           int count = 0;
+           Navigator.of(context).popUntil((_) => count++ >= 2);
+@@ -403,12 +492,15 @@
+                   label:          'Department Name',
+                   hint:           'Text Here',
+                   controller:     _nameEnController,
++                  onChanged: (_) {
++                    if (_nameEnError != null) setState(() => _nameEnError = null);
++                  },
+                   height:         36,
+                   maxLines:       1,
+                   textDirection:  TextDirection.ltr,
+                   textAlign:      TextAlign.start,
+                   showCharCount:  false,
+-                  maxLength:      200,
++                  maxLength: _kMaxNameLength, // BUG-46
+                   minLength:      0,
+                   submitted:      _submitted,
+                   primaryColor:   ColorPick.primary,
+@@ -427,12 +519,15 @@
+                     label:         'اسم القسم',
+                     hint:          'ادخل النص هنا',
+                     controller:    _nameArController,
++                    onChanged: (_) {
++                      if (_nameArError != null) setState(() => _nameArError = null);
++                    },
+                     height:        36,
+                     maxLines:      1,
+                     textDirection: TextDirection.rtl,
+                     textAlign:     TextAlign.start,
+                     showCharCount: false,
+-                    maxLength:     200,
++                    maxLength: _kMaxNameLength, // BUG-46
+                     minLength:     0,
+                     submitted:     _submitted,
+                     primaryColor:  ColorPick.primary,
+@@ -446,8 +541,22 @@
+               ),
+             ],
+           ),
++          // BUG-46: visible error text, like the Create form.
++          Row(
++            crossAxisAlignment: CrossAxisAlignment.start,
++            children: [
++              Expanded(child: _errorText(_nameEnError)),
++              SizedBox(width: 15.w),
++              Expanded(
++                child: Directionality(
++                  textDirection: TextDirection.rtl,
++                  child: _errorText(_nameArError),
++                ),
++              ),
++            ],
++          ),
+         ],
+       ),
+     );
+   }
+-}
+\ No newline at end of file
++}
+diff -ruN a/lib/features/departments/presentation/ui/pages/department_main.dart b/lib/features/departments/presentation/ui/pages/department_main.dart
+--- a/lib/features/departments/presentation/ui/pages/department_main.dart	2026-09-27 11:48:58.996000887 +0000
++++ b/lib/features/departments/presentation/ui/pages/department_main.dart	2026-09-27 12:07:35.298000013 +0000
+@@ -64,10 +64,24 @@
+   Widget build(BuildContext context) {
+     return BlocListener<DepartmentCubit, DepartmentState>(
+       listener: (context, state) {
+-        if (state is DepartmentCreated ||
+-            state is DepartmentUpdated ||
+-            state is DepartmentDeleted) {
+-          if (Navigator.of(context).canPop()) Navigator.of(context).pop();
++        if (state is DepartmentCreated) {
++          // Close the Create page — only if something is above this page.
++          final route = ModalRoute.of(context);
++          if (route != null && !route.isCurrent &&
++              Navigator.of(context).canPop()) {
++            Navigator.of(context).pop();
++          }
++          // BUG-46: confirm the save.
++          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
++            content: Text('Department created'),
++            backgroundColor: Color(0xFF008037),
++            duration: Duration(seconds: 2),
++          ));
++          context.read<DepartmentCubit>().loadDepartments();
++        }
++        // Updated / Deleted: the Edit page closes itself (it used to be
++        // popped here AND there, which also closed this page).
++        if (state is DepartmentUpdated || state is DepartmentDeleted) {
+           context.read<DepartmentCubit>().loadDepartments();
+         }
+       },
+diff -ruN a/lib/features/home/data/models/home_model.dart b/lib/features/home/data/models/home_model.dart
+--- a/lib/features/home/data/models/home_model.dart	2026-09-27 11:48:58.989000887 +0000
++++ b/lib/features/home/data/models/home_model.dart	2026-09-27 12:07:35.201000013 +0000
+@@ -505,10 +505,12 @@
+       if (value is DateTime) {
+         return value;
+       }
+-      final type = value.runtimeType.toString();
+-      if (type.contains('Timestamp')) {
+-        final dt = value.toDate() as DateTime;
+-        return dt;
++      // BUG-25: runtimeType.toString() is MINIFIED in release web builds, so
++      // checking for the name 'Timestamp' never matched in production and
++      // every date came back null ("Last Updated On —"). Duck-type the
++      // Firestore Timestamp instead.
++      if (value is! String && value is! num) {
++        try { return (value as dynamic).toDate() as DateTime; } catch (_) {}
+       }
+       if (value is String && value.isNotEmpty) {
+         final dt = DateTime.tryParse(value);
+diff -ruN a/lib/features/inquire/presentation/controller/inquiry_cubit.dart b/lib/features/inquire/presentation/controller/inquiry_cubit.dart
+--- a/lib/features/inquire/presentation/controller/inquiry_cubit.dart	2026-09-27 11:48:59.012000887 +0000
++++ b/lib/features/inquire/presentation/controller/inquiry_cubit.dart	2026-09-27 12:07:35.552000013 +0000
+@@ -23,6 +23,18 @@
+   String? _entityTypeFilter;
+   String? _locationFilter;
+   int? _monthFilter;
++  // BUG-36: the "Calendar" filter is a real date range now.
++  DateTime? _fromDate;
++  DateTime? _toDate;
++
++  DateTime? get fromDate => _fromDate;
++  DateTime? get toDate => _toDate;
++
++  void setDateRange(DateTime? from, DateTime? to) {
++    _fromDate = from;
++    _toDate = to;
++    _emitLoaded();
++  }
+ 
+   List<InquiryModel> get allInquiries => _allInquiries;
+ 
+@@ -69,6 +81,8 @@
+     _entityTypeFilter = null;
+     _locationFilter = null;
+     _monthFilter = null;
++    _fromDate = null;
++    _toDate = null;
+     _emitLoaded();
+   }
+ 
+@@ -134,6 +148,8 @@
+       entityTypeFilter: _entityTypeFilter,
+       locationFilter: _locationFilter,
+       monthFilter: _monthFilter,
++      fromDate: _fromDate,
++      toDate: _toDate,
+     ));
+   }
+ }
+\ No newline at end of file
+diff -ruN a/lib/features/inquire/presentation/controller/inquiry_state.dart b/lib/features/inquire/presentation/controller/inquiry_state.dart
+--- a/lib/features/inquire/presentation/controller/inquiry_state.dart	2026-09-27 11:48:59.012000887 +0000
++++ b/lib/features/inquire/presentation/controller/inquiry_state.dart	2026-09-27 12:07:35.552000013 +0000
+@@ -5,6 +5,7 @@
+ // ═══════════════════════════════════════════════════════════════════
+ 
+ 
++import '../../../../core/constant/contact_form_constants.dart';
+ import '../../data/models/inquiry_model.dart';
+ 
+ abstract class InquiryState {}
+@@ -20,6 +21,8 @@
+   final String? entityTypeFilter;
+   final String? locationFilter;
+   final int? monthFilter;
++  final DateTime? fromDate;
++  final DateTime? toDate;
+ 
+   InquiryLoaded({
+     required this.inquiries,
+@@ -28,6 +31,8 @@
+     this.entityTypeFilter,
+     this.locationFilter,
+     this.monthFilter,
++    this.fromDate,
++    this.toDate,
+   });
+ 
+   List<InquiryModel> get filtered {
+@@ -55,6 +60,22 @@
+       ).toList();
+     }
+ 
++    // ── Date range filter (BUG-36) ──
++    if (fromDate != null || toDate != null) {
++      final from = fromDate == null
++          ? null
++          : DateTime(fromDate!.year, fromDate!.month, fromDate!.day);
++      final to = toDate == null
++          ? null
++          : DateTime(toDate!.year, toDate!.month, toDate!.day, 23, 59, 59);
++      list = list.where((i) {
++        final d = i.submissionDate;
++        if (d == null) return false;
++        if (from != null && d.isBefore(from)) return false;
++        if (to != null && d.isAfter(to)) return false;
++        return true;
++      }).toList();
++    }
+     // ── Search filter ──
+     if (searchQuery.isNotEmpty) {
+       final q = searchQuery.toLowerCase();
+@@ -77,11 +98,19 @@
+   int get closedCount  => filtered.where((i) => i.status == InquiryStatus.closed).length;
+ 
+   // ── Unique values for dropdown items ──
++  // BUG-36: fixed lists come from the enums / form constants, not only from
++  // values already present in the data (an empty table meant "No options").
+   List<String> get uniqueStatuses =>
+-      inquiries.map((i) => i.status.label).toSet().toList()..sort();
+-
+-  List<String> get uniqueEntityTypes =>
+-      inquiries.map((i) => i.entityType).where((e) => e.isNotEmpty).toSet().toList()..sort();
++      InquiryStatus.values.map((s) => s.label).toList();
++  List<String> get uniqueEntityTypes {
++    final list = List<String>.from(ContactFormConstants.entityTypesEn);
++    for (final i in inquiries) {
++      if (i.entityType.isNotEmpty && !list.contains(i.entityType)) {
++        list.add(i.entityType);
++      }
++    }
++    return list;
++  }
+ 
+   List<String> get uniqueLocations =>
+       inquiries.map((i) => i.location).where((e) => e.isNotEmpty).toSet().toList()..sort();
+diff -ruN a/lib/features/inquire/presentation/ui/pages/inquiry_details.dart b/lib/features/inquire/presentation/ui/pages/inquiry_details.dart
+--- a/lib/features/inquire/presentation/ui/pages/inquiry_details.dart	2026-09-27 11:48:59.012000887 +0000
++++ b/lib/features/inquire/presentation/ui/pages/inquiry_details.dart	2026-09-27 12:07:35.549000013 +0000
+@@ -224,7 +224,7 @@
+                 AdminStickyBody(
+   children: [
+                       AppAdminNavbar(
+-                        activeLabel: 'Inquires',
++                        activeLabel: 'Inquiries',
+                         homePage: CareersMainPageDashboard(),
+                         webPage: MainMainPage(),
+                         jobListingPage: JobListingMainPage(),
+diff -ruN a/lib/features/inquire/presentation/ui/pages/inquiry_main.dart b/lib/features/inquire/presentation/ui/pages/inquiry_main.dart
+--- a/lib/features/inquire/presentation/ui/pages/inquiry_main.dart	2026-09-27 11:48:59.012000887 +0000
++++ b/lib/features/inquire/presentation/ui/pages/inquiry_main.dart	2026-09-27 12:07:35.550000013 +0000
+@@ -20,6 +20,7 @@
+ import '../../../../../core/constant/color.dart';
+ import '../../../../../core/main_widgets/admin_sticky_body.dart';
+ import '../../../../../core/main_widgets/app_admin_navbar.dart';
++import '../../../../../core/main_widgets/csv_export_dialog.dart';
+ import '../../../../../core/theme/appcolors.dart';
+ import '../../../../../core/theme/new_theme.dart';
+ import '../../../../careers/presentation/ui/pages/careers_main.dart';
+@@ -92,98 +93,38 @@
+     return '${months[date.month - 1]} ${date.day}, ${date.year}';
+   }
+ 
++  // BUG-32: shared export dialog — always downloads (header-only when empty),
++  // validates the file name inside the dialog, and confirms the download.
+   void _showExportDialog(List<InquiryModel> inquiries) {
+-    final fileNameCtrl = TextEditingController();
+-    bool isExporting = false;
+-
+-    showDialog(
+-      context: context,
+-      barrierDismissible: true,
+-      builder: (ctx) => StatefulBuilder(
+-        builder: (ctx, setDialogState) {
+-          return Dialog(
+-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
+-            child: Container(
+-              width: 400.w,
+-              padding: EdgeInsets.all(20.sp),
+-              child: Column(
+-                mainAxisSize: MainAxisSize.min,
+-                crossAxisAlignment: CrossAxisAlignment.start,
+-                children: [
+-                  Row(
+-                    children: [
+-                      Container(
+-                        width: 30.sp,
+-                        height: 30.sp,
+-                        decoration: const BoxDecoration(shape: BoxShape.circle, color: ColorPick.primary),
+-                        child: Icon(Icons.file_download_outlined, size: 16.sp, color: Colors.white),
+-                      ),
+-                      SizedBox(width: 8.sp),
+-                      Text('Export', style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600, color: AppColors.text)),
+-                    ],
+-                  ),
+-                  SizedBox(height: 20.sp),
+-                  CustomValidatedTextFieldMaster(
+-                    label: 'File Name',
+-                    hint: 'Enter file name',
+-                    controller: fileNameCtrl,
+-                    height: 36,
+-                    submitted: false,
+-                    primaryColor: ColorPick.primary,
+-                    fillColor: const Color(0xFFF1F2ED),
+-                  ),
+-                  SizedBox(height: 20.sp),
+-                  Row(
+-                    children: [
+-                      Expanded(
+-                        child: GestureDetector(
+-                          onTap: isExporting ? null : () => Navigator.of(ctx).pop(),
+-                          child: Container(
+-                            height: 38.h,
+-                            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(8.r)),
+-                            child: Center(child: Text('Discard', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w500, color: AppColors.text))),
+-                          ),
+-                        ),
+-                      ),
+-                      SizedBox(width: 15.sp),
+-                      Expanded(
+-                        child: GestureDetector(
+-                          onTap: isExporting
+-                              ? null
+-                              : () {
+-                            final fileName = fileNameCtrl.text.trim();
+-                            if (fileName.isEmpty) {
+-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a file name'), backgroundColor: Colors.orange));
+-                              return;
+-                            }
+-                            if (inquiries.isEmpty) {
+-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No inquiries to export'), backgroundColor: Colors.orange));
+-                              return;
+-                            }
+-                            setDialogState(() => isExporting = true);
+-                            _performExport(inquiries, fileName);
+-                            Navigator.of(ctx).pop();
+-                            _showExportSuccessDialog(fileName);
+-                          },
+-                          child: Container(
+-                            height: 38.h,
+-                            decoration: BoxDecoration(color: isExporting ? Colors.grey : ColorPick.primary, borderRadius: BorderRadius.circular(8.r)),
+-                            child: Center(
+-                              child: isExporting
+-                                  ? SizedBox(width: 16.sp, height: 16.sp, child: const CircleProgress())
+-                                  : Text('Download', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w500, color: Colors.white)),
+-                            ),
+-                          ),
+-                        ),
+-                      ),
+-                    ],
+-                  ),
+-                ],
+-              ),
+-            ),
+-          );
+-        },
+-      ),
++    showCsvExportDialog(
++      context,
++      defaultFileName: 'inquiries',
++      itemLabel: 'inquiries',
++      header: const ['No', 'Submission Date', 'Preferred Language', 'First Name',
++        'Last Name', 'Email', 'Country Code', 'Phone Number', 'Location',
++        'Entity Name', 'Entity Type', 'Entity Size', 'Subject', 'Message',
++        'Note', 'Status'],
++      rows: [
++        for (int i = 0; i < inquiries.length; i++)
++          [
++            '${i + 1}',
++            _formatDateForExport(inquiries[i].submissionDate),
++            inquiries[i].preferredLanguage,
++            inquiries[i].firstName,
++            inquiries[i].lastName,
++            inquiries[i].email,
++            inquiries[i].countryCode,
++            inquiries[i].phone,
++            inquiries[i].location,
++            inquiries[i].entityName,
++            inquiries[i].entityType,
++            inquiries[i].entitySize,
++            inquiries[i].subject,
++            inquiries[i].message,
++            inquiries[i].note,
++            inquiries[i].status.label,
++          ],
++      ],
+     );
+   }
+ 
+@@ -300,16 +241,17 @@
+           final statusItems     = uniqueStatuses.map((s)    => {'key': s, 'value': s}).toList();
+           final entityTypeItems = uniqueEntityTypes.map((s) => {'key': s, 'value': s}).toList();
+           final locationItems   = uniqueLocations.map((s)   => {'key': s, 'value': s}).toList();
+-          final monthItems      = uniqueMonths.map((m)      => {'key': m.toString(), 'value': m >= 1 && m <= 12 ? _kMonthNames[m - 1] : m.toString()}).toList();
+ 
+-          final bool hasActiveFilters = activeStatusFilter != null || activeEntityTypeFilter != null || activeLocationFilter != null || activeMonthFilter != null;
++          final DateTime? fromDate = cubit.fromDate;
++          final DateTime? toDate = cubit.toDate;
++          final bool hasActiveFilters = activeStatusFilter != null || activeEntityTypeFilter != null || activeLocationFilter != null || activeMonthFilter != null || fromDate != null || toDate != null;
+ 
+           return Scaffold(
+             backgroundColor: ColorPick.background,
+             body: AdminStickyBody(
+   children: [
+                     AppAdminNavbar(
+-                      activeLabel: 'Inquires',
++                      activeLabel: 'Inquiries',
+                       homePage: CareersMainPageDashboard(),
+                       webPage: MainMainPage(),
+                       jobListingPage: JobListingMainPage(),
+@@ -321,7 +263,7 @@
+                         child: Column(
+                           crossAxisAlignment: CrossAxisAlignment.start,
+                           children: [
+-                            Text('Inquires', style: StyleText.fontSize45Weight600.copyWith(color: ColorPick.primary, fontWeight: FontWeight.w700)),
++                            Text('Inquiries', style: StyleText.fontSize45Weight600.copyWith(color: ColorPick.primary, fontWeight: FontWeight.w700)),
+                             SizedBox(height: 16.h),
+                             Row(children: [AppSearchTextField(controller: _searchController, onChanged: (v) => cubit.setSearch(v), hintText: 'Search')]),
+                             SizedBox(height: 16.h),
+@@ -346,7 +288,9 @@
+                               SizedBox(width: 8.w),
+                               SizedBox(width: 140.w, child: CustomDropdownFormFieldInvMaster(selectedValue: activeLocationFilter, items: locationItems, widthIcon: 14, heightIcon: 14, height: 32, dropdownColor: ColorPick.white, primaryColor: ColorPick.primary, hint: Text('Location', style: TextStyle(fontSize: 11.sp, color: AppColors.secondaryText)), onChanged: (v) => cubit.setLocationFilter(v))),
+                               SizedBox(width: 8.w),
+-                              SizedBox(width: 120.w, child: CustomDropdownFormFieldInvMaster(selectedValue: activeMonthFilter?.toString(), items: monthItems, widthIcon: 14, heightIcon: 14, height: 32, dropdownColor: ColorPick.white, primaryColor: ColorPick.primary, hint: Text('Calendar', style: TextStyle(fontSize: 11.sp, color: AppColors.secondaryText)), onChanged: (v) { if (v != null) { cubit.setMonthFilter(int.tryParse(v)); } else { cubit.setMonthFilter(null); } })),
++                              // BUG-36: "Calendar" opens a real date-range picker
++                              // (it was a dropdown of months).
++                              _calendarButton(cubit, fromDate, toDate),
+                               SizedBox(width: 8.w),
+                               if (hasActiveFilters)
+                                 GestureDetector(
+@@ -402,6 +346,64 @@
+   }
+ 
+   // ═══════════════════════════════════════════════════════════════════════════
++  //  CALENDAR (date range) — BUG-36
++  // ═══════════════════════════════════════════════════════════════════════════
++
++  Widget _calendarButton(InquiryCubit cubit, DateTime? from, DateTime? to) {
++    String f(DateTime d) => '${d.day}/${d.month}/${d.year}';
++    final bool active = from != null || to != null;
++    return GestureDetector(
++      onTap: () async {
++        final now = DateTime.now();
++        final picked = await showDateRangePicker(
++          context: context,
++          firstDate: DateTime(now.year - 5),
++          lastDate: DateTime(now.year + 1, 12, 31),
++          initialDateRange: (from != null && to != null)
++              ? DateTimeRange(start: from, end: to)
++              : null,
++          helpText: 'Submissions between',
++          builder: (ctx, child) => Theme(
++            data: Theme.of(ctx).copyWith(
++              colorScheme: Theme.of(ctx).colorScheme.copyWith(
++                    primary: ColorPick.primary,
++                    onPrimary: Colors.white,
++                  ),
++            ),
++            child: child!,
++          ),
++        );
++        if (picked != null) cubit.setDateRange(picked.start, picked.end);
++      },
++      child: Container(
++        height: 32.h,
++        padding: EdgeInsets.symmetric(horizontal: 10.w),
++        decoration: BoxDecoration(
++          color: ColorPick.white,
++          borderRadius: BorderRadius.circular(4.r),
++        ),
++        child: Row(
++          mainAxisSize: MainAxisSize.min,
++          children: [
++            Icon(Icons.calendar_today_outlined,
++                size: 13.sp,
++                color: active ? ColorPick.primary : AppColors.secondaryText),
++            SizedBox(width: 6.w),
++            Text(
++              active
++                  ? '${from != null ? f(from) : '…'} – ${to != null ? f(to) : '…'}'
++                  : 'Calendar',
++              style: TextStyle(
++                  fontSize: 11.sp,
++                  color: active ? AppColors.text : AppColors.secondaryText),
++            ),
++          ],
++        ),
++      ),
++    );
++  }
++
++  // ═══════════════════════════════════════════════════════════════════════════
+   //  SUMMARY CARD
+   // ═══════════════════════════════════════════════════════════════════════════
+ 
+@@ -431,20 +433,56 @@
+     'Entity Type', 'Entity Size', 'Subject', 'Message', 'Note', 'Status',
+   ];
+ 
+-  final _columnWidths = <int, TableColumnWidth>{
+-    0: FixedColumnWidth(50), 1: FixedColumnWidth(120), 2: FixedColumnWidth(130),
+-    3: FixedColumnWidth(120), 4: FixedColumnWidth(120), 5: FixedColumnWidth(180),
+-    6: FixedColumnWidth(100), 7: FixedColumnWidth(120), 8: FixedColumnWidth(120),
+-    9: FixedColumnWidth(140), 10: FixedColumnWidth(120), 11: FixedColumnWidth(100),
+-    12: FixedColumnWidth(150), 13: FixedColumnWidth(180), 14: FixedColumnWidth(150),
+-    15: FixedColumnWidth(100),
+-  };
++  // BUG-24: flexible widths — each column fits its content (header or
++  // values) between a minimum and a cap, instead of fixed widths that left a
++  // big gap after short columns such as "Email".
++  // [min, cap] per column, in logical pixels (scaled with .sp below).
++  static const List<List<double>> _columnBounds = [
++    [40, 60],   [100, 130], [110, 150], [80, 160],  [80, 160],  [120, 240],
++    [80, 110],  [100, 150], [80, 160],  [100, 200], [90, 180],  [80, 120],
++    [100, 220], [120, 260], [100, 220], [70, 110],
++  ];
++
++  Map<int, TableColumnWidth> get _flexColumnWidths => {
++        for (int i = 0; i < _columnBounds.length; i++)
++          i: MaxColumnWidth(
++            FixedColumnWidth(_columnBounds[i][0].sp),
++            MinColumnWidth(
++              const IntrinsicColumnWidth(),
++              FixedColumnWidth(_columnBounds[i][1].sp),
++            ),
++          ),
++      };
+ 
+   TextStyle get _cellStyle => TextStyle(fontSize: 11.sp, color: AppColors.text);
+   Widget _cell(Widget child) => Container(padding: EdgeInsets.symmetric(horizontal: 10.sp, vertical: 8.sp), child: DefaultTextStyle.merge(style: _cellStyle, child: child));
+   Widget _textCell(String text, {int maxLines = 2}) => _cell(Text(text.isEmpty ? '-' : text, maxLines: maxLines, overflow: TextOverflow.ellipsis));
+ 
+   Widget _buildTable(List<InquiryModel> inquiries) {
++    return Column(
++      crossAxisAlignment: CrossAxisAlignment.stretch,
++      children: [
++        _buildTableGrid(inquiries),
++        // BUG-24: an empty table used to be just a header row.
++        if (inquiries.isEmpty)
++          Container(
++            padding: EdgeInsets.symmetric(vertical: 24.h),
++            decoration: BoxDecoration(
++              color: Colors.white,
++              borderRadius: BorderRadius.only(
++                bottomLeft: Radius.circular(10.sp),
++                bottomRight: Radius.circular(10.sp),
++              ),
++            ),
++            alignment: Alignment.center,
++            child: Text('No inquiries yet',
++                style: TextStyle(fontSize: 12.sp, color: AppColors.secondaryText)),
++          ),
++      ],
++    );
++  }
++
++  Widget _buildTableGrid(List<InquiryModel> inquiries) {
+     return SingleChildScrollView(
+       scrollDirection: Axis.horizontal,
+       child: ClipRRect(
+@@ -452,7 +490,7 @@
+         child: Table(
+           border: TableBorder.all(color: Colors.transparent),
+           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+-          columnWidths: _columnWidths.map((k, v) => MapEntry(k, FixedColumnWidth((v as FixedColumnWidth).value.sp))),
++          columnWidths: _flexColumnWidths,
+           children: [
+             TableRow(
+               decoration: const BoxDecoration(color: ColorPick.primary),
+@@ -572,6 +610,8 @@
+ 
+   Widget _buildEntityTypeChart(Map<String, int> counts) {
+     final total = counts.values.fold(0, (a, b) => a + b);
++    // BUG-24: empty state instead of a blank white card.
++    if (total == 0) return _emptyChart();
+     final entries = counts.entries.toList();
+     final half = (entries.length / 2).ceil();
+     final left  = entries.take(half).toList();
+@@ -664,6 +704,7 @@
+     final keys   = allCounts.keys.toList();
+     final colors = _sizeColors(keys.length);
+     final total  = allCounts.values.fold(0, (a, b) => a + b);
++    final bool noData = total == 0;
+ 
+     return Column(
+       mainAxisSize: MainAxisSize.min,
+@@ -695,7 +736,20 @@
+           }),
+         ),
+         SizedBox(height: 16.h),
+-        // Stacked horizontal bar
++        // Stacked horizontal bar — an empty grey track when there is no data
++        // (it used to draw five equal coloured parts).
++        if (noData)
++          Container(
++            height: 24.h,
++            decoration: BoxDecoration(
++              color: const Color(0xFFF0F0F0),
++              borderRadius: BorderRadius.circular(4.r),
++            ),
++            alignment: Alignment.center,
++            child: Text('No data yet',
++                style: TextStyle(fontSize: 10.sp, color: AppColors.secondaryText)),
++          )
++        else
+         ClipRRect(
+           borderRadius: BorderRadius.circular(4.r),
+           child: SizedBox(
+@@ -734,6 +788,18 @@
+   //  Full-height light bg, dark green fills from bottom proportionally
+   // ═══════════════════════════════════════════════════════════════════════════
+ 
++  Widget _emptyChart() => SizedBox(
++        height: 160.h,
++        width: double.infinity,
++        child: Center(
++          child: Text(
++            'No data yet',
++            style: StyleText.fontSize12Weight400
++                .copyWith(color: AppColors.secondaryText),
++          ),
++        ),
++      );
++
+   Widget _buildLocationChart(Map<String, int> counts) {
+     if (counts.isEmpty) {
+       // Keep the same footprint as the populated chart so the card
+diff -ruN a/lib/features/job/data/models/job_listing_model.dart b/lib/features/job/data/models/job_listing_model.dart
+--- a/lib/features/job/data/models/job_listing_model.dart	2026-09-27 11:48:59.005000887 +0000
++++ b/lib/features/job/data/models/job_listing_model.dart	2026-09-27 12:07:35.455000013 +0000
+@@ -121,7 +121,7 @@
+   }
+ }
+ 
+-enum EmploymentDuration { open, month, week }
++enum EmploymentDuration { open, month, week, year }
+ 
+ extension EmploymentDurationExt on EmploymentDuration {
+   String get label {
+@@ -129,6 +129,7 @@
+       case EmploymentDuration.open:  return 'Open';
+       case EmploymentDuration.month: return 'Month';
+       case EmploymentDuration.week:  return 'Week';
++      case EmploymentDuration.year:  return 'Year'; // BUG-47
+     }
+   }
+ 
+@@ -137,6 +138,7 @@
+       case 'open':  return EmploymentDuration.open;
+       case 'month': return EmploymentDuration.month;
+       case 'week':  return EmploymentDuration.week;
++      case 'year':  return EmploymentDuration.year;
+       default:      return EmploymentDuration.open;
+     }
+   }
+@@ -391,6 +393,59 @@
+   final int totalApplications;
+   final String publishStatus; // 'published', 'draft'
+ 
++  /// BUG-10: dropdown fields the admin never picked (a draft saved early).
++  /// The enums below always hold SOME value, so without this list a blank
++  /// draft looked like "On Site / Junior / Full Time". Keys used:
++  /// 'workType', 'employmentType', 'employmentDurationType', 'experienceLevel'.
++  final List<String> unsetFields;
++
++  bool isUnset(String field) => unsetFields.contains(field);
++
++  /// Title for display: never a raw id, never empty (BUG-19).
++  String get displayTitle =>
++      title.en.trim().isNotEmpty
++          ? title.en.trim()
++          : (title.ar.trim().isNotEmpty ? title.ar.trim() : 'Untitled job');
++
++  // ── BUG-11: status derived from the hiring window ─────────────────────────
++  /// A published job whose hiring start date is still in the future is
++  /// SCHEDULED; one whose end date has passed is ENDED. The stored status was
++  /// never updated by anything, so both used to show as "Active" forever.
++  /// Only the "live" statuses are derived — inactive / drafted / removed are
++  /// explicit admin choices and are left alone.
++  static JobStatus deriveStatus(
++    JobStatus stored,
++    DateTime? start,
++    DateTime? end, {
++    DateTime? now,
++  }) {
++    if (stored != JobStatus.active &&
++        stored != JobStatus.scheduled &&
++        stored != JobStatus.ended) {
++      return stored;
++    }
++    final n = now ?? DateTime.now();
++    if (end != null) {
++      final endOfDay = DateTime(end.year, end.month, end.day, 23, 59, 59);
++      if (n.isAfter(endOfDay)) return JobStatus.ended;
++    }
++    if (start != null) {
++      final startOfDay = DateTime(start.year, start.month, start.day);
++      if (n.isBefore(startOfDay)) return JobStatus.scheduled;
++    }
++    return JobStatus.active;
++  }
++
++  /// This job with [status] re-derived from its hiring dates.
++  JobPostModel withDerivedStatus() {
++    final s = deriveStatus(status, hiringStartDate, hiringEndDate);
++    if (s == status) return this;
++    return copyWith(
++      status: s,
++      endedDate: s == JobStatus.ended ? (endedDate ?? hiringEndDate) : endedDate,
++    );
++  }
++
+   const JobPostModel({
+     required this.id,
+     required this.title,
+@@ -419,6 +474,7 @@
+     this.endedDate,
+     this.totalApplications = 0,
+     this.publishStatus = 'draft',
++    this.unsetFields = const [],
+   });
+ 
+   factory JobPostModel.empty() => JobPostModel(
+@@ -472,7 +528,8 @@
+       hiringEndDate: map[HIRING_END_DATE] != null
+           ? DateTime.tryParse(map[HIRING_END_DATE] as String)
+           : null,
+-      maxApplications: map[MAX_APPLICATIONS] as int? ?? 0,
++      // BUG-34: tolerate num/String — a strict `as int?` could lose the value.
++      maxApplications: _asInt(map[MAX_APPLICATIONS]),
+       requiredDocuments:
+       ((map[REQUIRED_DOCUMENTS] as List<dynamic>?) ?? [])
+           .whereType<Map<String, dynamic>>()
+@@ -486,9 +543,20 @@
+       endedDate: map[ENDED_DATE] != null
+           ? DateTime.tryParse(map[ENDED_DATE] as String)
+           : null,
+-      totalApplications: map[TOTAL_APPLICATIONS] as int? ?? 0,
++      totalApplications: _asInt(map[TOTAL_APPLICATIONS]),
+       publishStatus: map[PUBLISH_STATUS] as String? ?? 'draft',
+-    );
++      unsetFields: ((map['unsetFields'] as String?) ?? '')
++          .split(',')
++          .map((s) => s.trim())
++          .where((s) => s.isNotEmpty)
++          .toList(),
++    ).withDerivedStatus(); // BUG-11
++  }
++
++  static int _asInt(dynamic v) {
++    if (v is num) return v.toInt();
++    if (v is String) return int.tryParse(v.trim()) ?? 0;
++    return 0;
+   }
+ 
+   Map<String, dynamic> toMap() => {
+@@ -519,6 +587,7 @@
+     ENDED_DATE: endedDate?.toIso8601String(),
+     TOTAL_APPLICATIONS: totalApplications,
+     PUBLISH_STATUS: publishStatus,
++    'unsetFields': unsetFields.join(','),
+   };
+ 
+   /// Nested template for [FlatCodec.decode] (one populated sample per list).
+@@ -562,6 +631,7 @@
+         'endedDate': '',
+         'totalApplications': 0,
+         'publishStatus': '',
++        'unsetFields': '',
+       };
+ 
+   JobPostModel copyWith({
+@@ -592,6 +662,7 @@
+     DateTime? endedDate,
+     int? totalApplications,
+     String? publishStatus,
++    List<String>? unsetFields,
+   }) =>
+       JobPostModel(
+         id: id ?? this.id,
+@@ -624,6 +695,7 @@
+         endedDate: endedDate ?? this.endedDate,
+         totalApplications: totalApplications ?? this.totalApplications,
+         publishStatus: publishStatus ?? this.publishStatus,
++        unsetFields: unsetFields ?? this.unsetFields,
+       );
+ 
+   /// Generate demo jobs matching the Figma grid
+diff -ruN a/lib/features/job/presentation/controller/job_listing_cubit.dart b/lib/features/job/presentation/controller/job_listing_cubit.dart
+--- a/lib/features/job/presentation/controller/job_listing_cubit.dart	2026-09-27 11:48:59.009000887 +0000
++++ b/lib/features/job/presentation/controller/job_listing_cubit.dart	2026-09-27 12:07:35.501000013 +0000
+@@ -195,13 +195,29 @@
+ 
+       final resolvedStatus = ps == 'draft' ? JobStatus.drafted : job.status;
+ 
++      final existing = _allJobs.where((j) => j.id == job.id).toList();
++      final JobPostModel? before = existing.isEmpty ? null : existing.first;
++      final bool wasLive = before != null &&
++          (before.status == JobStatus.active ||
++              before.status == JobStatus.scheduled ||
++              before.status == JobStatus.ended);
++
+       final updated = job.copyWith(
+         publishStatus: ps,
+         status: resolvedStatus,
++        // Keep the original posting date when an already-live job is edited;
++        // only a job going live for the first time gets "now".
+         postedDate: (ps == 'published' && resolvedStatus == JobStatus.active)
+-            ? DateTime.now()
+-            : job.postedDate,
+-      );
++            ? (wasLive ? (before?.postedDate ?? DateTime.now()) : DateTime.now())
++            : (before?.postedDate ?? job.postedDate),
++        // BUG-44: "Inactive Since" had no date — stamp it when deactivated.
++        endedDate: resolvedStatus == JobStatus.inactive
++            ? (before?.status == JobStatus.inactive
++                ? (before?.endedDate ?? DateTime.now())
++                : DateTime.now())
++            : (resolvedStatus == JobStatus.active ? null : job.endedDate),
++        totalApplications: before?.totalApplications ?? job.totalApplications,
++      ).withDerivedStatus(); // BUG-11: scheduled / ended from the dates
+ 
+ 
+       final existIndex = _allJobs.indexWhere((j) => j.id == updated.id);
+diff -ruN a/lib/features/job/presentation/controller/job_listing_state.dart b/lib/features/job/presentation/controller/job_listing_state.dart
+--- a/lib/features/job/presentation/controller/job_listing_state.dart	2026-09-27 11:48:59.009000887 +0000
++++ b/lib/features/job/presentation/controller/job_listing_state.dart	2026-09-27 12:07:35.500000013 +0000
+@@ -120,6 +120,12 @@
+   /// Maps year-range keys to the closest experience level(s)
+   bool _matchesExperienceLevel(ExperienceLevel level, String yoeKey) {
+     switch (yoeKey) {
++      // BUG-43: filter now uses the job form's experience levels.
++      case 'intern':     return level == ExperienceLevel.intern;
++      case 'junior':     return level == ExperienceLevel.junior;
++      case 'senior':     return level == ExperienceLevel.senior;
++      case 'leadership': return level == ExperienceLevel.leadership;
++      // Legacy year-range keys (kept for any saved filter state).
+       case '0_1':
+         return level == ExperienceLevel.intern;
+       case '1_3':
+diff -ruN a/lib/features/job/presentation/ui/pages/application_main.dart b/lib/features/job/presentation/ui/pages/application_main.dart
+--- a/lib/features/job/presentation/ui/pages/application_main.dart	2026-09-27 11:48:59.008000887 +0000
++++ b/lib/features/job/presentation/ui/pages/application_main.dart	2026-09-27 12:07:35.496000013 +0000
+@@ -25,6 +25,7 @@
+ import '../../../../../core/main_widgets/admin_sticky_body.dart';
+ import '../../../../../core/main_widgets/app_admin_navbar.dart';
+ import '../../../../../core/main_widgets/application_filter_dialog.dart';
++import '../../../../../core/main_widgets/csv_export_dialog.dart';
+ import '../../../../../core/theme/appcolors.dart';
+ import '../../../../../core/theme/new_theme.dart';
+ import '../../../../careers/presentation/ui/pages/careers_main.dart';
+@@ -32,6 +33,7 @@
+ import '../../../../home/presentation/controller/home_state.dart';
+ import '../../../../main/presentation/ui/pages/main_main.dart';
+ import '../../../data/models/application_model.dart';
++import '../../../data/models/job_listing_model.dart';
+ import '../../controller/application_cubit.dart';
+ import '../../controller/application_state.dart';
+ import '../../controller/job_listing_cubit.dart';
+@@ -63,6 +65,63 @@
+   bool _isGridView = true;
+   ApplicationFilterData? _activeFilter;
+ 
++  /// BUG-35: the "Time Frame" button did nothing — it now filters by the
++  /// application date range picked here.
++  DateTimeRange? _timeFrame;
++
++  Future<void> _pickTimeFrame() async {
++    final now = DateTime.now();
++    final picked = await showDateRangePicker(
++      context: context,
++      firstDate: DateTime(now.year - 5),
++      lastDate: DateTime(now.year, now.month, now.day),
++      initialDateRange: _timeFrame,
++      helpText: 'Applications received between',
++      builder: (ctx, child) => Theme(
++        data: Theme.of(ctx).copyWith(
++          colorScheme: Theme.of(ctx).colorScheme.copyWith(
++                primary: ColorPick.primary,
++                onPrimary: Colors.white,
++              ),
++        ),
++        child: child!,
++      ),
++    );
++    if (picked != null) setState(() => _timeFrame = picked);
++  }
++
++  String _fmtShort(DateTime d) => '${d.day}/${d.month}/${d.year}';
++
++  // BUG-32: Export used to do nothing.
++  void _exportApplications(List<ApplicationModel> apps) {
++    String d(DateTime? dt) => dt == null ? '' : _fmtShort(dt);
++    showCsvExportDialog(
++      context,
++      defaultFileName: 'applications',
++      itemLabel: 'applications',
++      header: const ['No', 'Name', 'Email', 'Phone', 'Job Title', 'Department',
++        'Application Date', 'Status', 'Stage', 'Tag', 'Experience Level',
++        'Employment Type'],
++      rows: [
++        for (int i = 0; i < apps.length; i++)
++          [
++            '${i + 1}',
++            apps[i].fullName,
++            apps[i].email,
++            '${apps[i].countryCode} ${apps[i].phone}'.trim(),
++            apps[i].jobTitle,
++            apps[i].department,
++            d(apps[i].applicationDate),
++            apps[i].status.label,
++            apps[i].status.stage,
++            apps[i].tag,
++            apps[i].experienceLevel,
++            apps[i].employmentType,
++          ],
++      ],
++    );
++  }
++
+   @override
+   void initState() {
+     super.initState();
+@@ -364,6 +423,19 @@
+             apps = state.lastApps!;
+           }
+ 
++          // BUG-35: Time Frame filter (inclusive of both days).
++          if (_timeFrame != null) {
++            final from = DateTime(_timeFrame!.start.year,
++                _timeFrame!.start.month, _timeFrame!.start.day);
++            final to = DateTime(_timeFrame!.end.year, _timeFrame!.end.month,
++                _timeFrame!.end.day, 23, 59, 59);
++            apps = apps.where((a) {
++              final d = a.applicationDate;
++              return d != null && !d.isBefore(from) && !d.isAfter(to);
++            }).toList();
++            totalCount = apps.length;
++          }
++
+           return Scaffold(
+             backgroundColor: ColorPick.background,
+             body: AdminStickyBody(
+@@ -398,9 +470,29 @@
+                             Builder(builder: (context) {
+                               final allJobs =
+                                   context.watch<JobListingCubit>().allJobs;
+-                              final tabCounts =
+-                                  Map<String, int>.from(jobTitleCounts);
++                              // BUG-35: removed (and draft) jobs are not
++                              // job tabs any more.
++                              final hiddenTitles = allJobs
++                                  .where((j) =>
++                                      j.status == JobStatus.removed ||
++                                      j.status == JobStatus.drafted)
++                                  .map((j) => j.title.en.trim().toLowerCase())
++                                  .toSet();
++                              final liveTitles = allJobs
++                                  .where((j) =>
++                                      j.status != JobStatus.removed &&
++                                      j.status != JobStatus.drafted)
++                                  .map((j) => j.title.en.trim().toLowerCase())
++                                  .toSet();
++                              final tabCounts = Map<String, int>.from(jobTitleCounts)
++                                ..removeWhere((t, _) {
++                                  final k = t.trim().toLowerCase();
++                                  return hiddenTitles.contains(k) &&
++                                      !liveTitles.contains(k);
++                                });
+                               for (final j in allJobs) {
++                                if (j.status == JobStatus.removed ||
++                                    j.status == JobStatus.drafted) continue;
+                                 final t = j.title.en.trim();
+                                 if (t.isNotEmpty) {
+                                   tabCounts.putIfAbsent(t, () => 0);
+@@ -429,15 +521,23 @@
+                                 ),
+                                 SizedBox(width: 12.w),
+                                 customButton(
+-                                  title: 'Time Frame',
+-                                  function: () {},
+-                                  width: 110.w,
++                                  title: _timeFrame == null
++                                      ? 'Time Frame'
++                                      : '${_fmtShort(_timeFrame!.start)} – ${_fmtShort(_timeFrame!.end)}',
++                                  function: _pickTimeFrame,
++                                  width: _timeFrame == null ? 110.w : 170.w,
+                                   height: 36.h,
+                                   radius: 6,
+                                   color: ColorPick.primary,
+                                   textColor: Colors.white,
+                                   textStyle: StyleText.fontSize13Weight600.copyWith(color: Colors.white),
+                                 ),
++                                if (_timeFrame != null)
++                                  IconButton(
++                                    tooltip: 'Clear time frame',
++                                    icon: Icon(Icons.close, size: 16.sp, color: ColorPick.primary),
++                                    onPressed: () => setState(() => _timeFrame = null),
++                                  ),
+                                 SizedBox(width: 8.w),
+                                 customButton(
+                                   title: 'Filter',
+@@ -474,7 +574,7 @@
+                                     borderRadius: BorderRadius.circular(6.r),
+                                   ),
+                                   child: Text(
+-                                    'Total Application:  $totalCount',
++                                    'Total Applications: $totalCount' /* BUG-41 */,
+                                     style: StyleText.fontSize12Weight500.copyWith(fontSize: 12.sp, fontWeight: FontWeight.w500, color: AppColors.text),
+                                   ),
+                                 ),
+@@ -483,7 +583,8 @@
+                                 // ── Export button ──
+                                 customButtonWithImage(
+                                   title: 'Export',
+-                                  function: () {},
++                                  // BUG-32: Export did nothing.
++                                  function: () => _exportApplications(apps),
+                                   textStyle: StyleText.fontSize12Weight600.copyWith(
+                                     fontSize: 12.sp,
+                                     fontWeight: FontWeight.w600,
+diff -ruN a/lib/features/job/presentation/ui/pages/job_listing_edit.dart b/lib/features/job/presentation/ui/pages/job_listing_edit.dart
+--- a/lib/features/job/presentation/ui/pages/job_listing_edit.dart	2026-09-27 11:48:59.008000887 +0000
++++ b/lib/features/job/presentation/ui/pages/job_listing_edit.dart	2026-09-27 12:07:35.494000013 +0000
+@@ -97,9 +97,11 @@
+   {'key': 'Open', 'value': 'Open'},
+   {'key': 'Month', 'value': 'Month'},
+   {'key': 'Week', 'value': 'Week'},
++  {'key': 'Year', 'value': 'Year'}, // BUG-47
+ ];
+ 
+ const List<Map<String, String>> _kCurrencies = [
++  {'key': 'EGP', 'value': 'EGP'}, // BUG-47: jobs are in Egypt
+   {'key': 'SAR', 'value': 'SAR'},
+   {'key': 'USD', 'value': 'USD'},
+   {'key': 'EUR', 'value': 'EUR'},
+@@ -167,6 +169,27 @@
+   // applicants, so it is read-only once the post is live.
+   bool _timelineLocked = false;
+ 
++  /// Status the job had when the page opened (edit mode only).
++  JobStatus? _originalStatus;
++
++  /// Hiring dates as loaded — an unchanged past date on an existing job is
++  /// not re-validated (you can still edit the rest of an ended job).
++  DateTime? _originalHiringStart;
++  DateTime? _originalHiringEnd;
++
++  bool _sameDay(DateTime? a, DateTime? b) =>
++      a != null && b != null &&
++      a.year == b.year && a.month == b.month && a.day == b.day;
++
++  // BUG-27: one key per accordion so a failed Publish can scroll to the
++  // first section that still has a problem.
++  final Map<String, GlobalKey> _sectionKeys = {
++    'jobInfo': GlobalKey(),
++    'jobDetails': GlobalKey(),
++    'benefits': GlobalKey(),
++    'appDetails': GlobalKey(),
++  };
++
+   /// Snapshot of the form right after it was seeded. Save stays disabled
+   /// until the current form differs from it.
+   String _initialSignature = '';
+@@ -274,18 +297,28 @@
+       _requiredDocs.addAll([
+         {
+           'name': TextEditingController(text: 'Resume'),
+-          'nameAr': TextEditingController(),
++          'nameAr': TextEditingController(text: 'السيرة الذاتية'), // BUG-34
+           'type': 'PDF',
+           'required': true,
+         },
+         {
+           'name': TextEditingController(text: 'Cover Letter'),
+-          'nameAr': TextEditingController(),
++          'nameAr': TextEditingController(text: 'خطاب التغطية'), // BUG-34
+           'type': 'PDF',
+           'required': true,
+         },
+       ]);
+     }
++    // BUG-08: the first "Required Skills" row used to be a throw-away
++    // TextEditingController created inside build(), so whatever was typed
++    // there was never read (and the first skill was silently lost). The
++    // first row is now a real entry of _skills.
++    if (_skills.isEmpty) {
++      _skills.add({
++        'en': TextEditingController(),
++        'ar': TextEditingController(),
++      });
++    }
+     // Baseline for the "nothing changed yet" check.
+     _initialSignature = _formSignature();
+   }
+@@ -301,11 +334,17 @@
+     _titleAr.text = job.title.ar;
+     _department = job.department.isEmpty ? null : job.department;
+     _jobLocation = job.location.isEmpty ? null : job.location;
+-    _workType = job.workType.label;
+-    _employmentType = job.employmentType.label;
++    // BUG-10: fields the admin never picked stay empty instead of showing
++    // the enum's default value.
++    _workType = job.isUnset('workType') ? null : job.workType.label;
++    _employmentType =
++        job.isUnset('employmentType') ? null : job.employmentType.label;
+     _durationText.text = job.employmentDurationText;
+-    _durationType = job.employmentDurationType.label;
+-    _experienceLevel = job.experienceLevel.label;
++    _durationType = job.isUnset('employmentDurationType')
++        ? null
++        : job.employmentDurationType.label;
++    _experienceLevel =
++        job.isUnset('experienceLevel') ? null : job.experienceLevel.label;
+     _salaryMin.text = job.salaryMin > 0 ? job.salaryMin.toInt().toString() : '';
+     _salaryMax.text = job.salaryMax > 0 ? job.salaryMax.toInt().toString() : '';
+     _currency = job.salaryCurrency;
+@@ -337,16 +376,25 @@
+ 
+     _hiringStart = job.hiringStartDate;
+     _hiringEnd = job.hiringEndDate;
++    _originalHiringStart = job.hiringStartDate;
++    _originalHiringEnd = job.hiringEndDate;
+     _maxApps.text = job.maxApplications > 0
+         ? job.maxApplications.toString()
+         : '';
+     // ── Seed active/inactive toggle ─────────────────────────────
+-    _isActive =
+-        job.status == JobStatus.active || job.status == JobStatus.scheduled;
+-
+-    // Already live → the hiring window is fixed for applicants.
+-    _timelineLocked = job.status == JobStatus.active ||
+-        job.publishStatus == 'published';
++    // An ENDED job is still "on" — extending its end date (BUG-29) should
++    // bring it back without also having to flip the switch.
++    _isActive = job.status == JobStatus.active ||
++        job.status == JobStatus.scheduled ||
++        job.status == JobStatus.ended;
++    _originalStatus = job.status;
++
++    // BUG-29: only the START date is locked, and only once hiring has
++    // actually started — the END date can always be extended / shortened.
++    final start = job.hiringStartDate;
++    _timelineLocked = job.publishStatus == 'published' &&
++        start != null &&
++        !DateTime.now().isBefore(DateTime(start.year, start.month, start.day));
+ 
+     for (final d in job.requiredDocuments) {
+       _requiredDocs.add({
+@@ -361,13 +409,13 @@
+       _requiredDocs.addAll([
+         {
+           'name': TextEditingController(text: 'Resume'),
+-          'nameAr': TextEditingController(),
++          'nameAr': TextEditingController(text: 'السيرة الذاتية'), // BUG-34
+           'type': 'PDF',
+           'required': true,
+         },
+         {
+           'name': TextEditingController(text: 'Cover Letter'),
+-          'nameAr': TextEditingController(),
++          'nameAr': TextEditingController(text: 'خطاب التغطية'), // BUG-34
+           'type': 'PDF',
+           'required': true,
+         },
+@@ -440,14 +488,78 @@
+     Navigator.of(context).pop();
+   }
+ 
++  // ═══════════════════════════════════════════════════════════════════════════
++  //  REMOVED JOBS — RESTORE / DELETE PERMANENTLY (BUG-45)
++  // ═══════════════════════════════════════════════════════════════════════════
++
++  Future<void> _restoreJob() async {
++    final confirmed = await CustomDialogManager.showConfirm(
++      context: context,
++      title: 'RESTORE JOB POST',
++      message: 'The job will be restored as INACTIVE so you can review it '
++          'before making it visible to applicants again.\n\nContinue?',
++      confirmText: 'Restore',
++    );
++    if (!confirmed || !mounted) return;
++    setState(() => _isSaving = true);
++    await context
++        .read<JobListingCubit>()
++        .updateJobStatus(_editingJobId!, JobStatus.inactive);
++    if (!mounted) return;
++    setState(() => _isSaving = false);
++    ScaffoldMessenger.of(context).showSnackBar(
++      const SnackBar(
++        content: Text('Job restored (inactive)'),
++        backgroundColor: Color(0xFF008037),
++      ),
++    );
++    Navigator.of(context).pop();
++  }
++
++  Future<void> _deletePermanently() async {
++    final confirmed = await CustomDialogManager.showConfirm(
++      context: context,
++      title: 'DELETE JOB POST PERMANENTLY',
++      message: 'This permanently deletes the job post. This action cannot be '
++          'undone.\n\nAre you sure?',
++      confirmText: 'Delete',
++      confirmColor: ColorPick.red,
++    );
++    if (!confirmed || !mounted) return;
++    setState(() => _isSaving = true);
++    await context.read<JobListingCubit>().deleteJob(_editingJobId!);
++    if (!mounted) return;
++    setState(() => _isSaving = false);
++    ScaffoldMessenger.of(context).showSnackBar(
++      const SnackBar(
++        content: Text('Job deleted'),
++        backgroundColor: Color(0xFF008037),
++      ),
++    );
++    // Back past the edit page and the (now deleted) job's detail page.
++    final nav = Navigator.of(context);
++    nav.pop();
++    if (nav.canPop()) nav.pop();
++  }
++
+   JobPostModel _buildModel({String publishStatus = 'published'}) {
+     final resolvedStatus = publishStatus == 'draft'
+         ? JobStatus.drafted
+         : (_isActive ? JobStatus.active : JobStatus.inactive);
+ 
++    // BUG-10: remember which dropdowns were never picked so a draft doesn't
++    // pretend to be "On Site / Junior / Full Time".
++    final unset = <String>[
++      if (_workType == null) 'workType',
++      if (_employmentType == null) 'employmentType',
++      if (_durationType == null) 'employmentDurationType',
++      if (_experienceLevel == null) 'experienceLevel',
++    ];
++
+     return JobPostModel(
+       id: _editingJobId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+-      title: BilingualTextJob(en: _titleEn.text, ar: _titleAr.text),
++      unsetFields: unset,
++      title: BilingualTextJob(en: _titleEn.text.trim(), ar: _titleAr.text.trim()),
+       department: _department ?? '',
+       // Location only applies to On Site / Hybrid jobs
+       location: _workType == 'Remotely' ? '' : (_jobLocation ?? ''),
+@@ -469,11 +581,17 @@
+         en: _qualificationEn.text,
+         ar: _qualificationAr.text,
+       ),
++      // BUG-08: every row is saved (including the first); rows left
++      // completely empty are skipped.
+       requiredSkills: _skills
++          .where((s) =>
++              s['en']!.text.trim().isNotEmpty ||
++              s['ar']!.text.trim().isNotEmpty)
+           .map(
+             (s) => SkillItem(
+-          id: DateTime.now().millisecondsSinceEpoch.toString(),
+-          name: BilingualTextJob(en: s['en']!.text, ar: s['ar']!.text),
++          id: '${DateTime.now().millisecondsSinceEpoch}_${s.hashCode}',
++          name: BilingualTextJob(
++              en: s['en']!.text.trim(), ar: s['ar']!.text.trim()),
+         ),
+       )
+           .toList(),
+@@ -524,44 +642,150 @@
+   //  PUBLISH
+   // ═══════════════════════════════════════════════════════════════════════════
+ 
+-  /// True when every field is filled and every dropdown/date is selected.
+-  bool get _isFormValid {
+-    final requiredTexts = [
+-      _titleEn, _titleAr,
+-      _durationText,
+-      _salaryMin, _salaryMax,
+-      _qualificationEn, _qualificationAr,
+-      _aboutEn, _aboutAr,
+-      _requirementsEn, _requirementsAr,
+-      _prefSkillsEn, _prefSkillsAr,
+-      _maxApps,
+-    ];
+-    final textsOk = requiredTexts.every((c) => c.text.trim().isNotEmpty);
+-    final dropdownsOk = _department != null &&
++  // ═══════════════════════════════════════════════════════════════════════════
++  //  CROSS-FIELD RULES (BUG-28)
++  // ═══════════════════════════════════════════════════════════════════════════
++
++  DateTime get _today {
++    final n = DateTime.now();
++    return DateTime(n.year, n.month, n.day);
++  }
++
++  DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
++
++  /// "Max salary must be ≥ min" — was accepted and shown as "20000 - 5000".
++  String? get _salaryError {
++    final min = double.tryParse(_salaryMin.text.trim());
++    final max = double.tryParse(_salaryMax.text.trim());
++    if (min != null && max != null && max < min) {
++      return 'Max salary must be greater than or equal to min salary.';
++    }
++    return null;
++  }
++
++  /// "0" was accepted, then saved as blank and blocked every later edit.
++  String? get _maxAppsError {
++    final t = _maxApps.text.trim();
++    if (t.isEmpty) return null; // the "required" check handles empty
++    final n = int.tryParse(t);
++    if (n == null || n < 1) return 'Must be at least 1.';
++    return null;
++  }
++
++  /// Start date can't be in the past (unless hiring already started and the
++  /// start date is locked).
++  String? get _startDateError {
++    if (_hiringStart == null || _timelineLocked) return null;
++    if (_sameDay(_hiringStart, _originalHiringStart)) return null;
++    if (_day(_hiringStart!).isBefore(_today)) {
++      return "Start date can't be in the past.";
++    }
++    return null;
++  }
++
++  /// End date must be after the start date and not in the past.
++  String? get _endDateError {
++    if (_hiringEnd == null) return null;
++    if (_hiringStart != null && !_day(_hiringEnd!).isAfter(_day(_hiringStart!))) {
++      return 'End date must be after the start date.';
++    }
++    if (!_sameDay(_hiringEnd, _originalHiringEnd) &&
++        _day(_hiringEnd!).isBefore(_today)) {
++      return "End date can't be in the past.";
++    }
++    return null;
++  }
++
++  /// A skill row is fine when it is completely empty (ignored) or has both
++  /// languages filled in.
++  bool get _skillsOk => _skills.every((s) {
++        final en = s['en']!.text.trim().isNotEmpty;
++        final ar = s['ar']!.text.trim().isNotEmpty;
++        return en == ar;
++      });
++
++  /// Key of the first accordion that still has a problem, or null.
++  String? _firstInvalidSection() {
++    bool filled(TextEditingController c) => c.text.trim().isNotEmpty;
++
++    final jobInfoOk = filled(_titleEn) && filled(_titleAr) &&
++        _department != null &&
+         _workType != null &&
+-        // Location required unless the job is remote
+         (_workType == 'Remotely' || _jobLocation != null) &&
+         _employmentType != null &&
++        filled(_durationText) &&
+         _durationType != null &&
+         _experienceLevel != null &&
+-        (_currency != null && _currency!.isNotEmpty);
+-    final datesOk = _hiringStart != null && _hiringEnd != null;
+-    final skillsOk = _skills.every((s) =>
+-        s['en']!.text.trim().isNotEmpty && s['ar']!.text.trim().isNotEmpty);
+-    final benefitsOk = _benefits.every(
+-        (b) => b.values.every((c) => c.text.trim().isNotEmpty));
+-    final docsOk = _requiredDocs.every((d) =>
+-        (d['name'] as TextEditingController).text.trim().isNotEmpty);
+-    return textsOk && dropdownsOk && datesOk && skillsOk && benefitsOk && docsOk;
++        filled(_salaryMin) && filled(_salaryMax) &&
++        (_currency != null && _currency!.isNotEmpty) &&
++        _salaryError == null &&
++        filled(_qualificationEn) && filled(_qualificationAr) &&
++        _skillsOk;
++    if (!jobInfoOk) return 'jobInfo';
++
++    final detailsOk = filled(_aboutEn) && filled(_aboutAr) &&
++        filled(_requirementsEn) && filled(_requirementsAr) &&
++        filled(_prefSkillsEn) && filled(_prefSkillsAr);
++    if (!detailsOk) return 'jobDetails';
++
++    final benefitsOk =
++        _benefits.every((b) => b.values.every((c) => c.text.trim().isNotEmpty));
++    if (!benefitsOk) return 'benefits';
++
++    final appOk = _hiringStart != null && _hiringEnd != null &&
++        _startDateError == null && _endDateError == null &&
++        filled(_maxApps) && _maxAppsError == null &&
++        _requiredDocs.every(
++            (d) => (d['name'] as TextEditingController).text.trim().isNotEmpty);
++    if (!appOk) return 'appDetails';
++
++    return null;
++  }
++
++  /// BUG-27: Publish used to fail silently — the only feedback was a thin red
++  /// border far up the page. Now: a message, the section is opened, and the
++  /// page scrolls to it.
++  void _revealProblem(String sectionKey, {String? message}) {
++    setState(() => _open[sectionKey] = true);
++    ScaffoldMessenger.of(context).showSnackBar(
++      SnackBar(
++        content: Text(message ?? 'Please complete the highlighted fields.'),
++        backgroundColor: ColorPick.red,
++        duration: const Duration(seconds: 3),
++      ),
++    );
++    WidgetsBinding.instance.addPostFrameCallback((_) {
++      final ctx = _sectionKeys[sectionKey]?.currentContext;
++      if (ctx != null) {
++        Scrollable.ensureVisible(
++          ctx,
++          duration: const Duration(milliseconds: 400),
++          curve: Curves.easeInOut,
++          alignment: 0.05,
++        );
++      }
++    });
+   }
+ 
++  /// First cross-field message to show in the snackbar, if any.
++  String? get _firstRuleMessage =>
++      _salaryError ?? _startDateError ?? _endDateError ?? _maxAppsError;
++
++  /// True when every field is filled and every dropdown/date is selected.
++  bool get _isFormValid => _firstInvalidSection() == null;
++
++
+   Future<void> _publish() async {
+     if (_isSaving) return;
+ 
+-    // ── Inline validation — no snackbar. Marking _submitted makes every
+-    // empty field / unselected dropdown render its own red error.
++    // Marking _submitted makes every empty field / unselected dropdown render
++    // its own red error; _revealProblem tells the user and scrolls there.
+     setState(() => _submitted = true);
+-    if (!_isFormValid) return;
++    final bad = _firstInvalidSection();
++    if (bad != null) {
++      _revealProblem(bad, message: _firstRuleMessage);
++      return;
++    }
+ 
+     final bool isEdit = _editingJobId != null;
+     final confirmed = await CustomDialogManager.showConfirm(
+@@ -591,6 +815,22 @@
+ 
+   Future<void> _saveDraft() async {
+     if (_isSaving) return;
++    // BUG-10: a draft needs at least a job title — empty drafts used to be
++    // saved as "Untitled" (and showed up on the dashboard as a raw id).
++    if (_titleEn.text.trim().isEmpty && _titleAr.text.trim().isEmpty) {
++      setState(() => _submitted = true);
++      _revealProblem('jobInfo',
++          message: 'Please enter at least the job title to save a draft.');
++      return;
++    }
++    // Numbers that ARE entered must still make sense.
++    final rule = _salaryError ?? _maxAppsError ?? _endDateError;
++    if (rule != null) {
++      setState(() => _submitted = true);
++      _revealProblem(_salaryError != null ? 'jobInfo' : 'appDetails',
++          message: rule);
++      return;
++    }
+     final confirmed = await CustomDialogManager.showConfirm(
+       context: context,
+       title: 'SAVE JOB POST FOR LATER',
+@@ -681,8 +921,26 @@
+             SnackBar(content: Text(state.message), backgroundColor: ColorPick.red),
+           );
+         }
+-        if (state is JobListingSaved) {
++        if (state is JobListingSaved && _isSaving) {
+           setState(() => _isSaving = false);
++          // BUG-46: confirm every successful save.
++          final messenger = ScaffoldMessenger.of(context);
++          messenger.showSnackBar(
++            SnackBar(
++              content: Text(state.job.publishStatus == 'draft'
++                  ? 'Draft saved'
++                  : (_editingJobId != null ? 'Job post saved' : 'Job post published')),
++              backgroundColor: const Color(0xFF008037),
++              duration: const Duration(seconds: 2),
++            ),
++          );
++          // BUG-10 (white screen): close THIS page only, and only if it is
++          // still the top route. The list page used to pop whatever route
++          // was on top, which could empty the navigator.
++          final route = ModalRoute.of(context);
++          if (route != null && route.isCurrent && Navigator.of(context).canPop()) {
++            Navigator.of(context).pop();
++          }
+         }
+       },
+       child: Scaffold(
+@@ -715,7 +973,55 @@
+                           ),
+                           SizedBox(height: 16.h),
+ 
+-                          if (isEdit) ...[
++                          // BUG-45: a REMOVED job gets explicit Restore and
++                          // Delete-permanently actions instead of the
++                          // ambiguous Remove button + status switch.
++                          if (isEdit && _originalStatus == JobStatus.removed) ...[
++                            Row(
++                              children: [
++                                GestureDetector(
++                                  onTap: _deletePermanently,
++                                  child: Container(
++                                    padding: EdgeInsets.symmetric(
++                                        horizontal: 10.w, vertical: 4.h),
++                                    decoration: BoxDecoration(
++                                      color: ColorPick.red,
++                                      borderRadius: BorderRadius.circular(4.r),
++                                    ),
++                                    child: Text(
++                                      'Delete permanently',
++                                      style: TextStyle(
++                                        fontSize: 12.sp,
++                                        fontWeight: FontWeight.w600,
++                                        color: Colors.white,
++                                      ),
++                                    ),
++                                  ),
++                                ),
++                                const Spacer(),
++                                GestureDetector(
++                                  onTap: _restoreJob,
++                                  child: Container(
++                                    padding: EdgeInsets.symmetric(
++                                        horizontal: 14.w, vertical: 4.h),
++                                    decoration: BoxDecoration(
++                                      color: const Color(0xFF008037),
++                                      borderRadius: BorderRadius.circular(4.r),
++                                    ),
++                                    child: Text(
++                                      'Restore',
++                                      style: TextStyle(
++                                        fontSize: 12.sp,
++                                        fontWeight: FontWeight.w600,
++                                        color: Colors.white,
++                                      ),
++                                    ),
++                                  ),
++                                ),
++                              ],
++                            ),
++                            SizedBox(height: 16.h),
++                          ] else if (isEdit) ...[
+                             Row(
+                               children: [
+                                 // Same Remove button as the Department edit
+@@ -772,28 +1078,40 @@
+                             SizedBox(height: 16.h),
+                           ],
+ 
+-                          _accordion(
+-                            key: 'jobInfo',
+-                            title: 'Job Information',
+-                            children: [_jobInfoSection()],
++                          KeyedSubtree(
++                            key: _sectionKeys['jobInfo'],
++                            child: _accordion(
++                              key: 'jobInfo',
++                              title: 'Job Information',
++                              children: [_jobInfoSection()],
++                            ),
+                           ),
+                           SizedBox(height: 10.h),
+-                          _accordion(
+-                            key: 'jobDetails',
+-                            title: 'Job Details',
+-                            children: [_jobDetailsSection()],
++                          KeyedSubtree(
++                            key: _sectionKeys['jobDetails'],
++                            child: _accordion(
++                              key: 'jobDetails',
++                              title: 'Job Details',
++                              children: [_jobDetailsSection()],
++                            ),
+                           ),
+                           SizedBox(height: 10.h),
+-                          _accordion(
+-                            key: 'benefits',
+-                            title: 'Benefits',
+-                            children: [_benefitsSection()],
++                          KeyedSubtree(
++                            key: _sectionKeys['benefits'],
++                            child: _accordion(
++                              key: 'benefits',
++                              title: 'Benefits',
++                              children: [_benefitsSection()],
++                            ),
+                           ),
+                           SizedBox(height: 10.h),
+-                          _accordion(
+-                            key: 'appDetails',
+-                            title: 'Application Details',
+-                            children: [_applicationDetailsSection()],
++                          KeyedSubtree(
++                            key: _sectionKeys['appDetails'],
++                            child: _accordion(
++                              key: 'appDetails',
++                              title: 'Application Details',
++                              children: [_applicationDetailsSection()],
++                            ),
+                           ),
+                           SizedBox(height: 24.h),
+ 
+diff -ruN a/lib/features/job/presentation/ui/pages/job_listing_main.dart b/lib/features/job/presentation/ui/pages/job_listing_main.dart
+--- a/lib/features/job/presentation/ui/pages/job_listing_main.dart	2026-09-27 11:48:59.008000887 +0000
++++ b/lib/features/job/presentation/ui/pages/job_listing_main.dart	2026-09-27 12:07:35.497000013 +0000
+@@ -26,6 +26,8 @@
+ import '../../../../../core/main_widgets/admin_sticky_body.dart';
+ import '../../../../../core/main_widgets/app_admin_navbar.dart';
+ import '../../../../../core/main_widgets/job_listing_filter_dialog.dart';
++import '../../../../departments/presentation/controller/department_cubit.dart';
++import '../../../../departments/presentation/controller/department_state.dart';
+ import '../../../../../core/theme/appcolors.dart';
+ import '../../../../../core/theme/new_theme.dart';
+ import '../../../../careers/presentation/ui/pages/careers_main.dart';
+@@ -104,9 +106,21 @@
+ 
+   // ── Open filter dialog ─────────────────────────────────────────────────────
+   Future<void> _openFilterDialog() async {
++    // BUG-43: offer the REAL departments (the list was hard-coded).
++    List<Map<String, String>>? depts;
++    try {
++      final ds = context.read<DepartmentCubit>().state;
++      if (ds is DepartmentLoaded && ds.departments.isNotEmpty) {
++        depts = ds.departments
++            .where((d) => d.nameEn.trim().isNotEmpty)
++            .map((d) => {'key': d.nameEn.trim(), 'value': d.nameEn.trim()})
++            .toList();
++      }
++    } catch (_) {}
+     final result = await showJobListingFilterDialog(
+       context,
+       initial: _advancedFilter,
++      departments: depts,
+     );
+     if (result != null) {
+       setState(() => _advancedFilter = result);
+@@ -119,9 +133,9 @@
+     return BlocListener<JobListingCubit, JobListingState>(
+       listener: (context, state) {
+         if (state is JobListingSaved) {
+-          if (Navigator.of(context).canPop()) {
+-            Navigator.of(context).pop();
+-          }
++          // BUG-10 (white screen): this listener used to pop WHATEVER route
++          // was on top, from every mounted Job Listing page. The edit page now
++          // closes itself after a successful save, so we only refresh here.
+           context.read<JobListingCubit>().loadJobs();
+         }
+       },
+@@ -380,7 +394,7 @@
+     final f = _advancedFilter!;
+ 
+     if (f.department != null) {
+-      chips.add(_filterChip('Dept: ${f.department!}', () {
++      chips.add(_filterChip('Dept: ${jobFilterLabel(f.department!)}', () {
+         setState(() => _advancedFilter = JobListingFilterData(
+           location: f.location,
+           employmentType: f.employmentType,
+@@ -391,7 +405,7 @@
+       }));
+     }
+     if (f.location != null) {
+-      chips.add(_filterChip('Loc: ${f.location!}', () {
++      chips.add(_filterChip('Location: ${jobFilterLabel(f.location!)}', () {
+         setState(() => _advancedFilter = JobListingFilterData(
+           department: f.department,
+           employmentType: f.employmentType,
+@@ -402,7 +416,7 @@
+       }));
+     }
+     if (f.employmentType != null) {
+-      chips.add(_filterChip('Type: ${f.employmentType!}', () {
++      chips.add(_filterChip('Type: ${jobFilterLabel(f.employmentType!)}', () {
+         setState(() => _advancedFilter = JobListingFilterData(
+           department: f.department,
+           location: f.location,
+@@ -413,7 +427,7 @@
+       }));
+     }
+     if (f.yearsOfExperience != null) {
+-      chips.add(_filterChip('Exp: ${f.yearsOfExperience!}', () {
++      chips.add(_filterChip('Experience: ${jobFilterLabel(f.yearsOfExperience!)}', () {
+         setState(() => _advancedFilter = JobListingFilterData(
+           department: f.department,
+           location: f.location,
+diff -ruN a/lib/features/job/presentation/ui/pages/job_listing_preview.dart b/lib/features/job/presentation/ui/pages/job_listing_preview.dart
+--- a/lib/features/job/presentation/ui/pages/job_listing_preview.dart	2026-09-27 11:48:59.008000887 +0000
++++ b/lib/features/job/presentation/ui/pages/job_listing_preview.dart	2026-09-27 12:07:35.495000013 +0000
+@@ -27,7 +27,13 @@
+ 
+ class JobListingPreviewPage extends StatefulWidget {
+   final String jobId;
+-  const JobListingPreviewPage({super.key, required this.jobId});
++
++  /// BUG-09: the job exactly as it is on the edit form right now (including
++  /// unsaved changes). When given, it is what the preview shows — the page
++  /// used to fall back to a placeholder "UI and UX Designer" job instead.
++  final JobPostModel? draft;
++
++  const JobListingPreviewPage({super.key, required this.jobId, this.draft});
+ 
+   @override
+   State<JobListingPreviewPage> createState() => _JobListingPreviewPageState();
+@@ -43,7 +49,7 @@
+     // If job is not in local cache, fetch from Firestore
+     final cubit = context.read<JobListingCubit>();
+     final hasLocal = cubit.allJobs.any((j) => j.id == widget.jobId);
+-    if (!hasLocal && widget.jobId != 'new') {
++    if (widget.draft == null && !hasLocal && widget.jobId != 'new') {
+       cubit.loadJobDetail(widget.jobId);
+     }
+   }
+@@ -52,6 +58,9 @@
+   Widget build(BuildContext context) {
+     final cubit = context.read<JobListingCubit>();
+ 
++    // The form's current state always wins (BUG-09).
++    if (widget.draft != null) return _buildPreviewContent(widget.draft!);
++
+     // Try to find job from local cache first
+     JobPostModel? job;
+     final localList = cubit.allJobs.where((j) => j.id == widget.jobId).toList();
+@@ -138,7 +147,7 @@
+                   children: [
+                     // ── Title ────────────────────────────────────
+                     Text(
+-                      'Preview Digital Journy Details',
++                      'Preview Job Post Details', // BUG-09: was "Digital Journy"
+                       style: StyleText.fontSize28Weight600.copyWith(
+                         fontSize: 28.sp,
+                         fontWeight: FontWeight.w700,
+@@ -223,11 +232,9 @@
+                                       Text(
+                                         isAr
+                                             ? (job.title.ar.isEmpty
+-                                            ? 'UI and UX Designer'
++                                            ? job.displayTitle
+                                             : job.title.ar)
+-                                            : (job.title.en.isEmpty
+-                                            ? 'UI and UX Designer'
+-                                            : job.title.en),
++                                            : job.displayTitle,
+                                         style: StyleText.fontSize18Weight500.copyWith(
+                                           fontSize: 18.sp,
+                                           fontWeight: FontWeight.w600,
+@@ -245,23 +252,27 @@
+                                       SizedBox(height: 10.h),
+                                       _infoRow(
+                                         'Work Type:',
+-                                        job.workType.label,
+-                                        'Employment Type:',
+-                                        job.employmentDurationText.isEmpty
+-                                            ? '3 Weeks'
+-                                            : job.employmentDurationText,
++                                        job.isUnset('workType')
++                                            ? '-'
++                                            : job.workType.label,
++                                        'Employment Duration:',
++                                        _durationText(job),
+                                       ),
+                                       SizedBox(height: 10.h),
+                                       _infoRow(
+                                         'Employment Type:',
+-                                        job.employmentType.label,
+-                                        'Compensation Range',
+-                                        '${job.salaryMin.toInt()} - ${job.salaryMax.toInt()}',
++                                        job.isUnset('employmentType')
++                                            ? '-'
++                                            : job.employmentType.label,
++                                        'Compensation Range:',
++                                        _salaryText(job),
+                                       ),
+                                       SizedBox(height: 10.h),
+                                       _infoRow(
+                                         'Experience Level:',
+-                                        job.experienceLevel.label,
++                                        job.isUnset('experienceLevel')
++                                            ? '-'
++                                            : job.experienceLevel.label,
+                                         '',
+                                         '',
+                                       ),
+@@ -430,6 +441,23 @@
+     );
+   }
+ 
++  // BUG-09: real values only — no invented "3 Weeks" / "0 - 0".
++  String _durationText(JobPostModel job) {
++    final n = job.employmentDurationText.trim();
++    final unit = job.isUnset('employmentDurationType')
++        ? ''
++        : job.employmentDurationType.label;
++    if (unit == 'Open') return 'Open';
++    if (n.isEmpty && unit.isEmpty) return '-';
++    return [n, unit].where((s) => s.isNotEmpty).join(' ');
++  }
++
++  String _salaryText(JobPostModel job) {
++    if (job.salaryMin <= 0 && job.salaryMax <= 0) return '-';
++    return '${job.salaryMin.toInt()} - ${job.salaryMax.toInt()} ${job.salaryCurrency}'
++        .trim();
++  }
++
+   // ═════════════════════════════════════════════════════════════════════════════
+   //  VIEW MODE TAB
+   // ═════════════════════════════════════════════════════════════════════════════
+diff -ruN a/lib/features/job/presentation/ui/widgets/job_listing_detail/applicant_details_tab.dart b/lib/features/job/presentation/ui/widgets/job_listing_detail/applicant_details_tab.dart
+--- a/lib/features/job/presentation/ui/widgets/job_listing_detail/applicant_details_tab.dart	2026-09-27 11:48:59.006000887 +0000
++++ b/lib/features/job/presentation/ui/widgets/job_listing_detail/applicant_details_tab.dart	2026-09-27 12:07:35.475000013 +0000
+@@ -113,7 +113,7 @@
+     final datePicker = DatePicker();
+     final result = await datePicker.showDatePicker(
+       context,
+-      _selectedCalendarDate != null ? [_selectedCalendarDate] : [DateTime.now()],
++      _selectedCalendarDate != null ? [_selectedCalendarDate] : [],
+       _selectedCalendarDate ?? DateTime.now(),
+       CalendarDatePicker2Type.single,
+     );
+diff -ruN a/lib/features/job/presentation/ui/widgets/job_listing_detail/job_details_tab.dart b/lib/features/job/presentation/ui/widgets/job_listing_detail/job_details_tab.dart
+--- a/lib/features/job/presentation/ui/widgets/job_listing_detail/job_details_tab.dart	2026-09-27 11:48:59.006000887 +0000
++++ b/lib/features/job/presentation/ui/widgets/job_listing_detail/job_details_tab.dart	2026-09-27 12:07:35.476000013 +0000
+@@ -39,11 +39,13 @@
+               'Department',
+               job.department.isEmpty ? '—' : job.department,
+             ),
+-            _infoField('Work Type', job.workType.label),
++            _infoField('Work Type',
++                job.isUnset('workType') ? '—' : job.workType.label),
+           ),
+           SizedBox(height: 10.sp),
+           _row(
+-            _infoField('Employment Type', job.employmentType.label),
++            _infoField('Employment Type',
++                job.isUnset('employmentType') ? '—' : job.employmentType.label),
+             _infoField(
+               'Employment Duration',
+               job.employmentDurationText.isNotEmpty
+@@ -53,7 +55,8 @@
+           ),
+           SizedBox(height: 10.sp),
+           _row(
+-            _infoField('Experience Level', job.experienceLevel.label),
++            _infoField('Experience Level',
++                job.isUnset('experienceLevel') ? '—' : job.experienceLevel.label),
+             _infoField(
+               'Salary Range',
+               job.salaryMax > 0
+@@ -82,15 +85,22 @@
+         crossAxisAlignment: CrossAxisAlignment.start,
+         children: [
+           const SizedBox(height: 16),
++          // BUG-34: the Arabic text is shown too, exactly like the form.
+           _infoField(
+             'About This Position',
+             job.aboutThisPosition.en,
+             multi: true,
+           ),
+           SizedBox(height: 10.sp),
++          _infoFieldRtl('', job.aboutThisPosition.ar, multi: true),
++          SizedBox(height: 10.sp),
+           _infoField('Requirements', job.requirements.en, multi: true),
+           SizedBox(height: 10.sp),
++          _infoFieldRtl('', job.requirements.ar, multi: true),
++          SizedBox(height: 10.sp),
+           _infoField('Preferred Skills', job.preferredSkills.en, multi: true),
++          SizedBox(height: 10.sp),
++          _infoFieldRtl('', job.preferredSkills.ar, multi: true),
+         ],
+       ),
+     );
+@@ -254,7 +264,12 @@
+       Wrap(
+         spacing: 8,
+         runSpacing: 6,
+-        children: job.requiredSkills.map((s) => _chip(s.name.en)).toList(),
++        // BUG-34: show both languages of each skill.
++        children: job.requiredSkills
++            .map((s) => _chip(s.name.ar.isEmpty
++                ? s.name.en
++                : (s.name.en.isEmpty ? s.name.ar : '${s.name.en} / ${s.name.ar}')))
++            .toList(),
+       ),
+     ],
+   );
+diff -ruN a/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_form_helpers.dart b/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_form_helpers.dart
+--- a/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_form_helpers.dart	2026-09-27 11:48:59.007000887 +0000
++++ b/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_form_helpers.dart	2026-09-27 12:07:35.488000013 +0000
+@@ -24,8 +24,9 @@
+                   label: 'Hiring Timeline (Start Date)',
+                   date: _hiringStart,
+                   onPicked: _setHiringStart,
+-                  // A live post's hiring window is already published to
+-                  // applicants — read-only until the job is taken offline.
++                  // BUG-28: no picking past days for a new start date.
++                  firstDate: _today,
++                  // Locked only once hiring has actually started (BUG-29).
+                   enabled: !_timelineLocked,
+                 ),
+               ),
+@@ -35,17 +36,30 @@
+                   label: 'Hiring Timeline (End Date)',
+                   date: _hiringEnd,
+                   onPicked: _setHiringEnd,
+-                  firstDate: _hiringStart,
+-                  enabled: !_timelineLocked,
++                  // BUG-28/29: end date is always editable (extend / shorten a
++                  // deadline) but must be after the start and not in the past.
++                  firstDate: _latest(
++                    _today,
++                    _hiringStart?.add(const Duration(days: 1)),
++                  ),
+                 ),
+               ),
+             ],
+           ),
+           Row(
++            crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+-              Expanded(child: _requiredError(_submitted && _hiringStart == null)),
++              Expanded(
++                child: _hiringStart == null
++                    ? _requiredError(_submitted && _hiringStart == null)
++                    : _inlineError(_submitted ? _startDateError : null),
++              ),
+               SizedBox(width: 16.w),
+-              Expanded(child: _requiredError(_submitted && _hiringEnd == null)),
++              Expanded(
++                child: _hiringEnd == null
++                    ? _requiredError(_submitted && _hiringEnd == null)
++                    : _inlineError(_endDateError),
++              ),
+             ],
+           ),
+           SizedBox(height: 10.sp),
+@@ -63,6 +77,7 @@
+               const Expanded(child: SizedBox()),
+             ],
+           ),
++          _inlineError(_maxAppsError), // BUG-28
+           SizedBox(height: 10.sp),
+           Text(
+             'Required Documents',
+@@ -237,7 +252,13 @@
+       builder: (context, _) => EditActionButtons(
+         onPreview: () => navigateTo(
+           context,
+-          JobListingPreviewPage(jobId: _editingJobId ?? 'new'),
++          // BUG-09: preview what is on the form now, not a placeholder.
++          JobListingPreviewPage(
++            jobId: _editingJobId ?? 'new',
++            draft: _buildModel(
++              publishStatus: _editingJobId == null ? 'draft' : 'published',
++            ),
++          ),
+         ),
+         onPublish:      _publish,
+         publishLabel:   isEdit ? 'Save' : 'Publish',
+@@ -245,7 +266,12 @@
+         publishDisabledTooltip:
+             isEdit ? 'No changes to save' : 'Fill in all required fields to publish',
+         isSaving:       _isSaving,
+-        onDiscard:      () => context.pop(),
++        // BUG-12: the app-wide "dirty" flag only notices text fields and
++        // dropdowns, so flipping the Job Status switch (or picking a date)
++        // never enabled Save. This page has its own exact change check
++        // (_hasChanges covers every field, the switch and the dates).
++        requireChanges: false,
++        onDiscard:      () => Navigator.of(context).maybePop(),
+         onSaveForLater: isEdit ? null : _saveDraft,
+       ),
+     );
+@@ -337,6 +363,21 @@
+     );
+   }
+ 
++  DateTime _latest(DateTime a, DateTime? b) =>
++      (b != null && b.isAfter(a)) ? b : a;
++
++  /// A cross-field validation message (BUG-28), shown as soon as it applies.
++  Widget _inlineError(String? message) => message == null
++      ? const SizedBox.shrink()
++      : Padding(
++          padding: EdgeInsets.only(top: 4.h),
++          child: Text(
++            message,
++            style: StyleText.fontSize11Weight400
++                .copyWith(fontSize: 11.sp, color: ColorPick.red),
++          ),
++        );
++
+   /// Inline "required" message shown under dropdowns / date pickers,
+   /// which have no built-in error support.
+   Widget _requiredError(bool show) => show
+diff -ruN a/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_sections.dart b/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_sections.dart
+--- a/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_sections.dart	2026-09-27 11:48:59.007000887 +0000
++++ b/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_sections.dart	2026-09-27 12:07:35.488000013 +0000
+@@ -286,17 +286,12 @@
+               Expanded(child: _requiredError(_submitted && (_currency == null || _currency!.isEmpty))),
+             ],
+           ),
+-          SizedBox(height: 10.sp),
++          // BUG-28: max salary must be ≥ min salary.
+           Row(
+-            crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+-              Expanded(
+-                child: _field('Required Qualification', 'Text Here', _qualificationEn),
+-              ),
++              const Expanded(child: SizedBox()),
+               SizedBox(width: 16.w),
+-              Expanded(
+-                child: _fieldRtl('المؤهلات المطلوبة', 'أدخل النص هنا', _qualificationAr),
+-              ),
++              Expanded(child: _inlineError(_salaryError)),
+             ],
+           ),
+           SizedBox(height: 10.sp),
+@@ -304,36 +299,55 @@
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+               Expanded(
+-                child: _field('Required Skills', 'Text Here', TextEditingController(), required: false),
++                child: _field('Required Qualification', 'Text Here', _qualificationEn),
+               ),
+               SizedBox(width: 16.w),
+               Expanded(
+-                child: _fieldRtl('المهارات المطلوبة', 'أدخل النص هنا', TextEditingController(), required: false),
++                child: _fieldRtl('المؤهلات المطلوبة', 'أدخل النص هنا', _qualificationAr),
+               ),
+             ],
+           ),
+-          SizedBox(height: 8.h),
+-
++          SizedBox(height: 10.sp),
++          // BUG-08: the "Required Skills" row used to be built from
++          // `TextEditingController()` created inside build() — a throw-away
++          // controller nobody read, so the first skill was never saved. The
++          // first row is now simply the first entry of _skills and carries
++          // the section label.
+           ...List.generate(
+             _skills.length,
+             (i) => Padding(
+               padding: EdgeInsets.only(bottom: 8.h),
+               child: Row(
+-                crossAxisAlignment: CrossAxisAlignment.start,
++                crossAxisAlignment: CrossAxisAlignment.end,
+                 children: [
+-                  Expanded(child: _field('', 'Skill', _skills[i]['en']!)),
++                  Expanded(
++                    child: _field(i == 0 ? 'Required Skills' : '', 'Skill',
++                        _skills[i]['en']!,
++                        required: false),
++                  ),
+                   SizedBox(width: 20.w),
+                   Expanded(child: Row(
+-                    // Centered: the remove button should sit next to the
+-                    // middle of the field, not at its top edge.
+-                    crossAxisAlignment: CrossAxisAlignment.center,
++                    crossAxisAlignment: CrossAxisAlignment.end,
+                     children: [
+                       // Field takes the remaining width of the right half;
+                       // remove icon sits right next to it.
+-                      Expanded(child: _fieldRtl('', 'مهارة', _skills[i]['ar']!)),
++                      Expanded(
++                        child: _fieldRtl(i == 0 ? 'المهارات المطلوبة' : '',
++                            'مهارة', _skills[i]['ar']!,
++                            required: false),
++                      ),
+                       SizedBox(width: 8.w),
+-                      GestureDetector(
++                      Padding(
++                        padding: EdgeInsets.only(bottom: 6.h),
++                        child: GestureDetector(
+                         onTap: () => setState(() {
++                          if (_skills.length == 1) {
++                            // Keep one (empty) row so the section never
++                            // disappears.
++                            _skills[i]['en']!.clear();
++                            _skills[i]['ar']!.clear();
++                            return;
++                          }
+                           _skills[i]['en']!.dispose();
+                           _skills[i]['ar']!.dispose();
+                           _skills.removeAt(i);
+@@ -348,6 +362,7 @@
+                           child: Icon(Icons.remove, color: Colors.white, size: 14.sp),
+                         ),
+                       ),
++                      ),
+                     ],
+                   )),
+ 
+@@ -355,6 +370,9 @@
+               ),
+             ),
+           ),
++          // A half-filled skill row (only one language) is flagged.
++          if (_submitted && !_skillsOk)
++            _inlineError('Fill in both the English and Arabic skill name.'),
+ 
+           GestureDetector(
+             onTap: () => setState(
+diff -ruN a/lib/features/job/presentation/ui/widgets/job_listing_main/job_card.dart b/lib/features/job/presentation/ui/widgets/job_listing_main/job_card.dart
+--- a/lib/features/job/presentation/ui/widgets/job_listing_main/job_card.dart	2026-09-27 11:48:59.007000887 +0000
++++ b/lib/features/job/presentation/ui/widgets/job_listing_main/job_card.dart	2026-09-27 12:07:35.484000013 +0000
+@@ -43,23 +43,29 @@
+   String get _bottomText {
+     switch (job.status) {
+       case JobStatus.active:
++        // BUG-44: "Posted 0 Days ago" → "Posted Today".
+         final days = DateTime.now().difference(job.postedDate ?? DateTime.now()).inDays;
++        if (days <= 0) return 'Posted Today';
++        if (days == 1) return 'Posted 1 Day ago';
+         return 'Posted $days Days ago';
+       case JobStatus.ended:
+-        return 'Ended On ${_formatDate(job.endedDate)}';
++        return 'Ended On ${_formatDate(job.endedDate ?? job.hiringEndDate)}';
+       case JobStatus.removed:
+         return 'Removed Since ${_formatDate(job.endedDate)}';
+       case JobStatus.scheduled:
+-        return 'Scheduled At ${_formatDate(job.postedDate)}';
++        // Scheduled jobs open on their hiring start date (BUG-11).
++        return 'Scheduled At ${_formatDate(job.hiringStartDate ?? job.postedDate)}';
+       case JobStatus.drafted:
+         return 'Draft — not published yet';
+       case JobStatus.inactive:
+-        return 'Inactive Since ${_formatDate(job.endedDate)}';
++        // BUG-44: the date is now stamped when a job is deactivated.
++        final d = _formatDate(job.endedDate);
++        return d.isEmpty ? 'Inactive' : 'Inactive Since $d';
+     }
+   }
+ 
+   String get _bottomRightText {
+-    if (job.totalApplications > 0) return 'Total Application:${job.totalApplications}';
++    if (job.totalApplications > 0) return 'Total Applications: ${job.totalApplications}'; // BUG-41
+     return '';
+   }
+ 
+@@ -110,8 +116,11 @@
+                       _CompanyLogo(logoUrl: logoUrl),
+                       SizedBox(width: 10.w),
+                       Expanded(
++                        // BUG-44: user text is shown exactly as typed (no
++                        // auto Title-Case), and it truncates BEFORE the status
++                        // badge instead of running underneath it.
+                         child: Text(
+-                          FormatHelper.capitalize(job.title.en.isEmpty ? 'Untitled' : job.title.en),
++                          job.displayTitle,
+                           style: StyleText.fontSize15Weight600.copyWith(
+                             fontSize: 15.sp,
+                             fontWeight: FontWeight.w700,
+@@ -121,6 +130,8 @@
+                           overflow: TextOverflow.ellipsis,
+                         ),
+                       ),
++                      SizedBox(width: 8.w),
++                      _statusBadge(),
+                     ],
+                   ),
+                 ),
+@@ -133,13 +144,21 @@
+                     spacing: 8.w,
+                     runSpacing: 6.h,
+                     children: [
+-                      _svgTag(_Svg.calendar, 'Egypt'),
+-                      _svgTag(_workTypeSvg(), job.workType.label),
+-                      _svgTag(_Svg.yearsExp, job.experienceLevel.label),
++                      // BUG-10 / BUG-47: the location used to be a hard-coded
++                      // "Egypt" on every card (even remote jobs), and unset
++                      // dropdowns showed invented defaults.
++                      if (job.location.trim().isNotEmpty &&
++                          job.workType != WorkType.remote)
++                        _svgTag(_Svg.calendar, job.location.trim()),
++                      if (!job.isUnset('workType'))
++                        _svgTag(_workTypeSvg(), job.workType.label),
++                      if (!job.isUnset('experienceLevel'))
++                        _svgTag(_Svg.yearsExp, job.experienceLevel.label),
+                       if (job.salaryMax > 0)
+                         _svgTag(
+                           _Svg.calendar,
+-                          '${job.salaryMin.toInt()} - ${job.salaryMax.toInt()}',
++                          // BUG-44: salary with its currency.
++                          '${job.salaryMin.toInt()} - ${job.salaryMax.toInt()} ${job.salaryCurrency}',
+                         ),
+                     ],
+                   ),
+@@ -153,7 +172,7 @@
+                     children: [
+                       Expanded(
+                         child: Text(
+-                          FormatHelper.capitalize(_requirementsPreview),
++                          _requirementsPreview, // BUG-44: as typed
+                           maxLines: 1,
+                           overflow: TextOverflow.ellipsis,
+                           style: StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp, color: AppColors.text),
+@@ -223,34 +242,29 @@
+               ],
+             ),
+ 
+-            // ── Status badge (top-right) ──────────────────────────
+-            Positioned(
+-              top: 10.h,
+-              right: 10.w,
+-              child: Container(
+-                decoration: BoxDecoration(
+-                  color: Colors.grey.withValues(alpha: .1),
+-                  borderRadius: BorderRadius.circular(8.r),
+-                ),
+-                child: Padding(
+-                  padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
+-                  child: Text(
+-                    FormatHelper.capitalize(job.status.label),
+-                    style: StyleText.fontSize13Weight600.copyWith(
+-                      fontSize: 13.sp,
+-                      fontWeight: FontWeight.w600,
+-                      color: _statusTextColor,
+-                    ),
+-                  ),
+-                ),
+-              ),
+-            ),
+           ],
+         ),
+       ),
+     );
+   }
+ 
++  // ── Status badge — now part of the header row (BUG-44) ──────────────────
++  Widget _statusBadge() => Container(
++        decoration: BoxDecoration(
++          color: Colors.grey.withValues(alpha: .1),
++          borderRadius: BorderRadius.circular(8.r),
++        ),
++        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
++        child: Text(
++          job.status.label,
++          style: StyleText.fontSize13Weight600.copyWith(
++            fontSize: 13.sp,
++            fontWeight: FontWeight.w600,
++            color: _statusTextColor,
++          ),
++        ),
++      );
++
+   Widget _svgTag(String svgAsset, String text) {
+     return Container(
+       padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
+@@ -269,7 +283,7 @@
+           ),
+           SizedBox(width: 5.w),
+           Text(
+-            FormatHelper.capitalize(text),
++            text, // BUG-44: shown as typed
+             style: StyleText.fontSize11Weight600.copyWith(
+               fontSize: 11.sp,
+               fontWeight: FontWeight.w600,
+diff -ruN a/lib/features/main/data/models/main_model.dart b/lib/features/main/data/models/main_model.dart
+--- a/lib/features/main/data/models/main_model.dart	2026-09-27 11:48:59.015000887 +0000
++++ b/lib/features/main/data/models/main_model.dart	2026-09-27 12:07:35.583000013 +0000
+@@ -115,9 +115,12 @@
+     if (value == null) return null;
+     try {
+       if (value is DateTime) return value;
+-      final type = value.runtimeType.toString();
+-      if (type.contains('Timestamp')) {
+-        return value.toDate() as DateTime;
++      // BUG-25: runtimeType.toString() is MINIFIED in release web builds, so
++      // checking for the name 'Timestamp' never matched in production and
++      // every date came back null ("Last Updated On —"). Duck-type the
++      // Firestore Timestamp instead.
++      if (value is! String && value is! num) {
++        try { return (value as dynamic).toDate() as DateTime; } catch (_) {}
+       }
+       if (value is String && value.isNotEmpty) return DateTime.tryParse(value);
+       if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
+diff -ruN a/lib/features/main/presentation/ui/pages/main_main.dart b/lib/features/main/presentation/ui/pages/main_main.dart
+--- a/lib/features/main/presentation/ui/pages/main_main.dart	2026-09-27 11:48:59.014000887 +0000
++++ b/lib/features/main/presentation/ui/pages/main_main.dart	2026-09-27 12:07:35.571000013 +0000
+@@ -289,7 +289,21 @@
+         SizedBox(height: 15.h),
+         Text('Logo', style: StyleText.fontSize14Weight500.copyWith(color: AppColors.text)),
+         SizedBox(height: 8.h),
+-        NetworkImageView.circle(url: data.branding.logoUrl, diameter: 70.w),
++        // BUG-25: with no uploaded logo the site falls back to the bundled
++        // logo, but this field showed an empty placeholder. Show what visitors
++        // actually see.
++        data.branding.logoUrl.isNotEmpty
++            ? NetworkImageView.circle(url: data.branding.logoUrl, diameter: 70.w)
++            : Row(children: [
++                ClipOval(
++                  child: Image.asset('assets/images/logo.jpg',
++                      width: 70.w, height: 70.w, fit: BoxFit.cover),
++                ),
++                SizedBox(width: 10.w),
++                Text('Default logo (no custom logo uploaded)',
++                    style: StyleText.fontSize12Weight400
++                        .copyWith(color: AppColors.secondaryText)),
++              ]),
+         SizedBox(height: 16.h),
+         Row(children: [
+           Expanded(child: _colorReadField('Primary Color', data.branding.primaryColor)),
+diff -ruN a/lib/features/main/presentation/ui/pages/main_preview.dart b/lib/features/main/presentation/ui/pages/main_preview.dart
+--- a/lib/features/main/presentation/ui/pages/main_preview.dart	2026-09-27 11:48:59.014000887 +0000
++++ b/lib/features/main/presentation/ui/pages/main_preview.dart	2026-09-27 12:07:35.572000013 +0000
+@@ -135,7 +135,7 @@
+   contentWidth: 1000.w,
+   children: [
+                                 AppAdminNavbar(
+-                                  activeLabel:    'web page',
++                                  activeLabel:    'Web Page',
+                                   homePage:       CareersMainPageDashboard(),
+                                   webPage:        MainMainPage(),
+                                   jobListingPage: JobListingMainPage(),
+diff -ruN a/lib/features/services/data/models/services_model.dart b/lib/features/services/data/models/services_model.dart
+--- a/lib/features/services/data/models/services_model.dart	2026-09-27 11:48:59.009000887 +0000
++++ b/lib/features/services/data/models/services_model.dart	2026-09-27 12:07:35.508000013 +0000
+@@ -184,7 +184,8 @@
+   /// ✅ Handles Firestore Timestamp, ISO string, or null
+   static DateTime? _parseDateTime(dynamic value) {
+     if (value == null) return null;
+-    if (value.runtimeType.toString().contains('Timestamp')) {
++    // BUG-25: runtimeType names are minified on web release — duck-type instead.
++    if (value is! String && value is! num && value is! DateTime) {
+       try { return (value as dynamic).toDate() as DateTime; } catch (_) {}
+     }
+     if (value is String) return DateTime.tryParse(value);
+diff -ruN a/lib/features/services/data/repository/services_repo_impl.dart b/lib/features/services/data/repository/services_repo_impl.dart
+--- a/lib/features/services/data/repository/services_repo_impl.dart	2026-09-27 11:48:59.009000887 +0000
++++ b/lib/features/services/data/repository/services_repo_impl.dart	2026-09-27 12:07:35.506000013 +0000
+@@ -128,7 +128,8 @@
+ 
+     // ✅ Convert Firestore Timestamp to ISO string instead of removing it
+     final rawTs = copy['lastUpdatedAt'];
+-    if (rawTs != null && rawTs.runtimeType.toString().contains('Timestamp')) {
++    // BUG-25: runtimeType names are minified on web release — duck-type instead.
++    if (rawTs != null && rawTs is! String && rawTs is! num) {
+       try {
+         final dt = (rawTs as dynamic).toDate() as DateTime;
+         copy['lastUpdatedAt'] = dt.toIso8601String();
+diff -ruN a/lib/main.dart b/lib/main.dart
+--- a/lib/main.dart	2026-09-27 11:48:59.015000887 +0000
++++ b/lib/main.dart	2026-09-27 12:07:35.585000013 +0000
+@@ -7,6 +7,7 @@
+ import 'package:flutter_screenutil/flutter_screenutil.dart';
+ 
+ import 'package:flutter_web_plugins/flutter_web_plugins.dart';
++import 'package:go_router/go_router.dart';
+ 
+ import 'package:flutter_localizations/flutter_localizations.dart';
+ import 'package:web_app_admin/features/about_us/presentation/controller/about_us_company_cubit.dart';
+@@ -45,6 +46,9 @@
+   WidgetsFlutterBinding.ensureInitialized();
+   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+   usePathUrlStrategy(); // ← removes the # from URLs
++  // BUG-05: make context.push()/pushNamed() update the address bar too, so
++  // sub-pages opened with push (About Company, etc.) survive a reload.
++  GoRouter.optionURLReflectsImperativeAPIs = true;
+   AppTheme.setCurrentThemeColors();
+   runApp(const BayanatzApp());
+ }

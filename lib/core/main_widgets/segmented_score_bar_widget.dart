@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../theme/new_theme.dart';
+
 class ScoreSegment {
   final String label;
   final int value;
@@ -21,6 +23,7 @@ class ScoreSegment {
 
 class SegmentedScoreBarWidget extends StatelessWidget {
   final String title;
+  final Color? titleColor;
   final String? iconAsset;
   final List<ScoreSegment> segments;
   final double? height;
@@ -32,6 +35,7 @@ class SegmentedScoreBarWidget extends StatelessWidget {
   const SegmentedScoreBarWidget({
     Key? key,
     required this.title,
+    this.titleColor,
     required this.segments,
     this.iconAsset,
     this.height,
@@ -84,44 +88,53 @@ class SegmentedScoreBarWidget extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: TextStyle(
-                    fontSize: 14.sp,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black,
-                  ),
+                  style: StyleText.fontSize14Weight700
+                      .copyWith(color: titleColor ?? Colors.black),
                 ),
               ),
             ],
           ),
           SizedBox(height: 20.sp),
 
-          // ── Labels row with values ──────────────────────
+          // ── Labels row with values (Figma: label on top, dot + value below) ──
           Row(
             children: segments.map((seg) {
               return Expanded(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       seg.label,
-                      style: TextStyle(
-                        fontSize: 11.sp,
+                      style: StyleText.fontSize11Weight400.copyWith(
                         fontWeight: FontWeight.w500,
-                        color: Colors.black54,
+                        color: Colors.black87,
                       ),
-                      textAlign: TextAlign.center,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    SizedBox(height: 4.sp),
-                    Text(
-                      seg.value.toString(),
-                      style: TextStyle(
-                        fontSize: 13.sp,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87,
-                      ),
-                      textAlign: TextAlign.center,
+                    SizedBox(height: 6.sp),
+                    Row(
+                      children: [
+                        Container(
+                          width: 12.sp,
+                          height: 12.sp,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: seg.color,
+                          ),
+                        ),
+                        SizedBox(width: 6.sp),
+                        Flexible(
+                          child: Text(
+                            _formatValue(seg.value),
+                            style: StyleText.fontSize13Weight600.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black87,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -131,6 +144,18 @@ class SegmentedScoreBarWidget extends StatelessWidget {
           SizedBox(height: 12.sp),
 
           // ── Segmented bar ───────────────────────────────
+          // BUG-31: with every value at 0 the bar used to be drawn as five
+          // equal coloured parts, implying data that doesn't exist. Show an
+          // empty grey track instead.
+          if (totalValue <= 0)
+            Container(
+              height: barHeight.sp,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F0F0),
+                borderRadius: BorderRadius.circular(6.r),
+              ),
+            )
+          else
           ClipRRect(
             borderRadius: BorderRadius.circular(6.r),
             child: SizedBox(
@@ -170,5 +195,15 @@ class SegmentedScoreBarWidget extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _formatValue(int n) {
+    final s = n.toString();
+    final buffer = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buffer.write(',');
+      buffer.write(s[i]);
+    }
+    return buffer.toString();
   }
 }

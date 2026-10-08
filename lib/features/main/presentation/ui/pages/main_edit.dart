@@ -15,6 +15,7 @@ import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_switch/flutter_switch.dart';
@@ -27,7 +28,9 @@ import '../../../../../core/constant/color.dart';
 import '../../../../../core/custom/image_upload_circle.dart';
 import '../../../../../core/custom_dialog.dart';
 import '../../../../../core/custom_svg.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../core/main_widgets/edit_action_buttons.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -47,6 +50,8 @@ import '../../controller/main_state.dart';
 import '../../../../job/presentation/ui/pages/job_listing_main.dart';
 import 'main_main.dart';
 import 'main_preview.dart'; // adjust import path as needed
+import '../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/main_edit/picked_image.dart';
 part '../widgets/main_edit/link_item.dart';
@@ -84,8 +89,13 @@ const List<Map<String, String>> _kRoutes = [
 // ── Fixed label-destination list ─────────────────────────────────────────────
 const List<Map<String, String>> _kLabelDestinations = [
   {'key': '',                                    'value': 'None'},
+  // BUG-66: a "Services" (or Home) column had no valid destination.
+  {'key': '/',                                   'value': 'Home'},
+  {'key': '/services',                           'value': 'Services'},
+  {'key': '/about',                              'value': 'About Us'},
+  {'key': '/careers',                            'value': 'Careers'},
   {'key': '/about?tab=our-strategy',             'value': 'Our Strategy'},
-  {'key': '/about?tab=terms-and-conditions',     'value': 'Terms & Conditions'},
+  {'key': '/about?tab=terms-and-conditions',     'value': 'Terms and Conditions'},
   {'key': '/about?tab=privacy-policy',           'value': 'Privacy Policy'},
   {'key': '/about?tab=vision',                   'value': 'Vision'},
   {'key': '/about?tab=mission',                  'value': 'Mission'},
@@ -103,7 +113,7 @@ const List<Map<String, String>> _kGroupTitleDestinations = [
   {'key': '/careers?tab=interns',           'value': 'Our Interns',        'ar': 'المتدربون'},
   {'key': '/careers?tab=our-team',          'value': 'Our Team',           'ar': 'فريقنا'},
   {'key': '/about?tab=our-strategy',        'value': 'Our Strategy',       'ar': 'استراتيجيتنا'},
-  {'key': '/about?tab=terms-and-conditions','value': 'Terms & Conditions', 'ar': 'الشروط والأحكام'},
+  {'key': '/about?tab=terms-and-conditions','value': 'Terms and Conditions', 'ar': 'الشروط والأحكام'},
 ];
 
 const List<Map<String, String>> _kFonts = [
@@ -113,6 +123,16 @@ const List<Map<String, String>> _kFonts = [
   {'key': 'Tajawal',   'value': 'Tajawal'},
   {'key': 'Almarai',   'value': 'Almarai'},
   {'key': 'Noto Sans', 'value': 'Noto Sans'},
+];
+
+// BUG-78: the Arabic Font list offered Latin-only fonts (Roboto, Poppins,
+// Noto Sans) that have no Arabic glyphs. Only fonts with Arabic support here.
+const List<Map<String, String>> _kArabicFonts = [
+  {'key': 'Cairo',                'value': 'Cairo'},
+  {'key': 'Tajawal',              'value': 'Tajawal'},
+  {'key': 'Almarai',              'value': 'Almarai'},
+  {'key': 'Noto Sans Arabic',     'value': 'Noto Sans Arabic'},
+  {'key': 'IBM Plex Sans Arabic', 'value': 'IBM Plex Sans Arabic'},
 ];
 
 class MainEditPage extends StatefulWidget {
@@ -177,6 +197,51 @@ class _MainEditPageState extends State<MainEditPage> {
   // ── Seed-hash guard ───────────────────────────────────────────────────────
   int? _seededModelHash;
 
+  // ── Dirty tracking ────────────────────────────────────────────────────────
+  // A complete form is not the same thing as a CHANGED form. Opening this page
+  // and hitting Publish used to re-upload byte-identical content, because the
+  // gate only asked "is everything filled in?". It now also has to differ from
+  // what was loaded.
+  //
+  // The signature is a cheap string of everything the form owns; it is captured
+  // once in _seedFromModel and compared on every rebuild.
+  String? _seedSignature;
+
+  String _imgSig(_PickedImage img) =>
+      '${img.url ?? ''}#${img.bytes?.length ?? 0}';
+
+  String get _formSignature {
+    final parts = <String>[
+      _imgSig(_logoPicked),
+      for (var i = 0; i < _navBtns.length; i++)
+        '${_navBtns[i]['nameEn']!.text}|${_navBtns[i]['nameAr']!.text}'
+            '|${_navRoutes[i] ?? ''}|${_navStatus[i]}',
+      for (final col in _footerColumns) ...[
+        '${col['route'] ?? ''}',
+        '${(col['titleEn'] as TextEditingController?)?.text ?? ''}',
+        '${(col['titleAr'] as TextEditingController?)?.text ?? ''}',
+        for (final label in (col['labels'] as List<Map<String, dynamic>>))
+          '${label['route'] ?? ''}'
+              '|${(label['en'] as TextEditingController).text}'
+              '|${(label['ar'] as TextEditingController).text}',
+      ],
+      for (final l in _links)
+        '${_imgSig(l.icon)}|${l.text.text}|${l.visibility}',
+      _primaryColor.text,
+      _secondaryColor.text,
+      _bgColor.text,
+      _headerFooterColor.text,
+      _mainWidgetColor.text,
+      _engFont ?? '',
+      _arFont ?? '',
+    ];
+    return parts.join('~');
+  }
+
+  /// True once the user has actually changed something since the page loaded.
+  bool get _isDirty =>
+      _seedSignature != null && _formSignature != _seedSignature;
+
   Color get _resolvedPrimaryColor {
     try {
       final hex = _primaryColor.text.replaceAll('#', '');
@@ -214,8 +279,10 @@ class _MainEditPageState extends State<MainEditPage> {
 
       final labels = col['labels'] as List<Map<String, dynamic>>;
       for (final label in labels) {
+        // BUG-59: "None" ('') is offered in the list and means "plain text,
+        // no link". Only a label with NO choice at all (null) is incomplete.
         final labelRoute = label['route'] as String?;
-        if (labelRoute == null || labelRoute.isEmpty) return false;
+        if (labelRoute == null) return false;
 
         final en = (label['en'] as TextEditingController).text;
         final ar = (label['ar'] as TextEditingController).text;
@@ -240,7 +307,7 @@ class _MainEditPageState extends State<MainEditPage> {
   // Collects the first validation error message to display in the dialog.
   String? _getValidationError() {
     if (_logoPicked.isEmpty) {
-      return 'Please upload a logo image (SVG format)';
+      return 'Please upload a logo image';
     }
 
     for (int i = 0; i < _navBtns.length; i++) {
@@ -267,7 +334,7 @@ class _MainEditPageState extends State<MainEditPage> {
       for (int j = 0; j < labels.length; j++) {
         final label = labels[j];
         final labelRoute = label['route'] as String?;
-        if (labelRoute == null || labelRoute.isEmpty) {
+        if (labelRoute == null) { // BUG-59: '' (None) is allowed
           return 'Please select a destination for Label ${j + 1} in Footer Column ${i + 1}';
         }
         if ((label['en'] as TextEditingController).text.trim().isEmpty) {
@@ -321,7 +388,31 @@ class _MainEditPageState extends State<MainEditPage> {
     return items;
   }
 
+  /// BUG-67: a footer column whose Group Title points at a menu item shows
+  /// that item's names. The Arabic title field is read-only, but it kept the
+  /// value saved long ago ("اتصل بنا") while the menu item said "تواصل معنا".
+  /// Titles are now re-synced from the menu item on load, on every edit of a
+  /// menu name, and right before saving.
+  void _syncFooterTitlesFromNav() {
+    for (final col in _footerColumns) {
+      final route = col['route'] as String?;
+      if (route == null || route.isEmpty) continue;
+      final idx = _navRoutes.indexOf(route);
+      if (idx == -1) continue;
+      final en = _navBtns[idx]['nameEn']!.text;
+      final ar = _navBtns[idx]['nameAr']!.text;
+      final enCtrl = col['titleEn'] as TextEditingController;
+      final arCtrl = col['titleAr'] as TextEditingController;
+      if (enCtrl.text != en) enCtrl.text = en;
+      if (arCtrl.text != ar) arCtrl.text = ar;
+    }
+  }
+
+  /// BUG-75: after Discard, stay on Web Page → Main (not the Home dashboard).
+  void _goToMainTab() => GoRouter.of(context).go('/admin/dashboard');
+
   void _onFieldChanged() {
+    _syncFooterTitlesFromNav(); // BUG-67
     if (mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(() {});
@@ -358,12 +449,16 @@ class _MainEditPageState extends State<MainEditPage> {
   // ── Image picker (SVG only) ───────────────────────────────────────────────
   // ✅ FIX: readAsArrayBuffer returns ByteBuffer, not List<int>.
   //    We must cast to ByteBuffer and wrap with Uint8List.view().
-  Future<_PickedImage?> _pickImage() async {
+  /// BUG-68: [allowRaster] lets the logo take PNG / JPG / WebP too (it used
+  /// to silently ignore a PNG — no preview, no message).
+  Future<_PickedImage?> _pickImage({bool allowRaster = false}) async {
     final completer = Completer<_PickedImage?>();
     bool completed  = false;
 
     final input = html.FileUploadInputElement()
-      ..accept = '.svg,image/svg+xml';
+      ..accept = allowRaster
+          ? '.svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp'
+          : '.svg,image/svg+xml';
 
     input.onChange.listen((event) {
       final files = input.files;
@@ -373,12 +468,24 @@ class _MainEditPageState extends State<MainEditPage> {
       }
       final file = files.first;
 
-      // ── SVG-only guard ──────────────────────────────────────────────────
-      if (!file.name.toLowerCase().endsWith('.svg') &&
-          file.type != 'image/svg+xml') {
+      // ── Format guard ────────────────────────────────────────────────────
+      final name = file.name.toLowerCase();
+      final isSvg = name.endsWith('.svg') || file.type == 'image/svg+xml';
+      final isRaster = RegExp(r'\.(png|jpe?g|webp)$').hasMatch(name) ||
+          const ['image/png', 'image/jpeg', 'image/webp'].contains(file.type);
+      if (!isSvg && !(allowRaster && isRaster)) {
         if (!completed) {
           completed = true;
           completer.complete(null);
+          // BUG-68: say why the file was ignored.
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(allowRaster
+                  ? 'Please choose an SVG, PNG, JPG or WebP image.'
+                  : 'Only SVG files are allowed here.'),
+              backgroundColor: ColorPick.primary,
+            ));
+          }
         }
         return;
       }
@@ -517,7 +624,7 @@ class _MainEditPageState extends State<MainEditPage> {
           return const Scaffold(
             backgroundColor: ColorPick.white,
             body: Center(
-                child: CircularProgressIndicator(color: ColorPick.primary)),
+                child: CircleProgress()),
           );
         }
 
@@ -526,19 +633,12 @@ class _MainEditPageState extends State<MainEditPage> {
           body: SizedBox(
             width: double.infinity,
             height: double.infinity,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  SingleChildScrollView(
-                    child: SizedBox(
-                      width: 1000.w,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
+            child: AdminStickyBody(
+  contentWidth: 1000.w,
+  children: [
 
                           AppAdminNavbar(
-                            activeLabel:    'Home',
+                            activeLabel:    'Web Page', // BUG-82: was 'Home' while editing Main
                             homePage:       CareersMainPageDashboard(),
                             webPage:        MainMainPage(),
                             jobListingPage: JobListingMainPage(),
@@ -549,8 +649,8 @@ class _MainEditPageState extends State<MainEditPage> {
                           SizedBox(
                             width: 1050.w,
                             child: SingleChildScrollView(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: 20.w, vertical: 20.h),
+                              padding: EdgeInsets.only(
+                                  bottom: 20.h),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -581,64 +681,16 @@ class _MainEditPageState extends State<MainEditPage> {
                                   // ── Social Links ─────────────────────────
                                   _linksSection(),
                                   _gap(),
-
                                   // ── Actions ──────────────────────────────
                                   _bottomActions(cubit),
                                   _gap(),
-
-                                  // ── Discard button ────────────────────────
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: GestureDetector(
-                                          onTap: () {
-                                            if (Navigator.canPop(context)) {
-                                              Navigator.pop(context);
-                                            } else {
-                                              Navigator.pushReplacement(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (context) =>
-                                                  const MainMainPage(),
-                                                ),
-                                              );
-                                            }
-                                          },
-                                          child: AnimatedContainer(
-                                            duration:
-                                            const Duration(milliseconds: 200),
-                                            height: 44.h,
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFF797979),
-                                              borderRadius:
-                                              BorderRadius.circular(6.r),
-                                            ),
-                                            child: Center(
-                                              child: Text('Discard',
-                                                  style: StyleText
-                                                      .fontSize14Weight600
-                                                      .copyWith(
-                                                      color: Colors.white)),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(width: 400.w),
-                                      Expanded(child: Container()),
-                                    ],
-                                  ),
                                   SizedBox(height: 40.h),
                                 ],
                               ),
                             ),
                           ),
                         ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+),
           ),
         );
       },

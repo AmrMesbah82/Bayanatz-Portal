@@ -28,7 +28,7 @@ extension _JobListingPreviewUi on _JobListingPreviewPageState {
           borderRadius: BorderRadius.circular(4.r),
           border: Border.all(color: isActive ? ColorPick.primary : AppColors.secondaryText),
         ),
-        child: Text(lang, style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600,
+        child: Text(lang, style: StyleText.fontSize12Weight600.copyWith(fontSize: 12.sp, fontWeight: FontWeight.w600,
             color: isActive ? Colors.white : AppColors.secondaryText)),
       ),
     );
@@ -39,13 +39,13 @@ extension _JobListingPreviewUi on _JobListingPreviewPageState {
       children: [
         if (label1.isNotEmpty)
           Expanded(child: RichText(text: TextSpan(children: [
-            TextSpan(text: '$label1 ', style: TextStyle(fontSize: 13.sp, color: AppColors.secondaryText, height: 1.6)),
-            TextSpan(text: value1, style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600, color: ColorPick.primary, height: 1.6)),
+            TextSpan(text: '$label1 ', style: StyleText.fontSize13Weight400.copyWith(fontSize: 13.sp, color: AppColors.secondaryText, height: 1.6)),
+            TextSpan(text: value1, style: StyleText.fontSize13Weight600.copyWith(fontSize: 13.sp, fontWeight: FontWeight.w600, color: ColorPick.primary, height: 1.6)),
           ]))),
         if (label2.isNotEmpty)
           Expanded(child: RichText(text: TextSpan(children: [
-            TextSpan(text: '$label2 ', style: TextStyle(fontSize: 13.sp, color: AppColors.secondaryText, height: 1.6)),
-            TextSpan(text: value2, style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600, color: ColorPick.primary, height: 1.6)),
+            TextSpan(text: '$label2 ', style: StyleText.fontSize13Weight400.copyWith(fontSize: 13.sp, color: AppColors.secondaryText, height: 1.6)),
+            TextSpan(text: value2, style: StyleText.fontSize13Weight600.copyWith(fontSize: 13.sp, fontWeight: FontWeight.w600, color: ColorPick.primary, height: 1.6)),
           ]))),
       ],
     );
@@ -53,8 +53,8 @@ extension _JobListingPreviewUi on _JobListingPreviewPageState {
 
   Widget _singleInfo(String label, String value) {
     return RichText(text: TextSpan(children: [
-      TextSpan(text: '$label ', style: TextStyle(fontSize: 13.sp, color: AppColors.secondaryText, height: 1.6)),
-      TextSpan(text: value, style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600, color: ColorPick.primary, decorationColor: ColorPick.primary, height: 1.6)),
+      TextSpan(text: '$label ', style: StyleText.fontSize13Weight400.copyWith(fontSize: 13.sp, color: AppColors.secondaryText, height: 1.6)),
+      TextSpan(text: value, style: StyleText.fontSize13Weight600.copyWith(fontSize: 13.sp, fontWeight: FontWeight.w600, color: ColorPick.primary, decorationColor: ColorPick.primary, height: 1.6)),
     ]));
   }
 
@@ -65,7 +65,7 @@ extension _JobListingPreviewUi on _JobListingPreviewPageState {
       padding: EdgeInsets.all(20.sp),
       decoration: BoxDecoration(color: ColorPick.white, borderRadius: BorderRadius.circular(10.r)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w700, color: ColorPick.primary)),
+        Text(title, style: StyleText.fontSize16Weight700.copyWith(fontSize: 16.sp, fontWeight: FontWeight.w700, color: ColorPick.primary)),
         SizedBox(height: 14.h),
         _bulletList(text),
       ]),
@@ -78,7 +78,7 @@ extension _JobListingPreviewUi on _JobListingPreviewPageState {
       padding: EdgeInsets.all(20.sp),
       decoration: BoxDecoration(color: ColorPick.white, borderRadius: BorderRadius.circular(10.r)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Benefits', style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w700, color: ColorPick.primary)),
+        Text('Benefits', style: StyleText.fontSize16Weight700.copyWith(fontSize: 16.sp, fontWeight: FontWeight.w700, color: ColorPick.primary)),
         SizedBox(height: 16.h),
         ...job.benefits.asMap().entries.map((entry) {
           final i = entry.key;
@@ -89,10 +89,10 @@ extension _JobListingPreviewUi on _JobListingPreviewPageState {
             if (i > 0) SizedBox(height: 20.h),
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               SizedBox(width: 350.w, child: Text(title.isEmpty ? 'Benefit' : title,
-                  style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600, color: AppColors.text))),
+                  style: StyleText.fontSize14Weight600.copyWith(fontSize: 14.sp, fontWeight: FontWeight.w600, color: AppColors.text))),
               SizedBox(width: 20.w),
               Expanded(child: desc.isNotEmpty ? _richBulletList(desc)
-                  : Text('-', style: TextStyle(fontSize: 13.sp, color: AppColors.secondaryText))),
+                  : Text('-', style: StyleText.fontSize13Weight400.copyWith(fontSize: 13.sp, color: AppColors.secondaryText))),
             ]),
           ]);
         }).toList(),
@@ -109,7 +109,7 @@ extension _JobListingPreviewUi on _JobListingPreviewPageState {
           decoration: BoxDecoration(color: AppColors.text, shape: BoxShape.circle),
         )),
         SizedBox(width: 10.w),
-        Expanded(child: Text(line.trim(), style: TextStyle(fontSize: 13.sp, color: AppColors.text, height: 1.6))),
+        Expanded(child: Text(line.trim(), style: StyleText.fontSize13Weight400.copyWith(fontSize: 13.sp, color: AppColors.text, height: 1.6))),
       ]));
     }).toList());
   }
@@ -124,11 +124,11 @@ extension _JobListingPreviewUi on _JobListingPreviewPageState {
         final key = trimmed.substring(0, colonIndex + 1);
         final value = trimmed.substring(colonIndex + 1).trim();
         textWidget = RichText(text: TextSpan(children: [
-          TextSpan(text: '$key ', style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w700, color: AppColors.text, height: 1.6)),
-          TextSpan(text: value, style: TextStyle(fontSize: 13.sp, color: AppColors.text, height: 1.6)),
+          TextSpan(text: '$key ', style: StyleText.fontSize13Weight600.copyWith(fontSize: 13.sp, fontWeight: FontWeight.w700, color: AppColors.text, height: 1.6)),
+          TextSpan(text: value, style: StyleText.fontSize13Weight400.copyWith(fontSize: 13.sp, color: AppColors.text, height: 1.6)),
         ]));
       } else {
-        textWidget = Text(trimmed, style: TextStyle(fontSize: 13.sp, color: AppColors.text, height: 1.6));
+        textWidget = Text(trimmed, style: StyleText.fontSize13Weight400.copyWith(fontSize: 13.sp, color: AppColors.text, height: 1.6));
       }
       return Padding(padding: EdgeInsets.only(bottom: 6.h), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(padding: EdgeInsets.only(top: 6.h), child: Container(

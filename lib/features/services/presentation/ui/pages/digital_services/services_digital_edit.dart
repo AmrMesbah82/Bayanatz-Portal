@@ -17,6 +17,7 @@ import '../../../../data/models/services_model.dart';
 import '../../../controller/services_cubit.dart';
 import '../../../controller/services_state.dart';
 import 'services_digital_main.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../../widgets/services_digital_edit/d_j_section_card.dart';
 part '../../widgets/services_digital_edit/journey_grid.dart';
@@ -51,12 +52,17 @@ class _ServicesDigitalJourneyPageState
         };
 
         final bool isLoading = state is ServiceCmsLoading;
-        const String lastUpdated = 'Last Updated On 12 Jul 2026';
+        // BUG-25: was a hard-coded 'Last Updated On 12 Jul 2026'.
+        final DateTime? lu = model.lastUpdatedAt;
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        final String lastUpdated = lu == null
+            ? 'Last Updated On —'
+            : 'Last Updated On ${lu.day} ${months[lu.month - 1]} ${lu.year}';
 
         return Scaffold(
           backgroundColor: AppColors.background,
           body: isLoading
-              ? const Center(child: CircularProgressIndicator())
+              ? const Center(child: CircleProgress())
               : SingleChildScrollView(
             padding: EdgeInsets.all(24.r),
             child: Column(

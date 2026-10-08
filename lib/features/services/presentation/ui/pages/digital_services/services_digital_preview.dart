@@ -14,12 +14,20 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:web_app_admin/core/widget/network_image_view.dart';
 import '../../../../../../core/constant/color.dart';
+import '../../../../../../core/custom/3-custom_accordion.dart';
+import '../../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../../core/site_preview/site_preview_frame.dart';
+import '../../../../../../core/two_tab.dart';
 import '../../../../../../core/theme/appcolors.dart';
 import '../../../../../../core/theme/new_theme.dart';
 import '../../../../data/models/services_model.dart';
 import '../../../controller/services_cubit.dart';
 import '../../../controller/services_state.dart';
+import 'package:web_app_admin/core/main_widgets/app_admin_navbar.dart';
+import 'package:web_app_admin/features/careers/presentation/ui/pages/careers_main.dart';
+import 'package:web_app_admin/features/main/presentation/ui/pages/main_main.dart';
+import 'package:web_app_admin/features/job/presentation/ui/pages/job_listing_main.dart';
 
 
 // class _C {
@@ -34,7 +42,20 @@ import '../../../controller/services_state.dart';
 
 class ServicesDigitalJourneyPreviewPage extends StatefulWidget {
   final ServicePageModel model;
-  const ServicesDigitalJourneyPreviewPage({super.key, required this.model});
+
+  /// Whether this preview can publish. The edit flow opens it with Save; the
+  /// "Preview Screen" button on the main page opens it read-only.
+  final bool showSave;
+
+  /// Heading above the frame.
+  final String title;
+
+  const ServicesDigitalJourneyPreviewPage({
+    super.key,
+    required this.model,
+    this.showSave = true,
+    this.title = 'Preview Digital Journey Details',
+  });
 
   @override
   State<ServicesDigitalJourneyPreviewPage> createState() =>
@@ -44,6 +65,9 @@ class ServicesDigitalJourneyPreviewPage extends StatefulWidget {
 class _ServicesDigitalJourneyPreviewPageState
     extends State<ServicesDigitalJourneyPreviewPage> {
   bool _accordionOpen = true;
+
+  SitePreviewDevice _device = SitePreviewDevice.desktop;
+  bool              _isAr   = false;
 
   void _onSave() async {
     final confirmed = await _showConfirmDialog(context);
@@ -69,28 +93,24 @@ class _ServicesDigitalJourneyPreviewPageState
             );
           }
         },
-        child: SingleChildScrollView(
-          child: SizedBox(
-            width: double.infinity,
-            child: Column(
-              children: [
-                SizedBox(height: 20.h),
-                SizedBox(
-                  width: 1000.w,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+        child: AdminStickyBody(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  contentWidth: 1000.w,
+  children: [
+                      AppAdminNavbar(
+                        activeLabel:    'Web Page',
+                        homePage:       CareersMainPageDashboard(),
+                        webPage:        MainMainPage(),
+                        jobListingPage: JobListingMainPage(),
+                      ),
+                      SizedBox(height: 20.h),
 
                       SizedBox(height: 10.h),
 
                       AdminSubNavBar(activeIndex: 2),
-
-                      SizedBox(height: 24.h),
-
-
                       // ── Title ─────────────────────────────────────────
                       Text(
-                        'Preview Digital Journey Details',
+                        widget.title,
                         style: StyleText.fontSize45Weight600.copyWith(
                           color: ColorPick.primary,
                           fontWeight: FontWeight.w700,
@@ -98,11 +118,44 @@ class _ServicesDigitalJourneyPreviewPageState
                       ),
                       SizedBox(height: 16.h),
 
-                      // ── Accordion ─────────────────────────────────────
+                      // ── Device tabs + Language toggle ─────────────────
+                      Row(
+                        children: [
+                          _deviceTab('Desktop', SitePreviewDevice.desktop),
+                          SizedBox(width: 24.w),
+                          _deviceTab('Tablet',  SitePreviewDevice.tablet),
+                          SizedBox(width: 24.w),
+                          _deviceTab('Mobile',  SitePreviewDevice.mobile),
+                          const Spacer(),
+                          SizedBox(
+                            width: 95.w,
+                            height: 36.h,
+                            child: CustomSegmentedTabs(
+                              tabs: const ['ENG', 'AR'],
+                              selectedIndex: _isAr ? 1 : 0,
+                              onTabSelected: (i) =>
+                                  setState(() => _isAr = i == 1),
+                              selectedColor: ColorPick.primary,
+                              unselectedColor: Colors.white,
+                              selectedTextColor: Colors.white,
+                              unselectedTextColor: AppColors.text,
+                              equalWidth: false,
+                              containerPadding: EdgeInsets.symmetric(
+                                  horizontal: 8.sp, vertical: 4.sp),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 16.h),
+
+                      // ── The REAL public Services page, fed by the draft ──
+                      // The accordion below (_buildAccordion) is the old
+                      // hand-copied preview — dead code now.
+                      // Admin-only preview (no dependency on the website_app project).
                       _buildAccordion(model),
                       SizedBox(height: 24.h),
 
-                      // ── Back | Save ───────────────────────────────────
+                      // ── Back (+ Save when there is work to publish) ───
                       Row(
                         children: [
                           Expanded(
@@ -126,6 +179,9 @@ class _ServicesDigitalJourneyPreviewPageState
                             ),
                           ),
                           SizedBox(width: 300.w),
+                          if (!widget.showSave)
+                            const Expanded(child: SizedBox())
+                          else
                           Expanded(
                             child: SizedBox(
                               height: 44.h,
@@ -150,57 +206,48 @@ class _ServicesDigitalJourneyPreviewPageState
                       ),
                       SizedBox(height: 40.h),
                     ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+),
       ),
     );
   }
 
-  // ── Accordion ─────────────────────────────────────────────────────────────
-  Widget _buildAccordion(ServicePageModel model) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(6.r),
+  // ── Device tab widget ─────────────────────────────────────────────────────
+  Widget _deviceTab(String label, SitePreviewDevice device) {
+    final active = _device == device;
+    return GestureDetector(
+      onTap: () => setState(() => _device = device),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(bottom: 6.h),
+            child: Text(label,
+                style: StyleText.fontSize15Weight500.copyWith(
+                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                  color: active ? ColorPick.primary : AppColors.secondaryText,
+                )),
+          ),
+          Container(
+            height: 2,
+            width: label.length * 8.0,
+            color: active ? ColorPick.primary : Colors.transparent,
+          ),
+        ],
       ),
+    );
+  }
+
+  // ── Accordion — dead code, replaced by SiteServicesPreview above ──────────
+  Widget _buildAccordion(ServicePageModel model) {
+    return CustomAccordion(
+      title:    'Digital Journey',
+      isOpen:   _accordionOpen,
+      onToggle: () => setState(() => _accordionOpen = !_accordionOpen),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          GestureDetector(
-            onTap: () => setState(() => _accordionOpen = !_accordionOpen),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: BorderRadius.circular(6.r),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text('Digital Journey',
-                        style: StyleText.fontSize14Weight600
-                            .copyWith(color: Colors.white)),
-                  ),
-                  Icon(
-                    _accordionOpen
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white,
-                    size: 20.sp,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Body
-          if (_accordionOpen)
-            Container(
+          // Body — CustomAccordion already renders this only when open.
+          Container(
               width: double.infinity,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.only(

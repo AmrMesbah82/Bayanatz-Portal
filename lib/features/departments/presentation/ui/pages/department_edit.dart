@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
+import '../../../../../core/widget/success_toast.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -13,15 +14,22 @@ import 'package:web_app_admin/core/widget/textfield.dart';
 
 import '../../../../../core/constant/color.dart';
 import '../../../../../core/custom/image_upload_circle.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
 import '../../../../careers/presentation/ui/pages/careers_main.dart';
 import '../../../../job/presentation/ui/pages/job_listing_main.dart';
+import '../../../../job/data/models/job_listing_model.dart';
+import '../../../../job/presentation/controller/job_listing_cubit.dart';
 import '../../../../main/presentation/ui/pages/main_main.dart';
 import '../../../data/models/department_model.dart';
 import '../../controller/department_cubit.dart';
 import '../../controller/department_state.dart';
+import '../widgets/department_image_field.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
+import 'package:web_app_admin/core/custom/16-custom_dialog_manager.dart';
 
 
 // class _C {
@@ -52,6 +60,62 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
 
   bool _submitted = false;
   bool _isSaving  = false;
+  /// BUG-86: department image (uploaded by DepartmentImageField).
+  late String _iconUrl = widget.department.iconUrl;
+  String? _nameEnError;
+  String? _nameArError;
+
+  /// BUG-46: a sane cap (168-character names were accepted).
+  static const int _kMaxNameLength = 60;
+
+  /// Jobs (not removed) that still point at this department.
+  List<JobPostModel> _jobsInDepartment() {
+    try {
+      return context
+          .read<JobListingCubit>()
+          .allJobs
+          .where((j) =>
+              j.status != JobStatus.removed &&
+              widget.department.matchesJob(j.department))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// BUG-46: same rules as the Create form, with visible error text.
+  bool _validate() {
+    final cubit  = context.read<DepartmentCubit>();
+    final nameEn = _nameEnController.text.trim();
+    final nameAr = _nameArController.text.trim();
+    String? enError;
+    String? arError;
+    if (nameEn.isEmpty) {
+      enError = 'This field is required.';
+    } else if (cubit.nameExists(nameEn, excludeId: widget.department.id)) {
+      enError = 'A department with this name already exists.';
+    }
+    if (nameAr.isEmpty) {
+      arError = 'هذا الحقل مطلوب.';
+    } else if (cubit.nameExists(nameAr, excludeId: widget.department.id)) {
+      arError = 'يوجد قسم بهذا الاسم بالفعل.';
+    }
+    setState(() {
+      _nameEnError = enError;
+      _nameArError = arError;
+    });
+    return enError == null && arError == null;
+  }
+
+  Widget _errorText(String? message) => message == null
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: EdgeInsets.only(top: 4.h),
+          child: Text(
+            message,
+            style: StyleText.fontSize11Weight400.copyWith(color: ColorPick.red),
+          ),
+        );
 
   @override
   void initState() {
@@ -75,10 +139,9 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
   // ── Save ──────────────────────────────────────────────────────────────────
   void _onSave() {
     setState(() => _submitted = true);
-
-    if (_nameEnController.text.trim().isEmpty ||
-        _nameArController.text.trim().isEmpty) return;
-
+    // BUG-46: Save with an empty name used to do nothing at all.
+    if (!_validate()) return;
+    final String oldEn = widget.department.nameEn;
     _showConfirmDialog(
       title:        'EDITING DEPARTMENT DETAILS',
       message:      'Do you want to save the changes made to this Department information?',
@@ -88,17 +151,44 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
         Navigator.of(context).pop(); // close dialog
         setState(() => _isSaving = true);
 
+        final affected = _jobsInDepartment();
+        final jobCubit = context.read<JobListingCubit>();
+        final newEn = _nameEnController.text.trim();
         await context.read<DepartmentCubit>().updateDepartment(
-          id:     widget.department.id,
-          nameEn: _nameEnController.text.trim(),
-          nameAr: _nameArController.text.trim(),
+          id:      widget.department.id,
+          nameEn:  newEn,
+          nameAr:  _nameArController.text.trim(),
+          iconUrl: _iconUrl, // BUG-86 (was dropped → '' on every save)
         );
+        // BUG-30: jobs store the department NAME, so a rename used to orphan
+        // them ("Select Department" in the job form). Move them along.
+        if (newEn != oldEn) {
+          for (final j in affected) {
+            await jobCubit.updateJob(j.copyWith(department: newEn));
+          }
+        }
       },
     );
   }
 
   // ── Remove ────────────────────────────────────────────────────────────────
   void _onRemove() {
+    // BUG-30: deleting a department that still has jobs broke those jobs
+    // (JS errors, "Select Department", ghost department on the dashboard).
+    final jobs = _jobsInDepartment();
+    if (jobs.isNotEmpty) {
+      // Message only — closes itself after 3 s (no Back / OK buttons).
+      CustomDialogManager.showMessage(
+        context:   context,
+        title:     'CAN\'T DELETE DEPARTMENT',
+        message:
+        'This department has ${jobs.length} job${jobs.length == 1 ? '' : 's'}. '
+            'Move ${jobs.length == 1 ? 'it' : 'them'} to another department '
+            '(or remove ${jobs.length == 1 ? 'it' : 'them'}) first.',
+        imagePath: 'assets/images/department_icon.svg',
+      );
+      return;
+    }
     _showConfirmDialog(
       title:        'DELETE DEPARTMENT',
       message:
@@ -217,23 +307,27 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
         }
         if (state is DepartmentUpdated || state is DepartmentDeleted) {
           setState(() => _isSaving = false);
+          // BUG-46: confirm the save (root-overlay toast survives the pops).
+          showSuccessToast(
+              context,
+              state is DepartmentDeleted
+                  ? 'Department deleted'
+                  : 'Department saved');
+          final cubit = context.read<DepartmentCubit>();
           // pop twice: edit page → detail page → main page
           int count = 0;
           Navigator.of(context).popUntil((_) => count++ >= 2);
-          context.read<DepartmentCubit>().loadDepartments();
+          cubit.loadDepartments(silent: true);
         }
       },
       child: Scaffold(
         backgroundColor: ColorPick.background,
         body: Stack(
           children: [
-            SingleChildScrollView(
-              child: SizedBox(
-                width: double.infinity,
-                child: Column(
-                  children: [
+            AdminStickyBody(
+  children: [
                     AppAdminNavbar(
-                      activeLabel:    'Home',
+                      activeLabel:    'Job Listing',
                       homePage:       CareersMainPageDashboard(),
                       webPage:        MainMainPage(),
                       jobListingPage: JobListingMainPage(),
@@ -241,7 +335,7 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
 
                     Padding(
                       padding: EdgeInsets.symmetric(
-                          horizontal: 20.w, vertical: 20.h),
+                          horizontal: 20.w, vertical: 0.h),
                       child: SizedBox(
                         width: 1000.w,
                         child: Column(
@@ -287,7 +381,7 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
                               children: [_editableSection()],
                             ),
 
-                            SizedBox(height: 10.h),
+                            SizedBox(height: 20.h),
 
                             // ── Discard / Save ──
                             Row(
@@ -308,7 +402,7 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
                                     ),
                                   ),
                                 ),
-                                SizedBox(width: 16.w),
+                                SizedBox(width: 300.w),
                                 Expanded(
                                   child: GestureDetector(
                                     onTap: _isSaving ? null : _onSave,
@@ -323,9 +417,7 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
                                           ? SizedBox(
                                         width:  20.w,
                                         height: 20.h,
-                                        child: const CircularProgressIndicator(
-                                            color:       Colors.white,
-                                            strokeWidth: 2),
+                                        child: const CircleProgress(),
                                       )
                                           : Text('Save',
                                           style: StyleText.fontSize14Weight600
@@ -342,16 +434,14 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
                       ),
                     ),
                   ],
-                ),
-              ),
-            ),
+),
 
             // ── Loading overlay ──
             if (_isSaving)
               Container(
                 color: Colors.black26,
                 child: const Center(
-                  child: CircularProgressIndicator(color: ColorPick.primary),
+                  child: CircleProgress(),
                 ),
               ),
           ],
@@ -367,49 +457,13 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
     required List<Widget> children,
   }) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
+      child:    Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() => _open[key] = !isOpen),
-            child: Container(
-              width:   double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: isOpen
-                    ? BorderRadius.only(
-                    topLeft:  Radius.circular(6.r),
-                    topRight: Radius.circular(6.r))
-                    : BorderRadius.circular(6.r),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(title,
-                        style: StyleText.fontSize14Weight600
-                            .copyWith(color: Colors.white)),
-                  ),
-                  // ── Remove button ──────────────────────────────────────
-
-                  Icon(
-                    isOpen
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white,
-                    size:  20.sp,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (isOpen)
-            Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: children),
-        ],
+        children: children,
       ),
     );
   }
@@ -431,8 +485,12 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
         children: [
 
           SizedBox(height: 20.h),
-          // ── Icon placeholder (shared image-upload circle) ──
-          imageUploadCircleBare(bytes: null, url: '', onTap: () {}),
+          // ── BUG-86: Department Image ──
+          DepartmentImageField(
+            url: _iconUrl,
+            enabled: !_isSaving,
+            onChanged: (u) => setState(() => _iconUrl = u),
+          ),
           SizedBox(height: 20.h),
 
           // ── Name EN / AR ──
@@ -443,12 +501,15 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
                   label:          'Department Name',
                   hint:           'Text Here',
                   controller:     _nameEnController,
+                  onChanged: (_) {
+                    if (_nameEnError != null) setState(() => _nameEnError = null);
+                  },
                   height:         36,
                   maxLines:       1,
                   textDirection:  TextDirection.ltr,
                   textAlign:      TextAlign.start,
                   showCharCount:  false,
-                  maxLength:      200,
+                  maxLength: _kMaxNameLength, // BUG-46
                   minLength:      0,
                   submitted:      _submitted,
                   primaryColor:   ColorPick.primary,
@@ -467,12 +528,15 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
                     label:         'اسم القسم',
                     hint:          'ادخل النص هنا',
                     controller:    _nameArController,
+                    onChanged: (_) {
+                      if (_nameArError != null) setState(() => _nameArError = null);
+                    },
                     height:        36,
                     maxLines:      1,
                     textDirection: TextDirection.rtl,
                     textAlign:     TextAlign.start,
                     showCharCount: false,
-                    maxLength:     200,
+                    maxLength: _kMaxNameLength, // BUG-46
                     minLength:     0,
                     submitted:     _submitted,
                     primaryColor:  ColorPick.primary,
@@ -482,6 +546,20 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
                     hintStyle: StyleText.fontSize12Weight400
                         .copyWith(color: AppColors.secondaryText),
                   ),
+                ),
+              ),
+            ],
+          ),
+          // BUG-46: visible error text, like the Create form.
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _errorText(_nameEnError)),
+              SizedBox(width: 15.w),
+              Expanded(
+                child: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: _errorText(_nameArError),
                 ),
               ),
             ],

@@ -89,6 +89,7 @@ class ServicePageModel {
   static const String JOURNEY_ITEMS = 'journeyItems';
   static const String JOURNEY_TITLE = 'journeyTitle';
   static const String LAST_UPDATED_AT = 'lastUpdatedAt';
+  static const String ROW_SIZES = 'rowSizes';
   static const String SHORT_DESCRIPTION = 'shortDescription';
   static const String SUB_TITLE = 'subTitle';
   static const String TITLE = 'title';
@@ -98,6 +99,11 @@ class ServicePageModel {
   // ✅ Separate field for the "Reasons to Choose..." section heading
   final BilingualText          journeyTitle;
   final List<JourneyItemModel> journeyItems;
+  /// How the journey cards are laid out: one entry per row, holding how many
+  /// cards that row shows (1-4). [journeyItems] is read in order and chunked by
+  /// these sizes. Empty on documents saved before the layout screen existed —
+  /// the UI then falls back to its own default grouping.
+  final List<int>              rowSizes;
   // ✅ NEW: tracks when the services page was last updated
   final DateTime?              lastUpdatedAt;
 
@@ -109,6 +115,7 @@ class ServicePageModel {
       ar: 'أسباب اختيار بيانتز لرحلتك الرقمية',
     ),
     this.journeyItems     = const [],
+    this.rowSizes         = const [],
     this.lastUpdatedAt,
   });
 
@@ -117,12 +124,14 @@ class ServicePageModel {
     BilingualText?          shortDescription,
     BilingualText?          journeyTitle,
     List<JourneyItemModel>? journeyItems,
+    List<int>?              rowSizes,
     DateTime?               lastUpdatedAt,
   }) => ServicePageModel(
     title:            title            ?? this.title,
     shortDescription: shortDescription ?? this.shortDescription,
     journeyTitle:     journeyTitle     ?? this.journeyTitle,
     journeyItems:     journeyItems     ?? this.journeyItems,
+    rowSizes:         rowSizes         ?? this.rowSizes,
     lastUpdatedAt:    lastUpdatedAt    ?? this.lastUpdatedAt,
   );
 
@@ -131,6 +140,7 @@ class ServicePageModel {
     SHORT_DESCRIPTION: shortDescription.toMap(),
     JOURNEY_TITLE:     journeyTitle.toMap(),
     JOURNEY_ITEMS:     journeyItems.map((j) => j.toMap()).toList(),
+    ROW_SIZES:         rowSizes,
     // ✅ lastUpdatedAt is handled by FieldValue.serverTimestamp() in the repo
     //    so we only serialize it for reading, not writing
     if (lastUpdatedAt != null)
@@ -151,6 +161,7 @@ class ServicePageModel {
             'iconUrl': '',
           }
         ],
+        'rowSizes': [0],
         'lastUpdatedAt': '',
       };
 
@@ -161,6 +172,10 @@ class ServicePageModel {
     journeyItems:     (map[JOURNEY_ITEMS] as List? ?? [])
         .map((j) => JourneyItemModel.fromMap(j))
         .toList(),
+    rowSizes:         (map[ROW_SIZES] as List? ?? [])
+        .map((n) => n is num ? n.toInt() : int.tryParse('$n') ?? 0)
+        .where((n) => n > 0)
+        .toList(),
     lastUpdatedAt:    _parseDateTime(map[LAST_UPDATED_AT]),
   );
 
@@ -169,7 +184,8 @@ class ServicePageModel {
   /// ✅ Handles Firestore Timestamp, ISO string, or null
   static DateTime? _parseDateTime(dynamic value) {
     if (value == null) return null;
-    if (value.runtimeType.toString().contains('Timestamp')) {
+    // BUG-25: runtimeType names are minified on web release — duck-type instead.
+    if (value is! String && value is! num && value is! DateTime) {
       try { return (value as dynamic).toDate() as DateTime; } catch (_) {}
     }
     if (value is String) return DateTime.tryParse(value);

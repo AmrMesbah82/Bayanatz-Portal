@@ -14,10 +14,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:web_app_admin/core/constant/color.dart';
 import 'package:web_app_admin/core/custom_svg.dart';
 import 'package:web_app_admin/core/theme/appcolors.dart';
 import 'package:web_app_admin/core/theme/new_theme.dart';
 import 'package:web_app_admin/core/widget/textfield.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
+import 'package:web_app_admin/core/widget/auto_close_dialog.dart';
 
 
 
@@ -71,7 +74,7 @@ Widget _primaryBtn({
       width: width,
       height: 38.h,
       decoration: BoxDecoration(
-        color: Color(0xFF008037), // #FFDE59
+        color: ColorPick.primary,
         borderRadius: BorderRadius.circular(8.r),
       ),
       child: Center(
@@ -134,21 +137,60 @@ Future<void> showConfirmDialog({
   String? iconAsset,
   /// Fallback icon widget if no SVG asset is given
   Widget? iconWidget,
-}) {
-  return showDialog(
+}) async {
+  // cancelLabel: '' = a one-button MESSAGE dialog. App rule (29/9/2026):
+  // messages have no button and close themselves after 3 s; [onConfirm]
+  // runs once the dialog has closed.
+  final bool isMessage = cancelLabel.isEmpty;
+  await showDialog(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.4),
-    builder: (_) => _ConfirmDialog(
-      title: title,
-      subtitle: subtitle,
-      confirmLabel: confirmLabel,
-      cancelLabel: cancelLabel,
-      onConfirm: onConfirm,
-      onCancel: onCancel,
-      iconAsset: iconAsset,
-      iconWidget: iconWidget,
-    ),
+    builder: (_) {
+      final dialog = _ConfirmDialog(
+        title: title,
+        subtitle: subtitle,
+        confirmLabel: confirmLabel,
+        cancelLabel: cancelLabel,
+        onConfirm: onConfirm,
+        onCancel: onCancel,
+        iconAsset: iconAsset,
+        iconWidget: iconWidget,
+        showButtons: !isMessage,
+      );
+      return isMessage ? AutoCloseDialog(child: dialog) : dialog;
+    },
   );
+  if (isMessage) onConfirm?.call();
+}
+
+/// BUG-89 / BUG-105: ONE "discard changes?" confirmation for every edit page
+/// (Post / Edit Job, Contact Us, Add New Read, Our Teams …). Without changes
+/// it discards straight away.
+///
+/// Uses the Figma confirm dialog (BAYANATZ WEB › DIALOGS, node 7126:34139:
+/// illustration, upper-case title, grey text, Back + Confirm) — the same
+/// dialog as Publish / Save. [onDiscard] runs after the dialog has closed,
+/// so a Navigator.pop() inside it closes the page, not the dialog.
+Future<void> confirmDiscard(
+  BuildContext context, {
+  required VoidCallback onDiscard,
+  bool hasChanges = true,
+}) async {
+  if (!hasChanges) {
+    onDiscard();
+    return;
+  }
+  var confirmed = false;
+  await showPublishConfirmDialog(
+    context: context,
+    title: 'DISCARD CHANGES',
+    subtitle: 'Are you sure you want to discard all changes? '
+        'Everything you entered on this page will be lost.',
+    confirmLabel: 'Confirm',
+    backLabel: 'Back',
+    onConfirm: () async => confirmed = true,
+  );
+  if (confirmed) onDiscard();
 }
 
 class _ConfirmDialog extends StatelessWidget {
@@ -160,6 +202,7 @@ class _ConfirmDialog extends StatelessWidget {
   final VoidCallback? onCancel;
   final String? iconAsset;
   final Widget? iconWidget;
+  final bool showButtons;
 
   const _ConfirmDialog({
     required this.title,
@@ -170,6 +213,7 @@ class _ConfirmDialog extends StatelessWidget {
     this.onCancel,
     this.iconAsset,
     this.iconWidget,
+    this.showButtons = true,
   });
 
   @override
@@ -198,20 +242,26 @@ class _ConfirmDialog extends StatelessWidget {
               color: AppColors.text.withValues(alpha: 0.6),
             ),
           ),
-          SizedBox(height: 24.h),
-          // Buttons row
+          SizedBox(height: showButtons ? 24.h : 12.h),
+          // Buttons row (hidden for auto-closing message dialogs)
+          if (showButtons)
           Row(
             children: [
-              // Expanded(
-              //   child: _secondaryBtn(
-              //     label: cancelLabel,
-              //     onTap: () {
-              //       Navigator.of(context).pop();
-              //       onCancel?.call();
-              //     },
-              //   ),
-              // ),
-              // SizedBox(width: 12.w),
+              // BUG-75: confirm dialogs (e.g. "Discard Changes") had no way
+              // to back out except clicking outside. Cancel is back.
+              // (Pass cancelLabel: '' for a one-button message dialog.)
+              if (cancelLabel.isNotEmpty) ...[
+                Expanded(
+                  child: _secondaryBtn(
+                    label: cancelLabel,
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onCancel?.call();
+                    },
+                  ),
+                ),
+                SizedBox(width: 12.w),
+              ],
               Expanded(
                 child: _primaryBtn(
                   label: confirmLabel,
@@ -267,19 +317,46 @@ Future<void> showSuccessDialog({
   VoidCallback? onClose,
   /// Optional custom SVG icon path
   String? iconAsset,
-}) {
-  return showDialog(
+  /// Draw the icon as an ERROR (red ! ) instead of a green tick. Prefer
+  /// [showErrorDialog] over setting this by hand.
+  bool isError = false,
+}) async {
+  // App rule (29/9/2026): success / error messages have no button and close
+  // themselves after 3 s; [onClose] runs once the dialog has closed.
+  await showDialog(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.4),
-    builder: (_) => _SuccessDialog(
+    builder: (_) => AutoCloseDialog(
+      child: _SuccessDialog(
+        title: title,
+        subtitle: subtitle,
+        closeLabel: closeLabel,
+        iconAsset: iconAsset,
+        isError: isError,
+      ),
+    ),
+  );
+  onClose?.call();
+}
+
+/// Same shell, red icon. Use this for "Required Fields Missing" and anything
+/// else that reports a problem — a green tick above an error message reads as
+/// "saved successfully", which is the opposite of what happened.
+Future<void> showErrorDialog({
+  required BuildContext context,
+  String title = 'Something went wrong',
+  String subtitle = '',
+  String closeLabel = 'Close',
+  VoidCallback? onClose,
+}) =>
+    showSuccessDialog(
+      context: context,
       title: title,
       subtitle: subtitle,
       closeLabel: closeLabel,
       onClose: onClose,
-      iconAsset: iconAsset,
-    ),
-  );
-}
+      isError: true,
+    );
 
 class _SuccessDialog extends StatelessWidget {
   final String title;
@@ -287,6 +364,7 @@ class _SuccessDialog extends StatelessWidget {
   final String closeLabel;
   final VoidCallback? onClose;
   final String? iconAsset;
+  final bool isError;
 
   const _SuccessDialog({
     required this.title,
@@ -294,6 +372,7 @@ class _SuccessDialog extends StatelessWidget {
     required this.closeLabel,
     this.onClose,
     this.iconAsset,
+    this.isError = false,
   });
 
   @override
@@ -304,7 +383,7 @@ class _SuccessDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(height: 16.h),
-          // Green check icon
+          // Green check, or a red ! when this dialog reports a problem.
           _buildIcon(),
           SizedBox(height: 16.h),
           // Title
@@ -322,18 +401,7 @@ class _SuccessDialog extends StatelessWidget {
               color: AppColors.text.withValues(alpha: 0.6),
             ),
           ),
-          SizedBox(height: 24.h),
-          // Single close button (optional – omit if auto-dismiss is preferred)
-          if (onClose != null)
-            _primaryBtn(
-              label: closeLabel,
-              width: double.infinity,
-              onTap: () {
-                Navigator.of(context).pop();
-                onClose!.call();
-              },
-            ),
-          SizedBox(height: 4.h),
+          SizedBox(height: 16.h),
         ],
       ),
     );
@@ -346,11 +414,15 @@ class _SuccessDialog extends StatelessWidget {
     return Container(
       width: 60.r,
       height: 60.r,
-      decoration: const BoxDecoration(
-        color: Color(0xFF43A047),
+      decoration: BoxDecoration(
+        color: isError ? const Color(0xFFE53935) : const Color(0xFF43A047),
         shape: BoxShape.circle,
       ),
-      child: Icon(Icons.check_rounded, color: Colors.white, size: 36.r),
+      child: Icon(
+        isError ? Icons.priority_high_rounded : Icons.check_rounded,
+        color: Colors.white,
+        size: 36.r,
+      ),
     );
   }
 }
@@ -896,12 +968,15 @@ class _PublishConfirmDialogState extends State<_PublishConfirmDialog> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  widget.title,
-                  style: StyleText.fontSize16Weight600.copyWith(
-                    color: AppColors.text,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.3,
+                Flexible(
+                  child: Text(
+                    widget.title,
+                    textAlign: TextAlign.center,
+                    style: StyleText.fontSize16Weight600.copyWith(
+                      color: AppColors.text,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
+                    ),
                   ),
                 ),
               ],
@@ -912,10 +987,13 @@ class _PublishConfirmDialogState extends State<_PublishConfirmDialog> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  widget.subtitle,
-                  style: StyleText.fontSize13Weight400.copyWith(
-                    color: AppColors.text.withValues(alpha: 0.6),
+                Flexible(
+                  child: Text(
+                    widget.subtitle,
+                    textAlign: TextAlign.center,
+                    style: StyleText.fontSize13Weight400.copyWith(
+                      color: AppColors.text.withValues(alpha: 0.6),
+                    ),
                   ),
                 ),
               ],
@@ -932,10 +1010,7 @@ class _PublishConfirmDialogState extends State<_PublishConfirmDialog> {
                 height: 48.h,
                 child: _loading
                     ? const Center(
-                  child: CircularProgressIndicator(
-                    color: Color(0xFF008037),
-                    strokeWidth: 2.5,
-                  ),
+                  child: CircleProgress(),
                 )
                     : Row(
                   children: [
@@ -949,7 +1024,7 @@ class _PublishConfirmDialogState extends State<_PublishConfirmDialog> {
                         child: Container(
                           height: 48.h,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF9E9E9E),
+                            color:  ColorPick.back,
                             borderRadius: BorderRadius.circular(8.r),
                           ),
                           child: Center(
@@ -970,7 +1045,7 @@ class _PublishConfirmDialogState extends State<_PublishConfirmDialog> {
                         child: Container(
                           height: 48.h,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF008037),
+                            color: ColorPick.primary,
                             borderRadius: BorderRadius.circular(8.r),
                           ),
                           child: Center(

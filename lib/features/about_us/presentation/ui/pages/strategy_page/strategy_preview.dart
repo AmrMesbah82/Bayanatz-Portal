@@ -1,36 +1,53 @@
 // ******************* FILE INFO *******************
 // File Name: strategy_preview.dart
 // Screen 3 of 3 — Our Strategy CMS: Preview (Desktop/Tablet/Mobile + ENG/AR)
-// UPDATED: Added SVG support for Strategic House images
+//
+// REWRITTEN: the preview now draws the REAL public About Us page from
+//            package:website_app, opened on its "Our Strategy" tab, instead of
+//            the admin-styled accordions ("Strategic House - ENG / ARB") it used
+//            to show. What the admin sees here is what a visitor sees.
+//
+//            Images picked in the edit screen are not in Firebase Storage yet,
+//            so they reach the site through in-memory blob URLs — the preview
+//            shows the picture just chosen, not the published one.
+//
+// Created by: Amr Mesbah
 
+// ignore_for_file: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
-import 'package:web_app_admin/core/widget/network_image_view.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 import '../../../../../../core/constant/color.dart';
+import '../../../../../../core/custom_dialog.dart';
+import '../../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../../core/main_widgets/admin_sub_navbar.dart';
+import 'package:web_app_admin/core/widget/network_image_view.dart';
+import '../../../../../../core/site_preview/site_preview_frame.dart';
 import '../../../../../../core/theme/appcolors.dart';
 import '../../../../../../core/theme/new_theme.dart';
+import '../../../../../../core/two_tab.dart';
 import '../../../../data/models/about_us_model.dart';
 import '../../../controller/about_us_cubit.dart';
 import '../../../controller/about_us_state.dart';
+import 'package:web_app_admin/core/main_widgets/app_admin_navbar.dart';
+import 'package:web_app_admin/features/careers/presentation/ui/pages/careers_main.dart';
+import 'package:web_app_admin/features/main/presentation/ui/pages/main_main.dart';
+import 'package:web_app_admin/features/job/presentation/ui/pages/job_listing_main.dart';
 
 
-
-// class _C {
-//   static const Color primary  = Color(0xFF008037);
-//   static const Color cardBg   = Color(0xFFFFFFFF);
-//   static const Color grey     = Color(0xFF9E9E9E);
-//   static const Color hintText = Color(0xFF797979);
-//   static const Color back     = Color(0xFFF1F2ED);
-// }
-
-enum _PreviewMode { desktop, tablet, mobile }
+// Upload keys written by strategy_edit.dart.
+const String _kNavIconKey = 'strategy_cms/navLabel/icon';
+const String _kEnDesktop  = 'strategy_cms/strategicHouse/en/desktop';
+const String _kEnTablet   = 'strategy_cms/strategicHouse/en/tablet';
+const String _kEnMobile   = 'strategy_cms/strategicHouse/en/mobile';
+const String _kArDesktop  = 'strategy_cms/strategicHouse/ar/desktop';
+const String _kArTablet   = 'strategy_cms/strategicHouse/ar/tablet';
+const String _kArMobile   = 'strategy_cms/strategicHouse/ar/mobile';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -38,10 +55,18 @@ class StrategyPreviewPage extends StatefulWidget {
   final OurStrategyModel model;
   final Map<String, Uint8List> imageUploads;
 
+  /// Whether this preview can publish.
+  ///
+  /// The edit flow opens it with Save, because it is showing unsaved work. The
+  /// "Preview Screen" button on the main page opens it read-only — you are
+  /// looking at what is already live, so there is nothing to save.
+  final bool showSave;
+
   const StrategyPreviewPage({
     super.key,
     required this.model,
     this.imageUploads = const {},
+    this.showSave = true,
   });
 
   @override
@@ -49,551 +74,358 @@ class StrategyPreviewPage extends StatefulWidget {
 }
 
 class _StrategyPreviewPageState extends State<StrategyPreviewPage> {
-  _PreviewMode _mode = _PreviewMode.desktop;
+  SitePreviewDevice _device       = SitePreviewDevice.desktop;
+  bool              _isAr         = false;
+  bool              _isPublishing = false;
 
-  bool _strategicHouseEnOpen = true;
-  bool _strategicHouseArOpen = true;
+  /// Freshly picked images, handed to the browser as blob: URLs so the site
+  /// widgets load them exactly as they load a Storage URL. Revoked on dispose.
+  final Map<String, String> _blobUrls = {};
 
-  // In-memory bytes (freshly picked, not yet uploaded) — per selected device
-  Uint8List? get _strategicHouseEnBytes {
-    switch (_mode) {
-      case _PreviewMode.desktop:
-        return widget.imageUploads['strategy_cms/strategicHouse/en/desktop'];
-      case _PreviewMode.tablet:
-        return widget.imageUploads['strategy_cms/strategicHouse/en/tablet'];
-      case _PreviewMode.mobile:
-        return widget.imageUploads['strategy_cms/strategicHouse/en/mobile'];
-    }
+  @override
+  void initState() {
+    super.initState();
+    _makeBlobUrls();
   }
 
-  Uint8List? get _strategicHouseArBytes {
-    switch (_mode) {
-      case _PreviewMode.desktop:
-        return widget.imageUploads['strategy_cms/strategicHouse/ar/desktop'];
-      case _PreviewMode.tablet:
-        return widget.imageUploads['strategy_cms/strategicHouse/ar/tablet'];
-      case _PreviewMode.mobile:
-        return widget.imageUploads['strategy_cms/strategicHouse/ar/mobile'];
-    }
-  }
-
-  // Saved URLs — per selected device
-  String get _strategicHouseEnUrl {
-    switch (_mode) {
-      case _PreviewMode.desktop: return widget.model.strategicHouseEnDesktopUrl;
-      case _PreviewMode.tablet:  return widget.model.strategicHouseEnTabletUrl;
-      case _PreviewMode.mobile:  return widget.model.strategicHouseEnMobileUrl;
-    }
-  }
-
-  String get _strategicHouseArUrl {
-    switch (_mode) {
-      case _PreviewMode.desktop: return widget.model.strategicHouseArDesktopUrl;
-      case _PreviewMode.tablet:  return widget.model.strategicHouseArTabletUrl;
-      case _PreviewMode.mobile:  return widget.model.strategicHouseArMobileUrl;
-    }
-  }
-
-  // ── Save ──────────────────────────────────────────────────────────────────
-  void _onSave() async {
-    final ok = await _confirm(context);
-    if (ok == true && mounted) {
-      context.read<StrategyCubit>().save(
-        model: widget.model,
-        imageUploads:
-        widget.imageUploads.isEmpty ? null : widget.imageUploads,
-      );
+  @override
+  void didUpdateWidget(covariant StrategyPreviewPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(widget.imageUploads, oldWidget.imageUploads)) {
+      _revokeBlobUrls();
+      _makeBlobUrls();
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: ColorPick.background,
-      body: BlocListener<StrategyCubit, StrategyState>(
-        listener: (context, state) {
-          if (state is StrategySaved) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Our Strategy saved!')),
-            );
-            Navigator.popUntil(context, (r) => r.isFirst);
-          }
-          if (state is StrategyError) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Error: ${state.message}'),
-                backgroundColor: Colors.red,
+  void dispose() {
+    _revokeBlobUrls();
+    super.dispose();
+  }
+
+  void _makeBlobUrls() {
+    widget.imageUploads.forEach((key, bytes) {
+      if (bytes.isEmpty) return;
+      final blob = html.Blob(
+        <dynamic>[bytes],
+        _isSvgBytes(bytes) ? 'image/svg+xml' : 'application/octet-stream',
+      );
+      _blobUrls[key] = html.Url.createObjectUrlFromBlob(blob);
+    });
+  }
+
+  void _revokeBlobUrls() {
+    for (final url in _blobUrls.values) {
+      html.Url.revokeObjectUrl(url);
+    }
+    _blobUrls.clear();
+  }
+
+  static bool _isSvgBytes(Uint8List b) {
+    if (b.length < 5) return false;
+    final head =
+        String.fromCharCodes(b.sublist(0, b.length.clamp(0, 100))).trimLeft();
+    return head.startsWith('<svg') || head.startsWith('<?xml');
+  }
+
+  /// The draft the site renders: the edited model with every image the user
+  /// just picked swapped in, so nothing shows a stale published picture.
+  OurStrategyModel get _draft {
+    String pick(String key, String saved) => _blobUrls[key] ?? saved;
+
+    final m = widget.model;
+    return m.copyWith(
+      navigationLabel: m.navigationLabel.copyWith(
+        iconUrl: pick(_kNavIconKey, m.navigationLabel.iconUrl),
+      ),
+      strategicHouseEnDesktopUrl:
+          pick(_kEnDesktop, m.strategicHouseEnDesktopUrl),
+      strategicHouseEnTabletUrl: pick(_kEnTablet, m.strategicHouseEnTabletUrl),
+      strategicHouseEnMobileUrl: pick(_kEnMobile, m.strategicHouseEnMobileUrl),
+      strategicHouseArDesktopUrl:
+          pick(_kArDesktop, m.strategicHouseArDesktopUrl),
+      strategicHouseArTabletUrl: pick(_kArTablet, m.strategicHouseArTabletUrl),
+      strategicHouseArMobileUrl: pick(_kArMobile, m.strategicHouseArMobileUrl),
+    );
+  }
+
+  // ── Admin-only preview body ────────────────────────────────────────────────
+  Widget _strategyPreview() {
+    final d = _draft;
+    final String url = switch (_device) {
+      SitePreviewDevice.desktop =>
+        _isAr ? d.strategicHouseArDesktopUrl : d.strategicHouseEnDesktopUrl,
+      SitePreviewDevice.tablet =>
+        _isAr ? d.strategicHouseArTabletUrl : d.strategicHouseEnTabletUrl,
+      SitePreviewDevice.mobile =>
+        _isAr ? d.strategicHouseArMobileUrl : d.strategicHouseEnMobileUrl,
+    };
+    final double maxW = switch (_device) {
+      SitePreviewDevice.desktop => 1000.w,
+      SitePreviewDevice.tablet  => 700.w,
+      SitePreviewDevice.mobile  => 375.w,
+    };
+    return Center(
+      child: Container(
+        width: maxW,
+        padding: EdgeInsets.all(20.sp),
+        decoration: BoxDecoration(
+          color: ColorPick.white,
+          borderRadius: BorderRadius.circular(6.r),
+        ),
+        child: Directionality(
+          textDirection: _isAr ? TextDirection.rtl : TextDirection.ltr,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _isAr ? 'استراتيجيتنا' : 'Our Strategy',
+                style: StyleText.fontSize18Weight500.copyWith(
+                    color: ColorPick.primary, fontWeight: FontWeight.w700),
               ),
-            );
-          }
-        },
-        child: SingleChildScrollView(
-          child: Container(
-            width: double.infinity,
-            child: Column(
-              children: [
-                Container(
-                  width: 1000.w,
-                  child: Column(
-                    children: [
-                      SizedBox(height: 20.h),
-                      AdminSubNavBar(activeIndex: 3),
-                      SizedBox(
-                        width: 1000.w,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SizedBox(height: 25.h),
-
-                            Text(
-                              'Preview Our Strategy Details',
-                              style: StyleText.fontSize45Weight600.copyWith(
-                                color: ColorPick.primary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            SizedBox(height: 16.h),
-
-                            // ── Mode tabs ──────────────────────────────────
-                            Row(
-                              children: _PreviewMode.values.map((m) {
-                                final sel = m == _mode;
-                                final label = switch (m) {
-                                  _PreviewMode.desktop => 'Desktop',
-                                  _PreviewMode.tablet  => 'Tablet',
-                                  _PreviewMode.mobile  => 'Mobile',
-                                };
-                                return GestureDetector(
-                                  onTap: () => setState(() => _mode = m),
-                                  child: Padding(
-                                    padding: EdgeInsets.only(right: 24.w),
-                                    child: Text(
-                                      label,
-                                      style: sel
-                                          ? StyleText.fontSize14Weight600
-                                          .copyWith(
-                                        color: ColorPick.primary,
-                                        decoration:
-                                        TextDecoration.underline,
-                                        decorationColor: ColorPick.primary,
-                                      )
-                                          : StyleText.fontSize14Weight400
-                                          .copyWith(color: AppColors.secondaryText),
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                            SizedBox(height: 16.h),
-
-                            // ── Strategic House — ENG accordion ────────────
-                            _previewAccordion(
-                              title: 'Strategic House - ENG',
-                              isOpen: _strategicHouseEnOpen,
-                              onToggle: () => setState(() =>
-                              _strategicHouseEnOpen =
-                              !_strategicHouseEnOpen),
-                              child: _strategicHousePreviewBody(
-                                bytes: _strategicHouseEnBytes,
-                                url: _strategicHouseEnUrl,
-                              ),
-                            ),
-                            SizedBox(height: 16.h),
-
-                            // ── Strategic House — ARB accordion ────────────
-                            _previewAccordion(
-                              title: 'Strategic House - ARB',
-                              isOpen: _strategicHouseArOpen,
-                              onToggle: () => setState(() =>
-                              _strategicHouseArOpen =
-                              !_strategicHouseArOpen),
-                              child: _strategicHousePreviewBody(
-                                bytes: _strategicHouseArBytes,
-                                url: _strategicHouseArUrl,
-                              ),
-                            ),
-                            SizedBox(height: 24.h),
-
-                            // ── Back | Save ────────────────────────────────
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: SizedBox(
-                                    height: 44.h,
-                                    child: ElevatedButton(
-                                      onPressed: () =>
-                                          Navigator.pop(context),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: ColorPick.back,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                          BorderRadius.circular(8.r),
-                                        ),
-                                      ),
-                                      child: Text('Back',
-                                          style: StyleText
-                                              .fontSize14Weight600
-                                              .copyWith(
-                                              color: Colors.white)),
-                                    ),
-                                  ),
-                                ),
-                                SizedBox(width: 12.w),
-                                Expanded(
-                                  child: SizedBox(
-                                    height: 44.h,
-                                    child: ElevatedButton(
-                                      onPressed: _onSave,
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: ColorPick.primary,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                          BorderRadius.circular(8.r),
-                                        ),
-                                      ),
-                                      child: Text('Save',
-                                          style: StyleText
-                                              .fontSize14Weight600
-                                              .copyWith(
-                                              color: Colors.white)),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 40.h),
-                          ],
+              SizedBox(height: 16.h),
+              url.isEmpty
+                  ? SizedBox(
+                      height: 200.h,
+                      child: Center(
+                        child: Text(
+                          _isAr ? 'لا توجد صورة' : 'No image uploaded',
+                          style: StyleText.fontSize12Weight400
+                              .copyWith(color: AppColors.secondaryText),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+                    )
+                  : NetworkImageView(
+                      url: url,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                    ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  // ── Accordion ─────────────────────────────────────────────────────────────
-  Widget _previewAccordion({
-    required String title,
-    required bool isOpen,
-    required VoidCallback onToggle,
-    required Widget child,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(6.r),
-      ),
-      child: Column(
+  // ── Actions ────────────────────────────────────────────────────────────────
+
+  void _onBack() => Navigator.pop(context);
+
+  void _onSave() {
+    showPublishConfirmDialog(
+      context: context,
+      title: 'EDITING OUR STRATEGY DETAILS',
+      subtitle: 'Do you want to save the changes made to this Our Strategy?',
+      confirmLabel: 'Confirm',
+      onConfirm: () async {
+        setState(() => _isPublishing = true);
+        try {
+          await context.read<StrategyCubit>().save(
+                model: widget.model,
+                imageUploads:
+                    widget.imageUploads.isEmpty ? null : widget.imageUploads,
+              );
+        } finally {
+          if (mounted) setState(() => _isPublishing = false);
+        }
+      },
+    );
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocListener<StrategyCubit, StrategyState>(
+      listener: (context, state) {
+        if (state is StrategySaved) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) Navigator.popUntil(context, (r) => r.isFirst);
+          });
+        }
+        if (state is StrategyError) {
+          setState(() => _isPublishing = false);
+          showConfirmDialog(
+            context: context,
+            title: 'Error',
+            subtitle: state.message,
+            confirmLabel: 'OK',
+            cancelLabel: '',
+            onConfirm: () {},
+            iconWidget: Container(
+              width: 60.r,
+              height: 60.r,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFE53935), shape: BoxShape.circle),
+              child: Icon(Icons.error_outline, color: Colors.white, size: 36.r),
+            ),
+          );
+        }
+      },
+      child: Stack(
         children: [
-          GestureDetector(
-            onTap: onToggle,
-            child: Container(
-              width: double.infinity,
-              padding:
-              EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: isOpen
-                    ? BorderRadius.only(
-                  topLeft: Radius.circular(6.r),
-                  topRight: Radius.circular(6.r),
-                )
-                    : BorderRadius.circular(6.r),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(title,
-                        style: StyleText.fontSize14Weight600
-                            .copyWith(color: Colors.white)),
+          Scaffold(
+            backgroundColor: ColorPick.background,
+            body: AdminStickyBody(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              contentWidth: 1000.w,
+              children: [
+                AppAdminNavbar(
+                  activeLabel:    'Web Page',
+                  homePage:       CareersMainPageDashboard(),
+                  webPage:        MainMainPage(),
+                  jobListingPage: JobListingMainPage(),
+                ),
+                SizedBox(height: 20.h),
+                AdminSubNavBar(activeIndex: 3),
+                SizedBox(height: 25.h),
+                Text(
+                  'Preview Our Strategy Details',
+                  style: StyleText.fontSize45Weight600.copyWith(
+                    color: ColorPick.primary,
+                    fontWeight: FontWeight.w700,
                   ),
-                  Icon(
-                    isOpen
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white,
-                    size: 20.sp,
-                  ),
-                ],
-              ),
+                ),
+                SizedBox(height: 16.h),
+
+                // ── Device tabs + Language toggle ──────────────────────────
+                Row(
+                  children: [
+                    _tab('Desktop', SitePreviewDevice.desktop),
+                    SizedBox(width: 24.w),
+                    _tab('Tablet', SitePreviewDevice.tablet),
+                    SizedBox(width: 24.w),
+                    _tab('Mobile', SitePreviewDevice.mobile),
+                    const Spacer(),
+                    SizedBox(
+                      width: 95.w,
+                      height: 36.h,
+                      child: CustomSegmentedTabs(
+                        tabs: const ['ENG', 'AR'],
+                        selectedIndex: _isAr ? 1 : 0,
+                        onTabSelected: (i) => setState(() => _isAr = i == 1),
+                        selectedColor: ColorPick.primary,
+                        unselectedColor: Colors.white,
+                        selectedTextColor: Colors.white,
+                        unselectedTextColor: AppColors.text,
+                        equalWidth: false,
+                        containerPadding: EdgeInsets.symmetric(
+                            horizontal: 8.sp, vertical: 4.sp),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 16.h),
+
+                // ── The real site, on its Our Strategy tab ─────────────────
+                // Admin-only preview (no dependency on the website_app project):
+                // the Strategic House image for the selected device + language.
+                _strategyPreview(),
+
+                SizedBox(height: 24.h),
+
+                // ── Back (+ Save, only when there is unsaved work) ─────────
+                _actions(),
+                SizedBox(height: 40.h),
+              ],
             ),
           ),
-          if (isOpen) child,
+
+          if (_isPublishing)
+            Container(
+              color: Colors.black.withValues(alpha: 0.35),
+              child: const Center(child: CircleProgress()),
+            ),
         ],
       ),
     );
   }
 
-  // ── Preview body for a Strategic House section ────────────────────────────
-  Widget _strategicHousePreviewBody({
-    required Uint8List? bytes,
-    required String url,
-  }) {
-    final hasImage = bytes != null || url.isNotEmpty;
+  // ── Bottom actions ─────────────────────────────────────────────────────────
+  // Read-only preview (opened from the main page): Back alone, full width.
+  Widget _actions() {
+    final back = GestureDetector(
+      onTap: _onBack,
+      child: Container(
+        height: 44.h,
+        decoration: BoxDecoration(
+            color: AppColors.darkGrey,
+            borderRadius: BorderRadius.circular(6.r)),
+        child: Center(
+          child: Text('Back',
+              style: StyleText.fontSize14Weight600
+                  .copyWith(color: Colors.white)),
+        ),
+      ),
+    );
 
-    // Responsive container width
-    final double containerWidth = switch (_mode) {
-      _PreviewMode.desktop => 960.w,
-      _PreviewMode.tablet  => 680.w,
-      _PreviewMode.mobile  => 360.w,
-    };
+    // Read-only: Back keeps the width and position it has next to Save — the
+    // empty half is left empty rather than stretching the button across.
+    if (!widget.showSave) {
+      return Row(
+        children: [
+          Expanded(child: back),
+          SizedBox(width: 300.w),
+          const Expanded(child: SizedBox()),
+        ],
+      );
+    }
 
-    final double imageHeight = switch (_mode) {
-      _PreviewMode.desktop => 300.h,
-      _PreviewMode.tablet  => 240.h,
-      _PreviewMode.mobile  => 180.h,
-    };
-
-    return Container(
-      width: double.infinity,
-      color: ColorPick.white,
-      padding: EdgeInsets.all(16.r),
-      child: Center(
-        child: Container(
-          width: containerWidth,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF9F9F9),
-            borderRadius: BorderRadius.circular(8.r),
-          ),
-          child: hasImage
-              ? ClipRRect(
-            borderRadius: BorderRadius.circular(8.r),
-            child: _buildImageWidget(
-              bytes: bytes,
-              url: url,
-              height: imageHeight,
-            ),
-          )
-              : SizedBox(
-            height: imageHeight,
-            child: Center(
-              child: Icon(Icons.image_outlined,
-                  color: Colors.grey[400], size: 48.sp),
+    return Row(
+      children: [
+        Expanded(child: back),
+        SizedBox(width: 300.w),
+        Expanded(
+          child: GestureDetector(
+            onTap: _isPublishing ? null : _onSave,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              height: 44.h,
+              decoration: BoxDecoration(
+                  color: _isPublishing
+                      ? ColorPick.primary.withValues(alpha: 0.5)
+                      : ColorPick.primary,
+                  borderRadius: BorderRadius.circular(6.r)),
+              child: Center(
+                child: _isPublishing
+                    ? SizedBox(
+                        width: 18.w,
+                        height: 18.h,
+                        child: const CircleProgress(),
+                      )
+                    : Text('Save',
+                        style: StyleText.fontSize14Weight600
+                            .copyWith(color: Colors.white)),
+              ),
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  // ── Device tab widget ──────────────────────────────────────────────────────
+  Widget _tab(String label, SitePreviewDevice device) {
+    final active = _device == device;
+    return GestureDetector(
+      onTap: () => setState(() => _device = device),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(bottom: 6.h),
+            child: Text(label,
+                style: StyleText.fontSize15Weight500.copyWith(
+                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                  color: active ? ColorPick.primary : AppColors.secondaryText,
+                )),
+          ),
+          Container(
+              height: 2,
+              width: label.length * 8.0,
+              color: active ? ColorPick.primary : Colors.transparent),
+        ],
       ),
     );
   }
 }
-
-// ── Image widget helper with SVG support ───────────────────────────────────────
-Widget _buildImageWidget({
-  required Uint8List? bytes,
-  required String url,
-  required double height,
-}) {
-  // Helper to check if bytes contain SVG
-  bool _isSvgBytes(Uint8List? bytes) {
-    if (bytes == null || bytes.length < 5) return false;
-    final header = bytes.sublist(0, bytes.length > 5 ? 5 : bytes.length);
-    final headerStr = String.fromCharCodes(header);
-    return headerStr.contains('<svg') || headerStr.contains('<?xml');
-  }
-
-  // Helper to check if URL points to SVG
-  bool _isSvgUrl(String url) {
-    final decoded = Uri.decodeFull(url).toLowerCase();
-    return decoded.contains('.svg') ||
-        decoded.contains('/svg?') ||
-        decoded.contains('/svg/') ||
-        decoded.endsWith('/svg');
-  }
-
-  // Handle uploaded bytes (new upload)
-  if (bytes != null && bytes.isNotEmpty) {
-    final isSvg = _isSvgBytes(bytes);
-    if (isSvg) {
-      return SvgPicture.memory(
-        bytes,
-        width: double.infinity,
-        height: height,
-        fit: BoxFit.contain,
-        placeholderBuilder: (context) => Center(
-          child: CircularProgressIndicator(
-            color: const Color(0xFF008037),
-            strokeWidth: 2,
-          ),
-        ),
-      );
-    } else {
-      return Image.memory(
-        bytes,
-        width: double.infinity,
-        height: height,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => SizedBox(
-          height: height,
-          child: Icon(Icons.broken_image,
-              color: Colors.grey[400], size: 48),
-        ),
-      );
-    }
-  }
-
-  // Handle existing URL (from database)
-  if (url.isNotEmpty) {
-    final isSvg = _isSvgUrl(url);
-    if (isSvg) {
-      // For SVG URLs, fetch and display
-      return FutureBuilder<Uint8List>(
-        future: _loadSvgBytes(url),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return SizedBox(
-              height: height,
-              child: Center(
-                child: CircularProgressIndicator(
-                  color: const Color(0xFF008037),
-                  strokeWidth: 2,
-                ),
-              ),
-            );
-          }
-          if (snapshot.hasData) {
-            return SvgPicture.memory(
-              snapshot.data!,
-              width: double.infinity,
-              height: height,
-              fit: BoxFit.contain,
-            );
-          }
-          if (snapshot.hasError) {
-            return SizedBox(
-              height: height,
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.broken_image,
-                        color: Colors.grey[400], size: 48),
-                    SizedBox(height: 8.h),
-                    Text(
-                      'Failed to load image',
-                      style: StyleText.fontSize12Weight400
-                          .copyWith(color: Colors.grey[600]),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-          return const SizedBox.shrink();
-        },
-      );
-    } else {
-      // For raster images
-      return NetworkImageView(
-        url: url,
-        width: double.infinity,
-        height: height,
-        fit: BoxFit.contain,
-      );
-    }
-  }
-
-  // No image
-  return SizedBox(
-    height: height,
-    child: Icon(Icons.image_outlined, color: Colors.grey[400], size: 48),
-  );
-}
-
-// ── Load SVG bytes from URL ────────────────────────────────────────────────────
-Future<Uint8List> _loadSvgBytes(String url) async {
-  try {
-    final response = await html.HttpRequest.request(
-      url,
-      method: 'GET',
-      responseType: 'arraybuffer',
-    );
-    if (response.status != 200) {
-      throw Exception('Failed to load SVG: ${response.status}');
-    }
-    final bytes = (response.response as ByteBuffer).asUint8List();
-    return bytes;
-  } catch (e) {
-    rethrow;
-  }
-}
-
-// ── Confirm Dialog ────────────────────────────────────────────────────────────
-Future<bool?> _confirm(BuildContext context) => showDialog<bool>(
-  context: context,
-  builder: (_) => AlertDialog(
-    shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16.r)),
-    contentPadding: EdgeInsets.all(24.r),
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 80.w,
-          height: 80.w,
-          decoration: BoxDecoration(
-            color: const Color(0xFFE8F5EE),
-            borderRadius: BorderRadius.circular(40.r),
-          ),
-          child: Icon(Icons.edit_note,
-              size: 40.sp, color: const Color(0xFF008037)),
-        ),
-        SizedBox(height: 16.h),
-        Text(
-          'EDITING OUR STRATEGY DETAILS',
-          textAlign: TextAlign.center,
-          style: StyleText.fontSize14Weight600
-              .copyWith(color: const Color(0xFF1A1A1A)),
-        ),
-        SizedBox(height: 8.h),
-        Text(
-          'Do you want to save the changes made to this Our Strategy?',
-          textAlign: TextAlign.center,
-          style: StyleText.fontSize12Weight400
-              .copyWith(color: AppColors.secondaryBlack),
-        ),
-        SizedBox(height: 20.h),
-        Row(
-          children: [
-            Expanded(
-              child: SizedBox(
-                height: 40.h,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF9E9E9E),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8.r)),
-                  ),
-                  child: Text('Back',
-                      style: StyleText.fontSize13Weight500
-                          .copyWith(color: Colors.white)),
-                ),
-              ),
-            ),
-            SizedBox(width: 12.w),
-            Expanded(
-              child: SizedBox(
-                height: 40.h,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF008037),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8.r)),
-                  ),
-                  child: Text('Confirm',
-                      style: StyleText.fontSize13Weight500
-                          .copyWith(color: Colors.white)),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    ),
-  ),
-);

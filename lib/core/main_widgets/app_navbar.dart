@@ -86,13 +86,36 @@ Color _lightTint(Color primary) => primary.withValues(alpha: 0.12);
 
 // ── CMS-driven nav items, filtered by status ──────────────────────────────────
 List<({String label, String route, String svgAsset})> _getVisibleNavItems(
-    String languageCode, HomeCmsState cmsState) {
-  // The top navbar is intentionally FIXED to the standard tabs and their
-  // standard routes (Home → /, Services → /services, About → /about,
-  // Contact → /contact, Careers → /careers). Editing a nav button's
-  // "Navigate To" route only changes the middle hero buttons — it must NOT
-  // move or duplicate the navbar tabs. Kept in sync with website_app.
-  final List<NavButtonModel> navButtons = HomePageModel.defaultModel.navButtons;
+    BuildContext context, String languageCode, HomeCmsState cmsState) {
+  // Drive the navbar from the admin-configured nav buttons so name, order
+  // and visibility (status) edits show up in the preview exactly like on
+  // the live website. Kept in sync with website_app.
+  // Nav labels are stored in mainPage/main (edited on the Main page) —
+  // prefer them; fall back to the HOME doc, then to defaults.
+  List<NavButtonModel> navButtons = const <NavButtonModel>[];
+  try {
+    navButtons = switch (context.read<MainCmsCubit>().state) {
+      MainCmsLoaded(:final data) => data.navButtons,
+      MainCmsSaved(:final data)  => data.navButtons,
+      _                          => const <NavButtonModel>[],
+    };
+  } catch (_) {}
+  if (navButtons.isEmpty) {
+    navButtons = switch (cmsState) {
+      HomeCmsLoaded(:final data) => data.navButtons,
+      HomeCmsSaved(:final data)  => data.navButtons,
+      _                          => const <NavButtonModel>[],
+    };
+  }
+  if (navButtons.isEmpty) {
+    navButtons = HomePageModel.defaultModel.navButtons;
+  }
+
+  // Defensive: dedupe by route (keep the FIRST occurrence = admin order).
+  final seenRoutes = <String>{};
+  navButtons = navButtons
+      .where((b) => b.route.isNotEmpty && seenRoutes.add(b.route))
+      .toList();
 
   final bool isAr = languageCode == 'ar';
 
@@ -190,7 +213,7 @@ class _NavbarDesktop extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<LanguageCubit, LanguageState>(
       builder: (context, langState) {
-        final navItems = _getVisibleNavItems(langState.locale.languageCode, cmsState);
+        final navItems = _getVisibleNavItems(context, langState.locale.languageCode, cmsState);
         final isRtl    = langState.isArabic;
 
         return Directionality(
@@ -250,7 +273,7 @@ class _NavbarTablet extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<LanguageCubit, LanguageState>(
       builder: (context, langState) {
-        final navItems = _getVisibleNavItems(langState.locale.languageCode, cmsState);
+        final navItems = _getVisibleNavItems(context, langState.locale.languageCode, cmsState);
         final isRtl    = langState.isArabic;
 
         return Directionality(
@@ -396,7 +419,7 @@ class _FullScreenDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<LanguageCubit, LanguageState>(
       builder: (context, langState) {
-        final navItems    = _getVisibleNavItems(langState.locale.languageCode, cmsState);
+        final navItems    = _getVisibleNavItems(context, langState.locale.languageCode, cmsState);
         final isRtl       = langState.isArabic;
         final Color lightTint = _lightTint(primary);
 

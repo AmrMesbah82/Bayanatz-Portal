@@ -505,10 +505,12 @@ class HomePageModel {
       if (value is DateTime) {
         return value;
       }
-      final type = value.runtimeType.toString();
-      if (type.contains('Timestamp')) {
-        final dt = value.toDate() as DateTime;
-        return dt;
+      // BUG-25: runtimeType.toString() is MINIFIED in release web builds, so
+      // checking for the name 'Timestamp' never matched in production and
+      // every date came back null ("Last Updated On —"). Duck-type the
+      // Firestore Timestamp instead.
+      if (value is! String && value is! num) {
+        try { return (value as dynamic).toDate() as DateTime; } catch (_) {}
       }
       if (value is String && value.isNotEmpty) {
         final dt = DateTime.tryParse(value);

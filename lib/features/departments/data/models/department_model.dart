@@ -56,6 +56,19 @@ class DepartmentModel {
         CREATED_AT: '',
       };
 
+  /// Whether a job's stored `department` value belongs to this department.
+  ///
+  /// Jobs save the department as its English name, but older records may hold
+  /// the Arabic name or the document id — accept all three, ignoring case and
+  /// surrounding whitespace.
+  bool matchesJob(String jobDepartment) {
+    final v = jobDepartment.trim().toLowerCase();
+    if (v.isEmpty) return false;
+    return v == nameEn.trim().toLowerCase() ||
+        (nameAr.isNotEmpty && v == nameAr.trim().toLowerCase()) ||
+        v == id.trim().toLowerCase();
+  }
+
   DepartmentModel copyWith({
     String? id,
     String? nameEn,

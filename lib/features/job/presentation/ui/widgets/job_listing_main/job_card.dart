@@ -43,23 +43,29 @@ class _JobCard extends StatelessWidget {
   String get _bottomText {
     switch (job.status) {
       case JobStatus.active:
+        // BUG-44: "Posted 0 Days ago" → "Posted Today".
         final days = DateTime.now().difference(job.postedDate ?? DateTime.now()).inDays;
+        if (days <= 0) return 'Posted Today';
+        if (days == 1) return 'Posted 1 Day ago';
         return 'Posted $days Days ago';
       case JobStatus.ended:
-        return 'Ended On ${_formatDate(job.endedDate)}';
+        return 'Ended On ${_formatDate(job.endedDate ?? job.hiringEndDate)}';
       case JobStatus.removed:
         return 'Removed Since ${_formatDate(job.endedDate)}';
       case JobStatus.scheduled:
-        return 'Scheduled At ${_formatDate(job.postedDate)}';
+        // Scheduled jobs open on their hiring start date (BUG-11).
+        return 'Scheduled At ${_formatDate(job.hiringStartDate ?? job.postedDate)}';
       case JobStatus.drafted:
         return 'Draft — not published yet';
       case JobStatus.inactive:
-        return 'Inactive Since ${_formatDate(job.endedDate)}';
+        // BUG-44: the date is now stamped when a job is deactivated.
+        final d = _formatDate(job.endedDate);
+        return d.isEmpty ? 'Inactive' : 'Inactive Since $d';
     }
   }
 
   String get _bottomRightText {
-    if (job.totalApplications > 0) return 'Total Application:${job.totalApplications}';
+    if (job.totalApplications > 0) return 'Total Applications: ${job.totalApplications}'; // BUG-41
     return '';
   }
 
@@ -67,6 +73,15 @@ class _JobCard extends StatelessWidget {
     if (dt == null) return '';
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
+  }
+
+  /// Real requirements text from the job data (falls back to the required
+  /// qualification, then a placeholder) — replaces the old hardcoded string.
+  String get _requirementsPreview {
+    final r = job.requirements.en.trim();
+    if (r.isNotEmpty) return r;
+    final q = job.requiredQualification.en.trim();
+    return q.isNotEmpty ? q : 'No requirements added';
   }
 
   String _workTypeSvg() {
@@ -94,16 +109,19 @@ class _JobCard extends StatelessWidget {
               children: [
                 // ── Header: Logo + Title ──────────────────────────
                 Padding(
-                  padding: EdgeInsets.fromLTRB(15.w, 15.h, 15.w, 0),
+                  padding: EdgeInsets.fromLTRB(10.w, 10.h, 10.w, 0),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       _CompanyLogo(logoUrl: logoUrl),
                       SizedBox(width: 10.w),
                       Expanded(
+                        // BUG-44: user text is shown exactly as typed (no
+                        // auto Title-Case), and it truncates BEFORE the status
+                        // badge instead of running underneath it.
                         child: Text(
-                          job.title.en.isEmpty ? 'Untitled' : job.title.en,
-                          style: TextStyle(
+                          job.displayTitle,
+                          style: StyleText.fontSize15Weight600.copyWith(
                             fontSize: 15.sp,
                             fontWeight: FontWeight.w700,
                             color: const Color(0xFF333333),
@@ -112,6 +130,8 @@ class _JobCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      SizedBox(width: 8.w),
+                      _statusBadge(),
                     ],
                   ),
                 ),
@@ -124,44 +144,52 @@ class _JobCard extends StatelessWidget {
                     spacing: 8.w,
                     runSpacing: 6.h,
                     children: [
-                      _svgTag(_Svg.calendar, 'Egypt'),
-                      _svgTag(_workTypeSvg(), job.workType.label),
-                      _svgTag(
-                        _Svg.yearsExp,
-                        job.employmentDurationText.isNotEmpty
-                            ? job.employmentDurationText
-                            : job.experienceLevel.label,
-                      ),
+                      // BUG-10 / BUG-47: the location used to be a hard-coded
+                      // "Egypt" on every card (even remote jobs), and unset
+                      // dropdowns showed invented defaults.
+                      if (job.location.trim().isNotEmpty &&
+                          job.workType != WorkType.remote)
+                        _svgTag(_Svg.calendar, job.location.trim()),
+                      if (!job.isUnset('workType'))
+                        _svgTag(_workTypeSvg(), job.workType.label),
+                      if (!job.isUnset('experienceLevel'))
+                        _svgTag(_Svg.yearsExp, job.experienceLevel.label),
                       if (job.salaryMax > 0)
                         _svgTag(
                           _Svg.calendar,
-                          '${job.salaryMin.toInt()} - ${job.salaryMax.toInt()}',
+                          // BUG-44: salary with its currency.
+                          '${job.salaryMin.toInt()} - ${job.salaryMax.toInt()} ${job.salaryCurrency}',
                         ),
                     ],
                   ),
                 ),
                 SizedBox(height: 12.h),
 
-                // ── Requirements link ─────────────────────────────
+                // ── Requirements (real data) + View ───────────────
                 Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16.w),
-                  child: RichText(
-                    text: TextSpan(
-                      style: TextStyle(fontSize: 12.sp, color: AppColors.text),
-                      children: [
-                        const TextSpan(text: 'Requirements.....'),
-                        TextSpan(
-                          text: 'View',
-                          style: TextStyle(
-                            fontSize: 12.sp,
-                            color: ColorPick.primary,
-                            decoration: TextDecoration.underline,
-                            decorationColor: ColorPick.primary,
-                            fontWeight: FontWeight.w500,
-                          ),
+                  padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 6.sp),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _requirementsPreview, // BUG-44: as typed
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp, color: AppColors.text),
                         ),
-                      ],
-                    ),
+                      ),
+                      SizedBox(width: 6.w),
+                      Text(
+                        'View',
+                        style: StyleText.fontSize12Weight500.copyWith(
+                          fontSize: 12.sp,
+                          color: ColorPick.primary,
+                          decoration: TextDecoration.underline,
+                          decorationColor: ColorPick.primary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
 
@@ -172,7 +200,7 @@ class _JobCard extends StatelessWidget {
                   width: double.infinity,
                   padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
                   decoration: BoxDecoration(
-                    color: _bottomBarColor,
+                    color: ColorPick.primary,
                     borderRadius: BorderRadius.only(
                       bottomLeft: Radius.circular(10.r),
                       bottomRight: Radius.circular(10.r),
@@ -190,7 +218,7 @@ class _JobCard extends StatelessWidget {
                       Expanded(
                         child: Text(
                           _bottomText,
-                          style: TextStyle(
+                          style: StyleText.fontSize12Weight600.copyWith(
                             fontSize: 12.sp,
                             color: Colors.white,
                             fontWeight: FontWeight.w600,
@@ -202,7 +230,7 @@ class _JobCard extends StatelessWidget {
                       if (_bottomRightText.isNotEmpty)
                         Text(
                           _bottomRightText,
-                          style: TextStyle(
+                          style: StyleText.fontSize11Weight400.copyWith(
                             fontSize: 11.sp,
                             color: Colors.white.withValues(alpha: 0.9),
                             fontWeight: FontWeight.w500,
@@ -214,33 +242,28 @@ class _JobCard extends StatelessWidget {
               ],
             ),
 
-            // ── Status badge (top-right) ──────────────────────────
-            Positioned(
-              top: 10.h,
-              right: 10.w,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: .1),
-                  borderRadius: BorderRadius.circular(8.r),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
-                  child: Text(
-                    job.status.label,
-                    style: TextStyle(
-                      fontSize: 13.sp,
-                      fontWeight: FontWeight.w600,
-                      color: _statusTextColor,
-                    ),
-                  ),
-                ),
-              ),
-            ),
           ],
         ),
       ),
     );
   }
+
+  // ── Status badge — now part of the header row (BUG-44) ──────────────────
+  Widget _statusBadge() => Container(
+        decoration: BoxDecoration(
+          color: Colors.grey.withValues(alpha: .1),
+          borderRadius: BorderRadius.circular(8.r),
+        ),
+        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
+        child: Text(
+          job.status.label,
+          style: StyleText.fontSize13Weight600.copyWith(
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w600,
+            color: _statusTextColor,
+          ),
+        ),
+      );
 
   Widget _svgTag(String svgAsset, String text) {
     return Container(
@@ -260,8 +283,8 @@ class _JobCard extends StatelessWidget {
           ),
           SizedBox(width: 5.w),
           Text(
-            text,
-            style: TextStyle(
+            text, // BUG-44: shown as typed
+            style: StyleText.fontSize11Weight600.copyWith(
               fontSize: 11.sp,
               fontWeight: FontWeight.w600,
               color: Colors.white,

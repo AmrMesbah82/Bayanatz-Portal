@@ -1,15 +1,15 @@
 // ******************* FILE INFO *******************
 // File Name: home_state.dart
 // Description: States for HomeCmsCubit.
-//              Supports dual-document architecture (published + draft).
+//              THREE-document architecture (published + scheduled + draft).
 // Created by: Amr Mesbah
-// Last Update: 20/04/2026
-// UPDATED: Added isFromDraft flag to HomeCmsLoaded ✅
-// UPDATED: Added HomeCmsDraftSaved state ✅
-// UPDATED: Added HomeCmsDraftDeleted state ✅
-
+// UPDATED: Added editingSlot to HomeCmsLoaded, plus scheduled save/delete
+//          states, so the UI can tell which version it is looking at ✅
 
 import '../../data/models/home_model.dart';
+
+/// Which stored version the editor is working on.
+enum HomeVersionSlot { published, scheduled, draft }
 
 abstract class HomeCmsState {}
 
@@ -17,15 +17,20 @@ class HomeCmsInitial extends HomeCmsState {}
 
 class HomeCmsLoading extends HomeCmsState {}
 
-/// Loaded state — carries the data being edited AND whether it came from a draft.
+/// Loaded state — carries the data being edited AND which slot it came from.
 class HomeCmsLoaded extends HomeCmsState {
   final HomePageModel data;
 
-  /// true  → the data was loaded from the `_draft` document
-  /// false → the data was loaded from the published document
-  final bool isFromDraft;
+  /// Which document the editor buffer was seeded from.
+  final HomeVersionSlot slot;
 
-  HomeCmsLoaded(this.data, {this.isFromDraft = false});
+  HomeCmsLoaded(this.data, {this.slot = HomeVersionSlot.published});
+
+  /// Kept so existing call sites reading `state.isFromDraft` keep working.
+  bool get isFromDraft => slot == HomeVersionSlot.draft;
+
+  /// True when the editor is working on a queued scheduled release.
+  bool get isFromScheduled => slot == HomeVersionSlot.scheduled;
 }
 
 class HomeCmsSaving extends HomeCmsState {
@@ -33,8 +38,7 @@ class HomeCmsSaving extends HomeCmsState {
   HomeCmsSaving(this.data);
 }
 
-/// Published successfully — draft was saved to the published doc
-/// and the draft doc was deleted.
+/// Published successfully — the live document was written.
 class HomeCmsSaved extends HomeCmsState {
   final HomePageModel data;
   HomeCmsSaved(this.data);
@@ -46,8 +50,28 @@ class HomeCmsDraftSaved extends HomeCmsState {
   HomeCmsDraftSaved(this.data);
 }
 
-/// Draft deleted (e.g. user chose Discard while editing a draft).
+/// Scheduled release saved successfully — published doc was NOT touched and
+/// stays live until the scheduled date arrives.
+class HomeCmsScheduledSaved extends HomeCmsState {
+  final HomePageModel data;
+  HomeCmsScheduledSaved(this.data);
+}
+
+/// Draft deleted (discarded from the editor, or removed from the overview).
 class HomeCmsDraftDeleted extends HomeCmsState {}
+
+/// Scheduled release cancelled and removed.
+class HomeCmsScheduledDeleted extends HomeCmsState {}
+
+/// A save was refused because that slot is already occupied — e.g. trying to
+/// start a second draft while one is still open. Carries the current data so
+/// the screen never goes blank.
+class HomeCmsSlotBusy extends HomeCmsState {
+  final String message;
+  final HomeVersionSlot slot;
+  final HomePageModel data;
+  HomeCmsSlotBusy(this.message, this.slot, this.data);
+}
 
 class HomeCmsError extends HomeCmsState {
   final String message;

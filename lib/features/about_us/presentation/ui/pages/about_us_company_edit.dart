@@ -3,22 +3,27 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
+import '../../../../../core/widget/success_toast.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:web_app_admin/core/constant/color.dart';
 
-import 'package:web_app_admin/core/widget/navigator.dart';
+import 'package:go_router/go_router.dart';
 import 'package:web_app_admin/core/widget/textfield.dart';
 
 
 
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
 import '../../../../careers/presentation/ui/pages/careers_main.dart';
 import '../../../../job/presentation/ui/pages/job_listing_main.dart';
+import '../../../../main/presentation/ui/pages/main_main.dart';
 import '../../controller/about_us_company_cubit.dart';
-import 'about_us_company_main.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
+import '../../../../../core/custom/15-custom_action_buttons.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 // class _C {
 //   static const Color primary   = Color(0xFF008037);
@@ -74,8 +79,16 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
     super.dispose();
   }
 
-  void _onDiscard() {
-    Navigator.pop(context);
+  void _onDiscard() => _leave();
+
+  /// After a page reload this page can be the only one in the stack (it has
+  /// its own URL now — BUG-05), so fall back to its parent route.
+  void _leave() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/admin/about-company');
+    }
   }
 
   Future<void> _onSave() async {
@@ -96,7 +109,9 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
 
       if (mounted) {
         setState(() => _isSaving = false);
-        Navigator.pop(context);
+        // BUG-46: confirm the save (root-overlay toast survives _leave()).
+        showSuccessToast(context, 'About Company saved');
+        _leave();
       }
     } catch (e) {
       if (mounted) {
@@ -114,15 +129,14 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
       backgroundColor: ColorPick.background,
       body: Stack(
         children: [
-          SingleChildScrollView(
-            child: SizedBox(
-              width: double.infinity,
-              child: Column(
-                children: [
+          AdminStickyBody(
+  children: [
                   AppAdminNavbar(
-                    activeLabel:    'Home',
+                    activeLabel:    'Job Listing',
                     homePage:       CareersMainPageDashboard(),
-                    webPage:        const AboutCompanyEditPage(),
+                    // Web Page tab must open the Web Page section — pointing
+                    // it at this page made the tab look dead.
+                    webPage:        const MainMainPage(),
                     jobListingPage: JobListingMainPage(),
                   ),
 
@@ -154,60 +168,23 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
 
                           SizedBox(height: 24.h),
 
-                          // ── Discard / Save ─────────────────────────
+                          // ── Discard / Save — shared admin action buttons
+                          //    (core/custom/15-custom_action_buttons.dart) ──
                           Row(
                             children: [
                               Expanded(
-                                child: GestureDetector(
+                                child: customDiscardButton(
                                   onTap: _onDiscard,
-                                  child: Container(
-                                    height: 48.h,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF797979),
-                                      borderRadius:
-                                      BorderRadius.circular(8.r),
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: Text(
-                                      'Discard',
-                                      style: StyleText.fontSize14Weight600
-                                          .copyWith(
-                                          color: Colors.white),
-                                    ),
-                                  ),
+                                  width: double.infinity,
                                 ),
                               ),
-                              SizedBox(width: 16.w),
+                              SizedBox(width: 400.w),
                               Expanded(
-                                child: GestureDetector(
-                                  onTap: _isSaving ? null : _onSave,
-                                  child: Container(
-                                    height: 48.h,
-                                    decoration: BoxDecoration(
-                                      color: ColorPick.primary,
-                                      borderRadius:
-                                      BorderRadius.circular(8.r),
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: _isSaving
-                                        ? SizedBox(
-                                      width: 20.w,
-                                      height: 20.h,
-                                      child:
-                                      const CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                        : Text(
-                                      'Save',
-                                      style: StyleText
-                                          .fontSize14Weight600
-                                          .copyWith(
-                                          color:
-                                          Colors.white),
-                                    ),
-                                  ),
+                                child: customPublishButton(
+                                  title: 'Save',
+                                  onTap: _onSave,
+                                  enabled: !_isSaving,
+                                  width: double.infinity,
                                 ),
                               ),
                             ],
@@ -219,9 +196,7 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
                     ),
                   ),
                 ],
-              ),
-            ),
-          ),
+),
 
           // ── Saving overlay ──
           if (_isSaving)
@@ -229,7 +204,7 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
               color: Colors.black26,
               child: const Center(
                 child:
-                CircularProgressIndicator(color:ColorPick.primary),
+                CircleProgress(),
               ),
             ),
         ],
@@ -244,49 +219,13 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
     required List<Widget> children,
   }) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration:
-      BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
+      child:    Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() => _open[key] = !isOpen),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(
-                  horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: isOpen
-                    ? BorderRadius.only(
-                    topLeft: Radius.circular(6.r),
-                    topRight: Radius.circular(6.r))
-                    : BorderRadius.circular(6.r),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(title,
-                        style: StyleText.fontSize14Weight600
-                            .copyWith(color: Colors.white)),
-                  ),
-                  Icon(
-                    isOpen
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white,
-                    size: 20.sp,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (isOpen)
-            Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: children),
-        ],
+        children: children,
       ),
     );
   }
@@ -308,7 +247,7 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
 
           // ── English ──
           CustomValidatedTextFieldMaster(
-            label: 'About This Position',
+            label: 'About Company',
             hint: 'Text Here',
             controller: _aboutEnController,
             height: 80,
@@ -320,7 +259,7 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
             minLength: 0,
             submitted: _submitted,
             primaryColor: ColorPick.primary,
-            fillColor: ColorPick.background,
+            fillColor: AppColors.card,
             textStyle: StyleText.fontSize12Weight400
                 .copyWith(color:AppColors.text),
             hintStyle: StyleText.fontSize12Weight400
@@ -329,25 +268,29 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
 
           SizedBox(height: 16.h),
 
-          // ── Arabic ──
-          CustomValidatedTextFieldMaster(
-            label: 'عن هذا المنصب',
-            hint: 'ادخل النص هنا',
-            controller: _aboutArController,
-            height: 80,
-            maxLines: 4,
+          // ── Arabic — Directionality wrapper so label + hint + text
+          //    all start from the RIGHT (RTL) ──
+          Directionality(
             textDirection: TextDirection.rtl,
-            textAlign: TextAlign.start,
-            showCharCount: false,
-            maxLength: 800,
-            minLength: 0,
-            submitted: _submitted,
-            primaryColor: ColorPick.primary,
-            fillColor: ColorPick.background,
-            textStyle: StyleText.fontSize12Weight400
-                .copyWith(color: AppColors.text),
-            hintStyle: StyleText.fontSize12Weight400
-                .copyWith(color: AppColors.secondaryText),
+            child: CustomValidatedTextFieldMaster(
+              label: 'عن الشركة',
+              hint: 'ادخل النص هنا',
+              controller: _aboutArController,
+              height: 80,
+              maxLines: 4,
+              textDirection: TextDirection.rtl,
+              textAlign: TextAlign.start,
+              showCharCount: false,
+              maxLength: 800,
+              minLength: 0,
+              submitted: _submitted,
+              primaryColor: ColorPick.primary,
+              fillColor: AppColors.card,
+              textStyle: StyleText.fontSize12Weight400
+                  .copyWith(color: AppColors.text),
+              hintStyle: StyleText.fontSize12Weight400
+                  .copyWith(color: AppColors.secondaryText),
+            ),
           ),
         ],
       ),

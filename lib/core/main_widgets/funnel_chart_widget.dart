@@ -6,6 +6,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:web_app_admin/core/constant/color.dart';
+
+import '../theme/new_theme.dart';
 
 class FunnelChartItem {
   final String label;
@@ -16,6 +19,7 @@ class FunnelChartItem {
 
 class FunnelChartWidget extends StatelessWidget {
   final String title;
+  final Color? titleColor;
   final String? iconAsset;
   final List<FunnelChartItem> items;
   final double? height;
@@ -23,26 +27,31 @@ class FunnelChartWidget extends StatelessWidget {
   final Color? backgroundColor;
   final bool lightMode;
 
-  /// Gradient from top (widest) to bottom (narrowest)
-  final List<Color> gradientColors;
+  /// Gradient from top (widest) to bottom (narrowest).
+  /// Defaults to primary-based shades when null.
+  final List<Color>? gradientColors;
 
   const FunnelChartWidget({
     Key? key,
     required this.title,
+    this.titleColor,
     required this.items,
     this.iconAsset,
     this.height,
     this.width,
     this.backgroundColor,
     required this.lightMode,
-    this.gradientColors = const [
-      Color(0xFF1B5E20), // dark green (top)
-      Color(0xFF2E7D32),
-      Color(0xFF388E3C),
-      Color(0xFF43A047),
-      Color(0xFF66BB6A), // light green (bottom)
-    ],
+    this.gradientColors,
   }) : super(key: key);
+
+  List<Color> get _colors =>
+      gradientColors ??
+      [
+        ColorPick.primary,
+        ColorPick.primary.withOpacity(0.7),
+        ColorPick.primary.withOpacity(0.4),
+        ColorPick.primary.withOpacity(0.2),
+      ];
 
   @override
   Widget build(BuildContext context) {
@@ -68,7 +77,7 @@ class FunnelChartWidget extends StatelessWidget {
                   height: 26.sp,
                   decoration: const BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Color(0xFF008037),
+                    color: ColorPick.primary,
                   ),
                   child: Center(
                     child: SvgPicture.asset(
@@ -85,11 +94,8 @@ class FunnelChartWidget extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: TextStyle(
-                    fontSize: 14.sp,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black,
-                  ),
+                  style: StyleText.fontSize14Weight700
+                      .copyWith(color: titleColor ?? Colors.black),
                 ),
               ),
             ],
@@ -121,10 +127,8 @@ class FunnelChartWidget extends StatelessWidget {
                           Expanded(
                             child: Text(
                               item.label,
-                              style: TextStyle(
-                                fontSize: 11.sp,
-                                color: Colors.black87,
-                              ),
+                              style: StyleText.fontSize11Weight400
+                                  .copyWith(color: Colors.black87),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -146,7 +150,7 @@ class FunnelChartWidget extends StatelessWidget {
                             constraints.maxWidth, constraints.maxHeight),
                         painter: _FunnelPainter(
                           items: items,
-                          colors: gradientColors,
+                          colors: _colors,
                         ),
                       );
                     },
@@ -161,8 +165,9 @@ class FunnelChartWidget extends StatelessWidget {
   }
 
   Color _getColorForIndex(int index) {
-    if (index < gradientColors.length) return gradientColors[index];
-    return gradientColors.last;
+    final colors = _colors;
+    if (index < colors.length) return colors[index];
+    return colors.last;
   }
 }
 
@@ -212,11 +217,8 @@ class _FunnelPainter extends CustomPainter {
       final textPainter = TextPainter(
         text: TextSpan(
           text: items[i].value.toString(),
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
+          style: StyleText.fontSize12Weight600
+              .copyWith(color: Colors.white),
         ),
         textDirection: TextDirection.ltr,
       )..layout();

@@ -34,6 +34,10 @@ class CustomDropdownFormFieldInvMaster extends StatelessWidget {
   final bool showColorDots;
   final double borderRadius;
 
+  /// Overrides the label style so a screen can align dropdown labels with the
+  /// labels of its text fields. Defaults to the legacy 14sp / w400 style.
+  final TextStyle? labelStyle;
+
   const CustomDropdownFormFieldInvMaster({
     Key? key,
     required this.selectedValue,
@@ -53,7 +57,8 @@ class CustomDropdownFormFieldInvMaster extends StatelessWidget {
     this.iconPath,
     this.itemColors,
     this.showColorDots = false,
-    this.borderRadius = 8.0,
+    this.borderRadius = 4,
+    this.labelStyle,
   }) : super(key: key);
 
   Color? _getItemColor(Map<String, String> item) {
@@ -96,22 +101,23 @@ class CustomDropdownFormFieldInvMaster extends StatelessWidget {
       value: hasSelection,
       items: dropdownItems,
       onChanged: (v) => onChanged(v),
+
       hint: _hintText,
       label: label,
-      labelStyle:
+      labelStyle: labelStyle ??
           StyleText.fontSize14Weight400.copyWith(color: AppColors.text),
-      fillColor: dropdownColor ?? const Color(0xFFF1F2ED),
+      fillColor: dropdownColor ?? AppColors.card,
       borderRadius: BorderRadius.circular(borderRadius.r),
-      triggerPadding: EdgeInsets.symmetric(
-        horizontal: 8.w,
-        vertical: ((fieldHeight - 20) / 2).h,
-      ),
+      // triggerPadding: EdgeInsets.symmetric(
+      //   horizontal: 8.w,
+      //   vertical: ((fieldHeight - 20) / 2).h,
+      // ),
       itemHeight: fieldHeight.h,
       maxOverlayHeight: 225.h,
       valueStyle:
           StyleText.fontSize12Weight400.copyWith(color: AppColors.text),
       hintStyle: StyleText.fontSize12Weight400
-          .copyWith(color: AppColors.text.withValues(alpha: 0.4)),
+          .copyWith(color: AppColors.text.withOpacity(.8)),
     );
 
     if (width == null) return dropdown;

@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:web_app_admin/core/constant/color.dart';
 import 'package:web_app_admin/core/widget/network_image_view.dart';
 import 'package:go_router/go_router.dart';
 
@@ -51,28 +52,14 @@ class AdminSubNavBar extends StatelessWidget {
     // Services page is pushed via rootNavigator (outside GoRouter tree).
     // When navigating AWAY from Services, pop it first so it is cleanly
     // removed before GoRouter takes over, preventing the disposed-view crash.
-    void goRoute(String location) {
-      if (activeIndex == 2) {
-        Navigator.of(context, rootNavigator: true).pop();
-      }
-      context.go(location);
-    }
+    void goRoute(String location) => context.go(location);
 
     switch (i) {
       case 0: goRoute('/admin/dashboard');
       case 1: goRoute('/admin/home-page');
-      case 2:
-      // Services has no GoRouter route — push via rootNavigator and wrap
-      // with InheritedGoRouter so context.go() works inside the pushed page.
-        final router = GoRouter.of(context);
-        Navigator.of(context, rootNavigator: true).push(
-          MaterialPageRoute(
-            builder: (_) => _WithGoRouter(
-              router: router,
-              child: const ServicesMainPageMaster(),
-            ),
-          ),
-        );
+      // BUG-05: Services now has its own GoRouter route, so it gets a URL
+      // (reload/back work) like every other Web Page tab.
+      case 2: goRoute('/admin/services');
       case 3: goRoute('/admin/about-cms');
       case 4: goRoute('/admin/contact-cms');
       case 5: goRoute('/admin/careers-cms');
@@ -81,28 +68,45 @@ class AdminSubNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // BUG-16 / BUG-100: on a phone / portrait tablet the 1000.w bar was cut
+    // on the right ("About U…"). It never gets wider than the screen now,
+    // and its tabs scroll sideways when they don't fit.
+    final double screenW = MediaQuery.sizeOf(context).width;
+    final double barW = screenW - 32 < 1000.w ? screenW - 32 : 1000.w;
     return Container(
-      width: 1000.w,
+      width: barW,
+      // Uniform gap between the sub-navbar and the first widget on EVERY page.
+      margin: EdgeInsets.only(bottom: 15.sp),
       decoration: BoxDecoration(
         color: _cardBg,
         borderRadius: BorderRadius.circular(4.r),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.start,
+      // Centered, not left-aligned. The bar used to open with the logo, so
+      // starting the items at the left looked deliberate. With the logo gone
+      // (the top AppAdminNavbar already shows it) a left-aligned row left a
+      // large empty gap after "Careers" and the bar read as broken.
+      child: LayoutBuilder(builder: (context, c) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minWidth: c.maxWidth),
+          child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _AdminNavLogo(),
-          SizedBox(width: 140.w),
           ...List.generate(_labels.length, (i) {
             final active = activeIndex == i;
+            final bool isLast = i == _labels.length - 1;
             return GestureDetector(
               onTap: () => _onTap(context, i),
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 12.w),
                 child: Container(
-                  margin: EdgeInsets.only(right: 4.w),
+                  // No trailing gap after the last item — it would push the
+                  // whole group 4.w off centre.
+                  margin: EdgeInsets.only(right: isLast ? 0 : 4.w),
                   padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 5.h),
                   decoration: BoxDecoration(
-                    color: active ? _primary : Colors.transparent,
+                    color: active ? ColorPick.primary : Colors.transparent,
                     borderRadius: BorderRadius.circular(4.r),
                   ),
                   child: Text(
@@ -117,6 +121,8 @@ class AdminSubNavBar extends StatelessWidget {
           }),
         ],
       ),
+        ),
+      )),
     );
   }
 }

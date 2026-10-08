@@ -128,7 +128,8 @@ class ServiceRepositoryImpl implements ServiceRepository {
 
     // ✅ Convert Firestore Timestamp to ISO string instead of removing it
     final rawTs = copy['lastUpdatedAt'];
-    if (rawTs != null && rawTs.runtimeType.toString().contains('Timestamp')) {
+    // BUG-25: runtimeType names are minified on web release — duck-type instead.
+    if (rawTs != null && rawTs is! String && rawTs is! num) {
       try {
         final dt = (rawTs as dynamic).toDate() as DateTime;
         copy['lastUpdatedAt'] = dt.toIso8601String();

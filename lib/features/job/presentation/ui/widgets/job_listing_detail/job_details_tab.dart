@@ -33,17 +33,19 @@ class _JobDetailsTab extends StatelessWidget {
             _infoField('Job Title', job.title.en),
             _infoFieldRtl('المسمى الوظيفي', job.title.ar),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 10.sp),
           _row(
             _infoField(
               'Department',
               job.department.isEmpty ? '—' : job.department,
             ),
-            _infoField('Work Type', job.workType.label),
+            _infoField('Work Type',
+                job.isUnset('workType') ? '—' : job.workType.label),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 10.sp),
           _row(
-            _infoField('Employment Type', job.employmentType.label),
+            _infoField('Employment Type',
+                job.isUnset('employmentType') ? '—' : job.employmentType.label),
             _infoField(
               'Employment Duration',
               job.employmentDurationText.isNotEmpty
@@ -51,9 +53,10 @@ class _JobDetailsTab extends StatelessWidget {
                   : job.employmentDurationType.label,
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 10.sp),
           _row(
-            _infoField('Experience Level', job.experienceLevel.label),
+            _infoField('Experience Level',
+                job.isUnset('experienceLevel') ? '—' : job.experienceLevel.label),
             _infoField(
               'Salary Range',
               job.salaryMax > 0
@@ -61,13 +64,13 @@ class _JobDetailsTab extends StatelessWidget {
                   : '—',
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 10.sp),
           _row(
             _infoField('Required Qualification', job.requiredQualification.en),
             _infoFieldRtl('المؤهلات المطلوبة', job.requiredQualification.ar),
           ),
           if (job.requiredSkills.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            SizedBox(height: 10.sp),
             _skillsRow(),
           ],
         ],
@@ -82,20 +85,29 @@ class _JobDetailsTab extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 16),
+          // BUG-34: the Arabic text is shown too, exactly like the form.
           _infoField(
             'About This Position',
             job.aboutThisPosition.en,
             multi: true,
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 10.sp),
+          _infoFieldRtl('', job.aboutThisPosition.ar, multi: true),
+          SizedBox(height: 10.sp),
           _infoField('Requirements', job.requirements.en, multi: true),
-          const SizedBox(height: 12),
+          SizedBox(height: 10.sp),
+          _infoFieldRtl('', job.requirements.ar, multi: true),
+          SizedBox(height: 10.sp),
           _infoField('Preferred Skills', job.preferredSkills.en, multi: true),
+          SizedBox(height: 10.sp),
+          _infoFieldRtl('', job.preferredSkills.ar, multi: true),
         ],
       ),
     );
   }
 
+  // Mirrors the edit page's Benefits section layout:
+  // "Benefit N" header → Title EN | Title AR → Short Description EN → AR.
   Widget _benefitsContent() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -105,20 +117,31 @@ class _JobDetailsTab extends StatelessWidget {
           const SizedBox(height: 16),
           ...List.generate(job.benefits.length, (i) {
             final b = job.benefits[i];
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _infoField('Benefit ${i + 1} Title', b.title.en),
-                  const SizedBox(height: 6),
-                  _infoField('Description', b.shortDescription.en, multi: true),
-                  if (i < job.benefits.length - 1) ...[
-                    const SizedBox(height: 12),
-                    const Divider(color: Color(0xFFE8E8E8)),
-                  ],
-                ],
-              ),
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Benefit ${i + 1}',
+                  style: StyleText.fontSize13Weight600.copyWith(
+                    fontSize: 13.sp,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.text,
+                  ),
+                ),
+                SizedBox(height: 10.sp),
+                _row(
+                  _infoField('Title', b.title.en),
+                  _infoFieldRtl('العنوان', b.title.ar),
+                ),
+                SizedBox(height: 10.sp),
+                _infoField('Short Description', b.shortDescription.en,
+                    multi: true),
+                SizedBox(height: 10.sp),
+                _infoFieldRtl('وصف مختصر', b.shortDescription.ar, multi: true),
+                SizedBox(height: 10.sp),
+                if (i < job.benefits.length - 1)
+                  const Divider(color: Color(0xFFE8E8E8)),
+              ],
             );
           }),
         ],
@@ -153,35 +176,72 @@ class _JobDetailsTab extends StatelessWidget {
         children: [
           const SizedBox(height: 16),
           _row(
-            _infoField('Hiring Start Date', fmtDate(job.hiringStartDate)),
-            _infoField('Hiring End Date', fmtDate(job.hiringEndDate)),
+            _infoField('Hiring Timeline (Start Date)',
+                fmtDate(job.hiringStartDate)),
+            _infoField('Hiring Timeline (End Date)',
+                fmtDate(job.hiringEndDate)),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 10.sp),
           _row(
             _infoField(
-              'Max Applications',
+              'Maximum Number of Applications for This Position',
               job.maxApplications > 0 ? job.maxApplications.toString() : '—',
             ),
             const SizedBox(),
           ),
           if (job.requiredDocuments.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Text(
-              'Required Documents',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF333333),
-              ),
-            ),
+            SizedBox(height: 10.sp),
+            Text('Required Documents', style: StyleText.fieldLabel),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: job.requiredDocuments
-                  .map((d) => _chip('${d.name} (${d.docType.label})'))
-                  .toList(),
-            ),
+            // One document per row — matches the edit page layout:
+            // EN name | AR name | type | Required / Optional switch.
+            ...List.generate(job.requiredDocuments.length, (i) {
+              final d = job.requiredDocuments[i];
+              return Padding(
+                padding: EdgeInsets.only(bottom: 8.h),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(flex: 3, child: _infoField('', d.name)),
+                    SizedBox(width: 8.w),
+                    Expanded(flex: 3, child: _infoFieldRtl('', d.nameAr)),
+                    SizedBox(width: 8.w),
+                    SizedBox(width: 90.w, child: _infoField('', d.docType.label)),
+                    SizedBox(width: 12.w),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          d.isRequired ? 'Required' : 'Optional',
+                          style: StyleText.fontSize11Weight400
+                              .copyWith(color: AppColors.text),
+                        ),
+                        SizedBox(height: 4.h),
+                        IgnorePointer(
+                          child: Transform.scale(
+                            scale: 0.8,
+                            child: FlutterSwitch(
+                              value: d.isRequired,
+                              activeColor: ColorPick.primary,
+                              activeToggleColor: Colors.white,
+                              inactiveColor: Colors.grey.shade400,
+                              inactiveToggleColor: Colors.white,
+                              width: 46.0,
+                              height: 27.0,
+                              toggleSize: 21.0,
+                              borderRadius: 13.5,
+                              padding: 3.0,
+                              onToggle: (_) {},
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }),
           ],
         ],
       ),
@@ -199,77 +259,66 @@ class _JobDetailsTab extends StatelessWidget {
   Widget _skillsRow() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      const Text(
-        'Required Skills',
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF333333),
-        ),
-      ),
+      Text('Required Skills', style: StyleText.fieldLabel),
       const SizedBox(height: 8),
       Wrap(
         spacing: 8,
         runSpacing: 6,
-        children: job.requiredSkills.map((s) => _chip(s.name.en)).toList(),
+        // BUG-34: show both languages of each skill.
+        children: job.requiredSkills
+            .map((s) => _chip(s.name.ar.isEmpty
+                ? s.name.en
+                : (s.name.en.isEmpty ? s.name.ar : '${s.name.en} / ${s.name.ar}')))
+            .toList(),
       ),
     ],
   );
 
-  Widget _infoField(String label, String value, {bool multi = false}) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      if (label.isNotEmpty) ...[
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF333333),
-          ),
-        ),
-        const SizedBox(height: 4),
-      ],
-      Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          value.isEmpty ? '—' : value,
-          style: TextStyle(
-            fontSize: 12,
-            color: value.isEmpty
-                ? const Color(0xFFAAAAAA)
-                : const Color(0xFF333333),
-          ),
-          maxLines: multi ? null : 1,
-          overflow: multi ? null : TextOverflow.ellipsis,
-        ),
-      ),
-    ],
-  );
+  // Same height + style as _readOnlyField in application_detail/detail_cards.dart
+  // Typography comes from the shared form styles (StyleText.field*), so this
+  // read-only view matches the edit form's titles, values and hints exactly.
+  Widget _infoField(String label, String value,
+          {bool multi = false, bool rtl = false}) =>
+      CustomValidatedTextFieldMaster(
+        label: label.isNotEmpty ? label : null,
+        labelStyle: StyleText.fieldLabel,
+        hint: 'Text Here',
+        controller: TextEditingController(text: value.isEmpty ? '—' : value),
+        height: multi ? 100 : 36,
+        maxLines: multi ? 5 : 1,
+        enabled: false,
+        submitted: false,
+        // The field's own direction — an ambient Directionality is NOT enough,
+        // because the widget defaults these to ltr/start and would keep the
+        // Arabic value pinned to the left edge.
+        textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
+        textAlign: TextAlign.start, // = right when the direction is rtl
+        primaryColor: ColorPick.primary,
+        fillColor: AppColors.card,
+        textStyle: StyleText.fieldValue,
+        hintStyle: StyleText.fieldHint,
+      );
 
-  Widget _infoFieldRtl(String label, String value) => Directionality(
-    textDirection: TextDirection.rtl,
-    child: _infoField(label, value),
-  );
+  // Arabic side: label + value + hint all start from the RIGHT, same as
+  // _fieldRtl in the edit form.
+  Widget _infoFieldRtl(String label, String value, {bool multi = false}) =>
+      Directionality(
+        textDirection: TextDirection.rtl,
+        child: _infoField(label, value, multi: multi, rtl: true),
+      );
 
   Widget _chip(String text) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
     decoration: BoxDecoration(
-      color: const Color(0xFF008037).withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(6),
-      border: Border.all(color: const Color(0xFF008037).withValues(alpha: 0.3)),
+      color: ColorPick.primary,
+      borderRadius: BorderRadius.circular(8.r)
     ),
     child: Text(
       text,
-      style: const TextStyle(
+      style: StyleText.fontSize11Weight400.copyWith(
         fontSize: 11,
         fontWeight: FontWeight.w500,
-        color: Color(0xFF008037),
+        color: ColorPick.white,
       ),
     ),
   );

@@ -23,9 +23,6 @@ extension _OurTeamsEditUi on _OurTeamsEditPageState {
                 Text('Icon',
                     style: StyleText.fontSize12Weight500
                         .copyWith(color: AppColors.text)),
-                Text(' *',
-                    style: StyleText.fontSize12Weight600
-                        .copyWith(color: Colors.red)),
               ]),
               SizedBox(height: 6.h),
               _imgBox(
@@ -81,7 +78,6 @@ extension _OurTeamsEditUi on _OurTeamsEditPageState {
               children: [
                 Row(children: [
                   Text('Icon', style: StyleText.fontSize12Weight500.copyWith(color: AppColors.text)),
-                  Text(' *', style: StyleText.fontSize12Weight600.copyWith(color: Colors.red)),
                 ]),
                 SizedBox(height: 6.h),
                 _imgBox(
@@ -133,7 +129,7 @@ extension _OurTeamsEditUi on _OurTeamsEditPageState {
             ),
           ),
         ]),
-        SizedBox(height: 14.h),
+        SizedBox(height: 0.h),
 
         CustomValidatedTextFieldMaster(
           label: 'Description', hint: 'Text Here', controller: item.descEn,
@@ -227,92 +223,43 @@ extension _OurTeamsEditUi on _OurTeamsEditPageState {
 
 
 
+  // Was a hand-rolled header bar whose chevron rotated the wrong way (0.5 turns
+  // when OPEN, so it pointed down while expanded). Now the shared component,
+  // which rotates the other way and matches every other accordion in the app.
   Widget _accordion({required String title, required List<Widget> children}) {
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
+    return CustomAccordion(
+      title:    title,
+      isOpen:   _accordionOpen,
+      onToggle: () => setState(() => _accordionOpen = !_accordionOpen),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() => _accordionOpen = !_accordionOpen),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(color: ColorPick.primary, borderRadius: BorderRadius.circular(6.r)),
-              child: Row(
-                children: [
-                  Expanded(child: Text(title, style: StyleText.fontSize14Weight600.copyWith(color: Colors.white))),
-                  Icon(
-                    _accordionOpen ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white, size: 20.sp,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_accordionOpen)
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
-        ],
+        children: children,
       ),
     );
   }
 
   Widget _bottomButtons(OurTeamsCubit cubit) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => BlocProvider.value(value: cubit, child: const OurTeamsPreviewPage()),
-                )),
-                child: Container(
-                  height: 44.h,
-                  decoration: BoxDecoration(color: ColorPick.preview, borderRadius: BorderRadius.circular(6.r)),
-                  child: Center(child: Text('Preview', style: StyleText.fontSize14Weight600.copyWith(color: Colors.white))),
-                ),
-              ),
-            ),
-            SizedBox(width: 300.w),
-            Expanded(
-              child: GestureDetector(
-                onTap: _isSaving ? null : () => _handlePublish(cubit),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  height: 44.h,
-                  decoration: BoxDecoration(
-                    color: _isSaving ? ColorPick.primary.withValues(alpha: 0.5) : ColorPick.primary,
-                    borderRadius: BorderRadius.circular(6.r),
-                  ),
-                  child: Center(
-                    child: _isSaving
-                        ? SizedBox(width: 18.w, height: 18.h, child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : Text('Publish', style: StyleText.fontSize14Weight600.copyWith(color: Colors.white)),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: 10.h),
-        Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  height: 44.h,
-                  decoration: BoxDecoration(color: ColorPick.discard, borderRadius: BorderRadius.circular(6.r)),
-                  child: Center(child: Text('Discard', style: StyleText.fontSize14Weight600.copyWith(color: Colors.white))),
-                ),
-              ),
-            ),
-            SizedBox(width: 300.w),
-            Expanded(child: const SizedBox()),
-          ],
-        ),
-      ],
+    // Shared action buttons — style lives in core/main_widgets/edit_action_buttons.dart
+    return EditActionButtons(
+      isSaving: _isSaving,
+      onPreview: () {
+        // BUG-53: show the unsaved edits, not the saved teams.
+        _syncToCubit(cubit);
+        Navigator.push(context, MaterialPageRoute(
+          builder: (_) =>
+              BlocProvider.value(value: cubit, child: const OurTeamsPreviewPage()),
+        ));
+      },
+      onPublish: () => _handlePublish(cubit),
+      // BUG-105: ask before throwing the edits away (same dialog as Main).
+      onDiscard: () => confirmDiscard(context, onDiscard: () {
+        cubit.load(); // drop edits the preview copied into the cubit
+        Navigator.pop(context);
+      }),
+      // BUG-64: adding a team / deliverable or picking an icon never marked
+      // the page as changed. Publish now always runs (and validates, with a
+      // message) instead of being silently blocked.
+      requireChanges: false,
     );
   }
 }

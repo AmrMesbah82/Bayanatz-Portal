@@ -4,17 +4,21 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
+import '../../../../../core/widget/success_toast.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 
 import 'package:web_app_admin/core/custom_svg.dart';
+import 'package:web_app_admin/core/widget/format.dart';
 import 'package:web_app_admin/core/widget/navigator.dart';
 import 'package:web_app_admin/core/widget/network_image_view.dart';
 import 'package:web_app_admin/features/main/presentation/controller/main_cubit.dart';
 import 'package:web_app_admin/features/main/presentation/controller/main_state.dart';
 
 import '../../../../../core/constant/color.dart';
+import '../../../../../core/main_widgets/admin_layout.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -30,6 +34,7 @@ import '../../controller/department_cubit.dart';
 import '../../controller/department_state.dart';
 import 'department_create.dart';
 import 'department_detail.dart';   // ← NEW
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/department_main/department_card.dart';
 
@@ -61,11 +66,22 @@ class _DepartmentMainPageState extends State<DepartmentMainPage> {
   Widget build(BuildContext context) {
     return BlocListener<DepartmentCubit, DepartmentState>(
       listener: (context, state) {
-        if (state is DepartmentCreated ||
-            state is DepartmentUpdated ||
-            state is DepartmentDeleted) {
-          if (Navigator.of(context).canPop()) Navigator.of(context).pop();
-          context.read<DepartmentCubit>().loadDepartments();
+        if (state is DepartmentCreated) {
+          // Close the Create page — only if something is above this page.
+          final route = ModalRoute.of(context);
+          if (route != null && !route.isCurrent &&
+              Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
+          // BUG-46: confirm the save — root-overlay toast, so it is still
+          // visible after the Create page closes (the SnackBar was not).
+          showSuccessToast(context, 'Department created');
+          context.read<DepartmentCubit>().loadDepartments(silent: true);
+        }
+        // Updated / Deleted: the Edit page closes itself (it used to be
+        // popped here AND there, which also closed this page).
+        if (state is DepartmentUpdated || state is DepartmentDeleted) {
+          context.read<DepartmentCubit>().loadDepartments(silent: true);
         }
       },
       child: BlocBuilder<DepartmentCubit, DepartmentState>(
@@ -73,7 +89,7 @@ class _DepartmentMainPageState extends State<DepartmentMainPage> {
           if (state is DepartmentInitial || state is DepartmentLoading) {
             return const Scaffold(
               backgroundColor: ColorPick.background,
-              body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+              body: Center(child: CircleProgress()),
             );
           }
 
@@ -83,17 +99,18 @@ class _DepartmentMainPageState extends State<DepartmentMainPage> {
             departments = state.lastDepartments!;
           }
 
-          final allJobs = context.read<JobListingCubit>().allJobs;
+          // `watch`, not `read`: jobs are fetched asynchronously, so this page
+          // must rebuild when JobListingCubit finishes loading — otherwise the
+          // card counts stay at 0 forever.
+          final allJobs = context.watch<JobListingCubit>().allJobs;
 
           return Scaffold(
             backgroundColor: ColorPick.background,
-            body: SingleChildScrollView(
-              child: SizedBox(
-                width: double.infinity,
-                child: Column(
-                  children: [
+            body: AdminStickyBody(
+                reflowOnPhone: true, // BUG-16
+  children: [
                     AppAdminNavbar(
-                      activeLabel:    'Home',
+                      activeLabel:    'Job Listing',
                       homePage:       CareersMainPageDashboard(),
                       webPage:        MainMainPage(),
                       jobListingPage: JobListingMainPage(),
@@ -102,9 +119,9 @@ class _DepartmentMainPageState extends State<DepartmentMainPage> {
 
                     Padding(
                       padding: EdgeInsets.symmetric(
-                          horizontal: 20.w, vertical: 20.h),
+                          horizontal: AdminLayout.sidePadding(context), vertical: 20.h),
                       child: SizedBox(
-                        width: 1000.w,
+                        width: AdminLayout.contentWidth(context), // BUG-16
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -133,11 +150,10 @@ class _DepartmentMainPageState extends State<DepartmentMainPage> {
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.settings_outlined,
-                                          size: 16.sp, color: Colors.white),
+                                      CustomSvg(assetPath: "assets/department.svg",color: Colors.white,),
                                       SizedBox(width: 6.w),
                                       Text(
-                                        'Departments',
+                                        'Create Department', // BUG-41: was 'Departments'
                                         style: StyleText.fontSize12Weight500
                                             .copyWith(color: Colors.white),
                                       ),
@@ -149,15 +165,29 @@ class _DepartmentMainPageState extends State<DepartmentMainPage> {
                             SizedBox(height: 20.h),
 
                             // ── Department Grid ──
+                            // BUG-57: CustomSvg(assetPath: '') threw JS
+                            // errors and showed nothing. Real empty state now.
                             if (departments.isEmpty)
                               Center(
                                 child: Padding(
                                   padding: EdgeInsets.all(40.sp),
-                                  child: CustomSvg(
-                                    assetPath: '',
-                                    width:  150.w,
-                                    height: 150.h,
-                                    fit:    BoxFit.fill,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      CustomSvg(
+                                        assetPath: 'assets/images/null.svg',
+                                        width:  150.w,
+                                        height: 150.h,
+                                        fit:    BoxFit.contain,
+                                      ),
+                                      SizedBox(height: 12.h),
+                                      Text(
+                                        'No departments yet — click "Create Department" to add one.',
+                                        textAlign: TextAlign.center,
+                                        style: StyleText.fontSize14Weight500
+                                            .copyWith(color: AppColors.text),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               )
@@ -170,9 +200,7 @@ class _DepartmentMainPageState extends State<DepartmentMainPage> {
                       ),
                     ),
                   ],
-                ),
-              ),
-            ),
+),
           );
         },
       ),
@@ -182,16 +210,18 @@ class _DepartmentMainPageState extends State<DepartmentMainPage> {
   // ── Grid (3 columns) ──────────────────────────────────────────────────────
   Widget _buildGrid(
       List<DepartmentModel> depts, List<JobPostModel> allJobs) {
-    final rows = (depts.length / 3).ceil();
+    // BUG-16: one department per row on a phone.
+    final int cols = AdminLayout.isPhone(context) ? 1 : 3;
+    final rows = (depts.length / cols).ceil();
     return Column(
       children: List.generate(rows, (rowIndex) {
-        final start = rowIndex * 3;
+        final start = rowIndex * cols;
         return Padding(
           padding: EdgeInsets.only(bottom: 16.h),
           child: IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: List.generate(3, (colIndex) {
+              children: List.generate(cols, (colIndex) {
                 final i = start + colIndex;
                 if (i >= depts.length) {
                   return const Expanded(child: SizedBox());
@@ -199,7 +229,7 @@ class _DepartmentMainPageState extends State<DepartmentMainPage> {
                 return Expanded(
                   child: Padding(
                     padding:
-                    EdgeInsets.only(right: colIndex < 2 ? 12.w : 0),
+                    EdgeInsets.only(right: colIndex < cols - 1 ? 12.w : 0),
                     child: _DepartmentCard(
                       department: depts[i],
                       allJobs:    allJobs,

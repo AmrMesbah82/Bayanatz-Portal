@@ -7,6 +7,7 @@ extension _HomeEditActions on _HomeEditPageMasterState {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            SizedBox(height: 15.h),
             Text('Publish Date',
                 style: StyleText.fontSize12Weight500.copyWith(color: AppColors.text)),
             SizedBox(height: 6.h),
@@ -74,6 +75,7 @@ extension _HomeEditActions on _HomeEditPageMasterState {
                 ],
               ],
             ),
+            SizedBox(height: 15.h),
           ],
         ),
       ),
@@ -82,159 +84,96 @@ extension _HomeEditActions on _HomeEditPageMasterState {
     ],
   );
 
+  /// Shown when the user tries to open a second draft / second scheduled
+  /// release. Nothing is written — the existing one has to be finished or
+  /// removed first.
+  void _slotBusyDialog({required bool isDraft}) {
+    showConfirmDialog(
+      context: context,
+      title: isDraft ? 'DRAFT ALREADY EXISTS' : 'ALREADY SCHEDULED',
+      subtitle: isDraft
+          ? 'There is already an unpublished draft. Publish it, or remove it '
+              'from the Draft tab, before saving another one.'
+          : 'There is already a scheduled release. Publish it, or remove it '
+              'from the Scheduled tab, before scheduling another one.',
+      confirmLabel: 'OK',
+      cancelLabel: '',
+      onConfirm: () {},
+    );
+  }
+
   Widget _bottomButtons(HomeCmsCubit cubit) {
-    final bool canPublish = _isFormValid;
+    final bool canPublish  = _isFormValid;
     final bool isScheduled =
         _publishDate != null && _publishDate!.isAfter(DateTime.now());
 
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: () => navigateTo(context, HomePreviewPageMaster()),
-                child: Container(
-                  height: 44.h,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF608570),
-                    borderRadius: BorderRadius.circular(6.r),
-                  ),
-                  child: Center(child: Text('Preview',
-                      style: StyleText.fontSize14Weight600.copyWith(color: Colors.white))),
-                ),
-              ),
-            ),
-            SizedBox(width: 300.w),
-            Expanded(
-              child: AbsorbPointer(
-                absorbing: !canPublish || _isSaving,
-                child: Opacity(
-                  opacity: (canPublish && !_isSaving) ? 1.0 : 0.6,
-                  child: GestureDetector(
-                    onTap: () {
-                      if (!canPublish) {
-                        setState(() => _submitted = true);
-                        return;
-                      }
-                      showPublishConfirmDialog(
-                        context: context,
-                        title: isScheduled ? 'SCHEDULE PAGE' : 'PUBLISH PAGE',
-                        subtitle: isScheduled
-                            ? 'Your changes will be scheduled for ${DateFormat('dd/MM/yyyy').format(_publishDate!)}. The published version will remain live until then.'
-                            : 'Do you want to publish this page now?',
-                        confirmLabel: isScheduled ? 'Schedule' : 'Publish',
-                        onConfirm: () => _save(
-                          cubit,
-                          publishStatus: 'published',
-                          scheduledPublishDate: _publishDate,
-                        ),
-                      );
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      height: 44.h,
-                      decoration: BoxDecoration(
-                        color: _isSaving
-                            ? (isScheduled
-                                  ? ColorPick.scheduled.withValues(alpha: .5)
-                                  : ColorPick.primary.withValues(alpha: 0.5))
-                            : (isScheduled ? ColorPick.scheduled : ColorPick.primary),
-                        borderRadius: BorderRadius.circular(6.r),
-                      ),
-                      child: Center(
-                        child: Text(
-                          isScheduled ? 'Schedule' : 'Publish',
-                          style: StyleText.fontSize14Weight600.copyWith(
-                            color: Colors.white.withValues(alpha: 
-                              (canPublish && !_isSaving) ? 1.0 : 0.55,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: 10.h),
-        Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: () {
-                  if (_isEditingDraft) {
-                    showPublishConfirmDialog(
-                      context: context,
-                      title: 'DISCARD DRAFT',
-                      subtitle:
-                          'Are you sure you want to discard this draft? The published version will remain unchanged.',
-                      confirmLabel: 'Discard',
-                      onConfirm: () => cubit.discardDraft(),
-                    );
-                  } else {
-                    showConfirmDialog(
-                      context: context,
-                      title: 'Discard Changes',
-                      subtitle: 'Are you sure you want to discard all changes?',
-                      confirmLabel: 'Discard',
-                      cancelLabel: 'Cancel',
-                      onConfirm: () {
-                        if (Navigator.canPop(context)) {
-                          Navigator.pop(context);
-                        } else {
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(builder: (_) => const HomeMainPageMaster()),
-                          );
-                        }
-                      },
-                    );
-                  }
-                },
-                child: Container(
-                  height: 44.h,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF797979),
-                    borderRadius: BorderRadius.circular(6.r),
-                  ),
-                  child: Center(child: Text('Discard',
-                      style: StyleText.fontSize14Weight600.copyWith(color: Colors.white))),
-                ),
-              ),
-            ),
-            SizedBox(width: 300.w),
-            Expanded(
-              child: GestureDetector(
-                onTap: _isSaving
-                    ? null
-                    : () {
-                        showPublishConfirmDialog(
-                          context: context,
-                          title: 'SAVE AS DRAFT',
-                          subtitle:
-                              'Your changes will be saved as a draft. The published version will remain live and unchanged.',
-                          confirmLabel: 'Save Draft',
-                          onConfirm: () => _save(cubit, publishStatus: 'draft'),
-                        );
-                      },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  height: 44.h,
-                  decoration: BoxDecoration(
-                    color: _isSaving ? Colors.grey.shade400 : const Color(0xFF525252),
-                    borderRadius: BorderRadius.circular(6.r),
-                  ),
-                  child: Center(child: Text('Save For Later',
-                      style: StyleText.fontSize14Weight600.copyWith(color: Colors.white))),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
+    // Each slot holds one version at a time. You can keep updating the one you
+    // are editing, but you cannot start a second one on top of it.
+    final bool draftBlocked     = !cubit.canSaveDraft;
+    final bool scheduledBlocked = !cubit.canSaveScheduled;
+
+    // Shared action buttons — style lives in core/main_widgets/edit_action_buttons.dart
+    return EditActionButtons(
+      publishEnabled: canPublish,
+      isSaving:       _isSaving,
+      publishLabel:   isScheduled ? 'Schedule' : 'Publish',
+      publishColor:   isScheduled ? ColorPick.scheduled : null,
+      // BUG-53: the preview showed the PUBLISHED text — copy the form into
+      // the cubit first so it shows the edits being made.
+      onPreview: () {
+        _syncFormToCubit(cubit);
+        navigateTo(context, HomePreviewPageMaster());
+      },
+      onPublish: () {
+        // Scheduling writes the scheduled document; publishing writes the live
+        // one. Neither touches the other.
+        if (isScheduled && scheduledBlocked) {
+          _slotBusyDialog(isDraft: false);
+          return;
+        }
+        showPublishConfirmDialog(
+          context: context,
+          title: isScheduled ? 'SCHEDULE PAGE' : 'PUBLISH PAGE',
+          subtitle: isScheduled
+              ? 'Your changes will be scheduled for ${DateFormat('dd/MM/yyyy').format(_publishDate!)}. The published version stays live until then.'
+              : 'Do you want to publish this page now? This replaces the live version.',
+          confirmLabel: isScheduled ? 'Schedule' : 'Publish',
+          onConfirm: () => _save(
+            cubit,
+            publishStatus: isScheduled ? 'scheduled' : 'published',
+            scheduledPublishDate: isScheduled ? _publishDate : null,
+          ),
+        );
+      },
+      onDiscard: () {
+        if (_isEditingDraft) {
+          showPublishConfirmDialog(
+            context: context,
+            title: 'DISCARD DRAFT',
+            subtitle:
+                'Are you sure you want to discard this draft? The published version will remain unchanged.',
+            confirmLabel: 'Discard',
+            onConfirm: () => cubit.removeDraft(),
+          );
+        } else {
+          confirmDiscard(context, // BUG-75: always back to Web Page → Home, never the dashboard.
+            onDiscard: _goToHomeTab);
+        }
+      },
+      onSaveForLater: () {
+        if (draftBlocked) {
+          _slotBusyDialog(isDraft: true);
+          return;
+        }
+        showPublishConfirmDialog(
+          context: context,
+          title: 'SAVE AS DRAFT',
+          subtitle:
+              'Your changes will be saved as a draft. The published version stays live and unchanged.',
+          confirmLabel: 'Save Draft',
+          onConfirm: () => _save(cubit, publishStatus: 'draft'),
+        );
+      },
     );
   }
 
@@ -244,43 +183,13 @@ extension _HomeEditActions on _HomeEditPageMasterState {
     required List<Widget> children,
   }) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
+      child:    Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() => _open[key] = !isOpen),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: BorderRadius.circular(6.r),
-              ),
-              child: Row(
-                children: [
-                  Expanded(child: Text(title,
-                      style: StyleText.fontSize14Weight600.copyWith(color: Colors.white))),
-                  Icon(
-                    isOpen
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white, size: 20.sp,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (isOpen)
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: 16.h),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: children,
-              ),
-            ),
-        ],
+        children: children,
       ),
     );
   }

@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../../core/constant/color.dart';
 import '../../../../../core/custom_svg.dart';
 import 'package:web_app_admin/core/widget/network_image_view.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
@@ -19,6 +20,8 @@ import '../../../../main/presentation/ui/pages/main_main.dart';
 import '../../../data/models/contact_us_model_location.dart';
 import '../../controller/contact_us_location_cubit.dart';
 import '../../controller/contact_us_location_state.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 
 
@@ -73,7 +76,7 @@ class _ContactUsMainPageState extends State<ContactUsMainPage> {
         if (state is ContactUsCmsInitial || state is ContactUsCmsLoading) {
           return const Scaffold(
             backgroundColor: ColorPick.background,
-            body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+            body: Center(child: CircleProgress()),
           );
         }
 
@@ -83,12 +86,8 @@ class _ContactUsMainPageState extends State<ContactUsMainPage> {
 
         return Scaffold(
           backgroundColor: ColorPick.background,
-          body: SingleChildScrollView(
-            child: Container(
-              width: double.infinity,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+          body: AdminStickyBody(
+  children: [
                   AppAdminNavbar(
                     activeLabel: 'Web Page',
                     homePage: MainMainPage(),
@@ -97,18 +96,15 @@ class _ContactUsMainPageState extends State<ContactUsMainPage> {
                   ),
                   SizedBox(height: 20.h),
                   AdminSubNavBar(activeIndex: 4),
-                  SizedBox(height: 20.h),
                   Container(
                     width: 1000.w,
                     child: data == null
                         ? const Center(
-                        child: CircularProgressIndicator(color: ColorPick.primary))
+                        child: CircleProgress())
                         : _body(data),
                   ),
                 ],
-              ),
-            ),
-          ),
+),
         );
       },
     );
@@ -131,9 +127,10 @@ class _ContactUsMainPageState extends State<ContactUsMainPage> {
             const Spacer(),
             GestureDetector(
               onTap: () => context.push('/admin/contact-cms/preview'),
+              // BUG-155: same 130.w × 36.h as the other Web Page tabs.
               child: Container(
-                width: 150.w,
-                height: 40.h,
+                width: 130.w,
+                height: 36.h,
                 decoration: BoxDecoration(
                   color: ColorPick.primary,
                   borderRadius: BorderRadius.circular(6.r),
@@ -169,7 +166,7 @@ class _ContactUsMainPageState extends State<ContactUsMainPage> {
             GestureDetector(
               onTap: () => context.push('/admin/contact-cms/edit'),
               child: Container(
-                width: 150.w, height: 40.h,
+                width: 130.w, height: 36.h, // BUG-155
                 decoration: BoxDecoration(
                   color: AppColors.card,
                   borderRadius: BorderRadius.circular(4.r),
@@ -198,7 +195,7 @@ class _ContactUsMainPageState extends State<ContactUsMainPage> {
           title: 'Info',
           children: [
             SizedBox(height: 15.h),
-            _readField('Sub description', data.subDescription.en,height: 72.h),
+            _readField('Short Description', /* BUG-157 */ data.subDescription.en,height: 72.h),
             SizedBox(height: 10.h),
             _readFieldRtl('وصف فرعي', data.subDescription.ar,height: 72.h),
             SizedBox(height: 16.h),
@@ -391,43 +388,13 @@ class _ContactUsMainPageState extends State<ContactUsMainPage> {
     required List<Widget> children,
   }) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
+      child:    Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() => _open[key] = !isOpen),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(title,
-                        style: StyleText.fontSize14Weight600
-                            .copyWith(color: Colors.white)),
-                  ),
-                  Icon(
-                    isOpen
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white, size: 25.sp,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (isOpen)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: children,
-            ),
-        ],
+        children: children,
       ),
     );
   }

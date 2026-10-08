@@ -117,11 +117,45 @@ extension _ServicesMainHelpers on _ServicesMainPageMasterState {
     );
   }
 
+  // ── Open the Digital Journey row / card layout screen ─────────────────────────
+  void _openJourneyLayout() {
+    final cubit = context.read<ServiceCmsCubit>();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BlocProvider.value(
+          value: cubit,
+          child: ServicesDigitalLayoutPage(model: cubit.current),
+        ),
+      ),
+    );
+  }
+
   // ── Journey grid ──────────────────────────────────────────────────────────────
+  //
+  // The grid follows the saved layout: rowSizes says how many cards each row
+  // holds, and the flat journeyItems list is chunked by it. Documents saved
+  // before the layout screen existed have no rowSizes — those fall back to the
+  // old fixed four-across grouping.
   Widget _journeyGrid(List<JourneyItemModel> items) {
+    final List<int> sizes = context.read<ServiceCmsCubit>().current.rowSizes;
     final List<List<JourneyItemModel>> rows = [];
-    for (int i = 0; i < items.length; i += 4) {
-      rows.add(items.skip(i).take(4).toList());
+
+    if (sizes.isEmpty) {
+      for (int i = 0; i < items.length; i += 4) {
+        rows.add(items.skip(i).take(4).toList());
+      }
+    } else {
+      int i = 0;
+      for (final n in sizes) {
+        if (i >= items.length) break;
+        rows.add(items.skip(i).take(n).toList());
+        i += n;
+      }
+      while (i < items.length) {
+        rows.add(items.skip(i).take(4).toList());
+        i += 4;
+      }
     }
     return Column(
       children: rows.map((row) {
@@ -131,13 +165,21 @@ extension _ServicesMainHelpers on _ServicesMainPageMasterState {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Each row spans the full width, split by however many cards
+                // the saved layout gave it.
                 ...row.map((item) => Expanded(
                   child: Padding(
                     padding: EdgeInsets.only(right: 8.w),
-                    child: _journeyMiniCard(item),
+                    child: GestureDetector(
+                      // Tapping any card opens the row / card layout screen.
+                      onTap: _openJourneyLayout,
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: _journeyMiniCard(item),
+                      ),
+                    ),
                   ),
                 )),
-                ...List.generate(4 - row.length, (_) => const Expanded(child: SizedBox())),
               ],
             ),
           ),
@@ -172,7 +214,7 @@ extension _ServicesMainHelpers on _ServicesMainPageMasterState {
           ),
           SizedBox(height: 6.h),
           Text(
-            item.title.en.isNotEmpty ? item.title.en : 'Title',
+            FormatHelper.capitalize(item.title.en.isNotEmpty ? item.title.en : 'Title',),
             style: StyleText.fontSize12Weight600
                 .copyWith(color: const Color(0xFF1A1A1A)),
           ),
@@ -194,34 +236,13 @@ extension _ServicesMainHelpers on _ServicesMainPageMasterState {
     required List<Widget> children,
   }) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
+      child:    Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() => _open[key] = !isOpen),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: BorderRadius.circular(6.r),
-              ),
-              child: Row(children: [
-                Expanded(child: Text(title,
-                    style: StyleText.fontSize14Weight600
-                        .copyWith(color: Colors.white))),
-                Icon(isOpen
-                    ? Icons.keyboard_arrow_up_rounded
-                    : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white, size: 20.sp),
-              ]),
-            ),
-          ),
-          if (isOpen)
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
-        ],
+        children: children,
       ),
     );
   }
@@ -231,7 +252,7 @@ extension _ServicesMainHelpers on _ServicesMainPageMasterState {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       SizedBox(height: 20.h),
-      Text(label, style: StyleText.fontSize12Weight500.copyWith(color: AppColors.text)),
+      Text(label, style: StyleText.fontSize14Weight500.copyWith(color: AppColors.text)),
       SizedBox(height: 4.h),
       Container(
         width: double.infinity, height: height.h,

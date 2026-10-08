@@ -17,11 +17,16 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 
 import 'package:web_app_admin/core/custom_svg.dart';
+import 'package:web_app_admin/core/main_widgets/app_admin_navbar.dart';
+import 'package:web_app_admin/core/main_widgets/edit_action_buttons.dart';
 import 'package:web_app_admin/core/widget/network_image_view.dart';
 import 'package:web_app_admin/core/widget/textfield.dart';
+import 'package:web_app_admin/features/main/presentation/ui/pages/main_main.dart';
 
+import '../../../../../../core/constant/color.dart';
 import '../../../../../../core/custom_dialog.dart';
 import '../../../../../../core/custom/image_upload_circle.dart';
+import '../../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../../core/theme/appcolors.dart';
 import '../../../../../../core/theme/new_theme.dart';
@@ -29,13 +34,16 @@ import '../../../../data/models/about_us_model.dart';
 import '../../../controller/about_us_cubit.dart';
 import '../../../controller/about_us_state.dart';
 import 'terms_preview.dart';
+import '../../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../../widgets/terms_edit/picked_image.dart';
 part '../../widgets/terms_edit/doc_item.dart';
 part '../../widgets/terms_edit/terms_edit_widgets.dart';
 
-const Color _kGreen = Color(0xFF2D8C4E);
-const Color _kGreenSolid = Color(0xFF008037);
+// The Terms screens used to carry their own green palette — the only admin
+// screens that did. They now use ColorPick.primary like every other page, so
+// the CMS reads as one product instead of two.
 const Color _kRed = Color(0xFFD32F2F);
 const Color _kSurface = Color(0xFFFFFFFF);
 const Color _kBg = Color(0xFFF1F2ED);
@@ -153,11 +161,8 @@ class _TermsEditPageState extends State<TermsEditPage> {
 
     final bool hasChanges = hasTextChanges || hasImageChanges || hasDocChanges;
 
-    if (hasChanges != _hasChanges) {
-      setState(() {
-        _hasChanges = hasChanges;
-      });
-    }
+    // Same fix as BUG-62: always rebuild so Publish follows the validity.
+    if (mounted) setState(() => _hasChanges = hasChanges);
   }
 
   void _resetChangesTracking() {
@@ -472,7 +477,7 @@ class _TermsEditPageState extends State<TermsEditPage> {
     showPublishConfirmDialog(
       context: context,
       title: 'PUBLISH TERMS OF SERVICE',
-      subtitle: 'Do you want to publish the Terms of Service page now?',
+      subtitle: 'Do you want to publish the Terms and Conditions page now?',
       confirmLabel: 'Publish',
       onConfirm: _onSave,
     );
@@ -480,14 +485,7 @@ class _TermsEditPageState extends State<TermsEditPage> {
 
   void _onDiscard() {
     if (_hasChanges) {
-      showConfirmDialog(
-        context: context,
-        title: 'Discard Changes',
-        subtitle: 'Are you sure you want to discard all changes?',
-        confirmLabel: 'Discard',
-        cancelLabel: 'Cancel',
-        onConfirm: () => Navigator.pop(context),
-      );
+      confirmDiscard(context, onDiscard: () => Navigator.pop(context));
     } else {
       Navigator.pop(context);
     }
@@ -538,26 +536,25 @@ class _TermsEditPageState extends State<TermsEditPage> {
             children: [
               SizedBox(
                 width: double.infinity,
-                child: SingleChildScrollView(
-                  child: Container(
-                    width: 1000.w,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        SizedBox(height: 25.h),
+                child: AdminStickyBody(
+  contentWidth: 1000.w,
+  children: [
+                        AppAdminNavbar(
+                          activeLabel: 'Web Page',
+                          homePage: MainMainPage(),
+                          webPage: MainMainPage(),
+                          jobListingPage: MainMainPage(),
+                        ),
+                        SizedBox(height: 10.h),
                         AdminSubNavBar(activeIndex: 3),
-                        SizedBox(height: 25.h),
                         SizedBox(
                           width: 1000.w,
                           child: loading
-                              ? const Center(child: CircularProgressIndicator(
-                              color: _kGreenSolid))
+                              ? const Center(child: CircleProgress())
                               : _buildForm(),
                         ),
                       ],
-                    ),
-                  ),
-                ),
+),
               ),
               if (_isSaving) _savingOverlay(),
             ],
@@ -577,7 +574,7 @@ class _TermsEditPageState extends State<TermsEditPage> {
         Text(
           'Editing Terms of Service Details',
           style: StyleText.fontSize45Weight600.copyWith(
-              color: _kGreen, fontWeight: FontWeight.w700),
+              color: ColorPick.primary, fontWeight: FontWeight.w700),
         ),
         SizedBox(height: 24.h),
 
@@ -633,32 +630,12 @@ class _TermsEditPageState extends State<TermsEditPage> {
         ),
         SizedBox(height: 32.h),
 
-        Row(
-          children: [
-            Expanded(child: _btn(
-              label: 'Preview',
-              color: const Color(0xFF608570),
-              onTap: _onPreview,
-            )),
-            SizedBox(width: 400.w),
-            Expanded(child: _btn(
-              label: 'Publish',
-              color: canPublish ? _kGreenSolid : _kGreenSolid.withValues(alpha: 0.4),
-              onTap: canPublish ? _showPublishConfirmDialog : null,
-            )),
-          ],
-        ),
-        SizedBox(height: 12.h),
-        Row(
-          children: [
-            Expanded(child: _btn(
-              label: 'Discard',
-              color: const Color(0xFF9E9E9E),
-              onTap: _onDiscard,
-            )),
-            SizedBox(width: 400.w),
-            Expanded(child: Column()),
-          ],
+        // Shared action buttons — style lives in core/main_widgets/edit_action_buttons.dart
+        EditActionButtons(
+          publishEnabled: canPublish,
+          onPreview: _onPreview,
+          onPublish: _showPublishConfirmDialog,
+          onDiscard: _onDiscard,
         ),
         SizedBox(height: 48.h),
       ],

@@ -8,6 +8,8 @@ class _InternsTabBody extends StatefulWidget {
 class _InternsTabBodyState extends State<_InternsTabBody> {
   bool   _isGrid     = true;
   String _search     = '';
+  /// BUG-93: "Time Frame" filter (by joined date) from the flowchart.
+  DateTimeRange? _timeFrame;
   final  _searchCtrl = TextEditingController();
 
   // ── "Our Interns" section header (icon + title) ─────────────────────────────
@@ -187,44 +189,16 @@ class _InternsTabBodyState extends State<_InternsTabBody> {
             SizedBox(height: 14.h),
 
             // ── Accordion: Our Interns ──────────────────────────────────────
-            Container(
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    onTap: () => setState(() => _headerOpen = !_headerOpen),
-                    child: Container(
-                      width: double.infinity,
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-                      decoration: BoxDecoration(
-                          color: ColorPick.primary,
-                          borderRadius: BorderRadius.circular(6.r)),
-                      child: Row(children: [
-                        Expanded(
-                          child: Text('Our Interns',
-                              style: StyleText.fontSize14Weight600
-                                  .copyWith(color: Colors.white)),
-                        ),
-                        Icon(
-                          _headerOpen
-                              ? Icons.keyboard_arrow_up_rounded
-                              : Icons.keyboard_arrow_down_rounded,
-                          color: Colors.white, size: 25.sp,
-                        ),
-                      ]),
-                    ),
-                  ),
-                  if (_headerOpen)
-                    Padding(
+            CustomAccordion(
+              title:    'Our Interns',
+              isOpen:   _headerOpen,
+              onToggle: () => setState(() => _headerOpen = !_headerOpen),
+              child: Padding(
                       padding: EdgeInsets.symmetric(vertical: 16.h),
                       child: _headerEditMode
                           ? _headerEditContent(sectionCubit)
                           : _headerViewContent(model),
                     ),
-                ],
-              ),
             ),
             SizedBox(height: 16.h),
           ],
@@ -369,8 +343,7 @@ class _InternsTabBodyState extends State<_InternsTabBody> {
                       ? SizedBox(
                           width: 16.w,
                           height: 16.w,
-                          child: const CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2))
+                          child: const CircleProgress())
                       : Text('Save',
                           style: StyleText.fontSize13Weight500
                               .copyWith(color: Colors.white)),
@@ -412,14 +385,32 @@ class _InternsTabBodyState extends State<_InternsTabBody> {
   }
 
   List<InternModel> _filtered(List<InternModel> all) {
-    if (_search.isEmpty) return all;
+    var list = all;
+    // BUG-93: joined between the two picked days (inclusive).
+    final tf = _timeFrame;
+    if (tf != null) {
+      final from = DateTime(tf.start.year, tf.start.month, tf.start.day);
+      final to = DateTime(tf.end.year, tf.end.month, tf.end.day, 23, 59, 59);
+      list = list
+          .where((i) =>
+              i.joinedDate != null &&
+              !i.joinedDate!.isBefore(from) &&
+              !i.joinedDate!.isAfter(to))
+          .toList();
+    }
+    if (_search.isEmpty) return list;
     final q = _search.toLowerCase();
-    return all
+    return list
         .where((i) =>
     i.fullName.toLowerCase().contains(q) ||
         i.position.toLowerCase().contains(q) ||
         i.degrees.toLowerCase().contains(q))
         .toList();
+  }
+
+  String _fmtDay(DateTime d) {
+    const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return '${d.day} ${m[d.month - 1]} ${d.year}';
   }
 
   @override
@@ -461,7 +452,7 @@ class _InternsTabBodyState extends State<_InternsTabBody> {
                       color: Colors.white, borderRadius: BorderRadius.circular(6.r)),
                   child: Row(children: [
                     SizedBox(width: 12.w),
-                    Icon(Icons.search, color: AppColors.secondaryText, size: 18.sp),
+                    CustomSvg(assetPath: "assets/search.svg"),
                     SizedBox(width: 8.w),
                     Expanded(
                       child: CustomTextField(
@@ -478,17 +469,36 @@ class _InternsTabBodyState extends State<_InternsTabBody> {
                 ),
               ),
               SizedBox(width: 12.w),
-              Container(
-                height: 40.h,
-                padding: EdgeInsets.symmetric(horizontal: 16.w),
-                decoration: BoxDecoration(
-                    color: ColorPick.primary, borderRadius: BorderRadius.circular(6.r)),
-                child: Center(
-                  child: Text('Time Frame',
-                      style: StyleText.fontSize13Weight500.copyWith(color: Colors.white)),
+
+              // ── BUG-93: Time Frame (flowchart 1:10051) ──
+              GestureDetector(
+                onTap: () async {
+                  final picked =
+                      await showAdminDateRangePicker(context, initial: _timeFrame);
+                  if (picked != null) setState(() => _timeFrame = picked);
+                },
+                child: Container(
+                  height: 40.h,
+                  padding: EdgeInsets.symmetric(horizontal: 16.w),
+                  decoration: BoxDecoration(
+                      color: ColorPick.primary, borderRadius: BorderRadius.circular(6.r)),
+                  child: Center(
+                    child: Text(
+                        _timeFrame == null
+                            ? 'Time Frame'
+                            : '${_fmtDay(_timeFrame!.start)} – ${_fmtDay(_timeFrame!.end)}',
+                        style: StyleText.fontSize13Weight500.copyWith(color: Colors.white)),
+                  ),
                 ),
               ),
+              if (_timeFrame != null)
+                IconButton(
+                  tooltip: 'Clear time frame',
+                  icon: Icon(Icons.close, size: 16.sp, color: ColorPick.primary),
+                  onPressed: () => setState(() => _timeFrame = null),
+                ),
               SizedBox(width: 12.w),
+
               GestureDetector(
                 onTap: () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => BlocProvider.value(
@@ -511,13 +521,27 @@ class _InternsTabBodyState extends State<_InternsTabBody> {
             Row(
               children: [
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
+
+                  height: 32.sp,
                   decoration: BoxDecoration(
                       color: ColorPick.white, borderRadius: BorderRadius.circular(6.r)),
-                  child: Text(
-                    'Total Interns:  ${filtered.length}',
-                    style: StyleText.fontSize12Weight500
-                        .copyWith(color: AppColors.text),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10.sp),
+                    child: Row(
+                      children: [
+
+                        Text(
+                          'Total Interns:',
+                          style: StyleText.fontSize12Weight500
+                              .copyWith(color: AppColors.secondaryText),
+                        ),
+                        Text(
+                          '${filtered.length}',
+                          style: StyleText.fontSize12Weight500
+                              .copyWith(color: AppColors.text),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const Spacer(),
@@ -527,7 +551,7 @@ class _InternsTabBodyState extends State<_InternsTabBody> {
                       builder: (_) => _InternExportDialog(interns: filtered)),
                   textStyle: StyleText.fontSize12Weight600
                       .copyWith(color: Colors.white),
-                  height: 32.h, space: 4.w, radius: 6,
+                  height: 32.sp, space: 4.w, radius: 6,
                   color: ColorPick.primary, image: 'assets/images/export.svg',
                   widthImage: 14.sp, heightImage: 14.sp,
                   colorBorder: ColorPick.primary, svgColor: Colors.white,
@@ -560,7 +584,7 @@ class _InternsTabBodyState extends State<_InternsTabBody> {
             SizedBox(height: 16.h),
 
             if (loading)
-              const Center(child: CircularProgressIndicator(color: ColorPick.primary))
+              const Center(child: CircleProgress())
             else if (filtered.isEmpty)
               Center(
                 child: Padding(

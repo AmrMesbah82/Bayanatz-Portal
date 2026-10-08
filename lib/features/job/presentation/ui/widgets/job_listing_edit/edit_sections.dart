@@ -1,110 +1,44 @@
 // ******************* FILE INFO *******************
 // Part of: job_listing_edit.dart
-// Contains: _showConfirmDialog, _jobInfoSection, _jobDetailsSection,
-//           _benefitsSection
+// Contains: _jobInfoSection, _jobDetailsSection, _benefitsSection
+// NOTE: the confirm dialog now comes from the shared
+//       core/custom/16-custom_dialog_manager.dart (CustomDialogManager).
 
 part of '../../pages/job_listing_edit.dart';
 
-extension _JobEditSections on _JobListingEditPageState {
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  CONFIRM DIALOG
-  // ═══════════════════════════════════════════════════════════════════════════
+/// The ONE label style for every field title in the job edit form — text
+/// fields, dropdowns and date pickers alike. Because every control renders
+/// its label the same way (label line + 6.h gap), one shared style is what
+/// keeps the titles of a row aligned on the same horizontal line.
+///
+/// It lives in the theme (StyleText.fieldLabel) so the read-only Job Details
+/// tab renders its titles with exactly the same size and weight.
+TextStyle get _kFieldLabelStyle => StyleText.fieldLabel;
 
-  void _showConfirmDialog({
-    required String title,
-    required String message,
-    required String confirmLabel,
-    required String imagePath,
-    required VoidCallback onConfirm,
-  }) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16.r),
-        ),
-        child: Container(
-          width: 450.w,
-          padding: EdgeInsets.all(30.sp),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SvgPicture.asset(imagePath, height: 120.h, fit: BoxFit.contain),
-              SizedBox(height: 20.h),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 18.sp,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.text,
-                ),
-              ),
-              SizedBox(height: 12.h),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13.sp,
-                  color: AppColors.secondaryText,
-                  height: 1.5,
-                ),
-              ),
-              SizedBox(height: 24.h),
-              Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => Navigator.of(ctx).pop(),
-                      child: Container(
-                        height: 44.h,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(6.r),
-                        ),
-                        child: Center(
-                          child: Text(
-                            'Back',
-                            style: TextStyle(
-                              fontSize: 14.sp,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.text,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 16.w),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: onConfirm,
-                      child: Container(
-                        height: 44.h,
-                        decoration: BoxDecoration(
-                          color: ColorPick.primary,
-                          borderRadius: BorderRadius.circular(6.r),
-                        ),
-                        child: Center(
-                          child: Text(
-                            confirmLabel,
-                            style: TextStyle(
-                              fontSize: 14.sp,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+extension _JobEditSections on _JobListingEditPageState {
+  // ── Departments come from the Departments feature (Firestore), not a
+  //    static list. Falls back to _kDepartments while loading / on error. ──
+  List<Map<String, String>> _departmentItems(BuildContext context) {
+    final state = context.watch<DepartmentCubit>().state;
+    List<DepartmentModel> deps = [];
+    if (state is DepartmentLoaded) {
+      deps = state.departments;
+    } else if (state is DepartmentError && state.lastDepartments != null) {
+      deps = state.lastDepartments!;
+    }
+    if (deps.isEmpty) return _kDepartments;
+    final items = deps
+        .where((d) => d.nameEn.isNotEmpty)
+        .map((d) => {'key': d.nameEn, 'value': d.nameEn})
+        .toList();
+    // Keep the currently selected department visible even if it was
+    // deleted from the Departments feature (legacy jobs).
+    if (_department != null &&
+        _department!.isNotEmpty &&
+        !items.any((m) => m['key'] == _department)) {
+      items.add({'key': _department!, 'value': _department!});
+    }
+    return items;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -113,12 +47,14 @@ extension _JobEditSections on _JobListingEditPageState {
 
   Widget _jobInfoSection() {
     return Padding(
-      padding: EdgeInsets.all(16.sp),
+      padding: EdgeInsets.only(top:  16.sp),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Figma (Create New Job Post): "Text Here" placeholders.
               Expanded(child: _field('Job Title', 'Text Here', _titleEn)),
               SizedBox(width: 16.w),
               Expanded(
@@ -126,51 +62,146 @@ extension _JobEditSections on _JobListingEditPageState {
               ),
             ],
           ),
-
+          SizedBox(height: 10.sp),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: CustomDropdownFormFieldInvMaster(
                   label: 'Department',
+                  labelStyle: _kFieldLabelStyle,
                   hint: Text('Select Department',
                       style: StyleText.fontSize12Weight400
                           .copyWith(color: AppColors.secondaryText)),
                   selectedValue: _department,
-                  items: _kDepartments,
+                  items: _departmentItems(context),
                   primaryColor: _cmsPrimary(context),
                   widthIcon: 18,
                   heightIcon: 18,
                   height: 36,
-                  dropdownColor: AppColors.background,
+                  //dropdownColor: AppColors.card,
                   onChanged: (val) => setState(() => _department = val),
                 ),
               ),
               SizedBox(width: 16.w),
               Expanded(
-                child: CustomDropdownFormFieldInvMaster(
-                  label: 'Work Type',
-                  dropdownColor: AppColors.background,
-                  hint: Text('Select Work Type',
-                      style: StyleText.fontSize12Weight400
-                          .copyWith(color: AppColors.secondaryText)),
-                  selectedValue: _workType,
-                  items: _kWorkTypes,
-                  primaryColor: _cmsPrimary(context),
-                  widthIcon: 18,
-                  heightIcon: 18,
-                  height: 36,
-                  onChanged: (val) => setState(() => _workType = val),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: CustomDropdownFormFieldInvMaster(
+                        label: 'Work Type',
+                        labelStyle: _kFieldLabelStyle,
+                        // dropdownColor: AppColors.background,
+                        hint: Text('Select Work Type',
+                            style: StyleText.fontSize12Weight400
+                                .copyWith(color: AppColors.secondaryText)),
+                        selectedValue: _workType,
+                        items: _kWorkTypes,
+                        primaryColor: _cmsPrimary(context),
+                        widthIcon: 18,
+                        heightIcon: 18,
+                        height: 36,
+                        onChanged: (val) => setState(() {
+                          _workType = val;
+                          // Location only applies to On Site / Hybrid
+                          if (val == 'Remotely') _jobLocation = null;
+                        }),
+                      ),
+                    ),
+                    // ── Location — only for On Site / Hybrid, items come
+                    //    from the Contact Us office locations ──
+                    if (_workType == 'On Site' || _workType == 'Hybrid') ...[
+                      SizedBox(width: 8.w),
+                      Expanded(
+                        child: CustomDropdownFormFieldInvMaster(
+                          label: 'Location',
+                          labelStyle: _kFieldLabelStyle,
+                          hint: Text('Select Location',
+                              style: StyleText.fontSize12Weight400
+                                  .copyWith(color: AppColors.secondaryText)),
+                          // BUG-47: offices from Contact Us + "Other location…"
+                          // (the list used to offer only "Cairo, Egypt").
+                          selectedValue: _locationIsCustom
+                              ? _kOtherLocationKey
+                              : _jobLocation,
+                          items: _locationItems(context),
+                          primaryColor: _cmsPrimary(context),
+                          widthIcon: 18,
+                          heightIcon: 18,
+                          height: 36,
+                          onChanged: (val) => setState(() {
+                            if (val == _kOtherLocationKey) {
+                              _locationIsCustom = true;
+                              _jobLocation = _otherLocation.text.trim().isEmpty
+                                  ? null
+                                  : _otherLocation.text.trim();
+                            } else {
+                              _locationIsCustom = false;
+                              _jobLocation = val;
+                            }
+                          }),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],
           ),
-
+          // BUG-47: free-text location when "Other location…" is picked.
+          if (_locationIsCustom &&
+              (_workType == 'On Site' || _workType == 'Hybrid')) ...[
+            SizedBox(height: 8.h),
+            Row(
+              children: [
+                const Expanded(child: SizedBox()),
+                SizedBox(width: 16.w),
+                Expanded(
+                  child: CustomTextField(
+                    controller: _otherLocation,
+                    hint: 'Text Here',
+                    height: 36,
+                    submitted: _submitted,
+                    onChanged: (v) => setState(() =>
+                        _jobLocation = v.trim().isEmpty ? null : v.trim()),
+                    valueStyle: StyleText.fontSize12Weight400
+                        .copyWith(fontSize: 12.sp, color: AppColors.text),
+                    hintStyle: StyleText.fontSize12Weight400.copyWith(
+                        fontSize: 12.sp, color: AppColors.secondaryText),
+                  ),
+                ),
+              ],
+            ),
+          ],
           Row(
+            children: [
+              Expanded(child: _requiredError(_submitted && _department == null)),
+              SizedBox(width: 16.w),
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(child: _requiredError(_submitted && _workType == null)),
+                    if (_workType == 'On Site' || _workType == 'Hybrid') ...[
+                      SizedBox(width: 8.w),
+                      Expanded(
+                          child: _requiredError(
+                              _submitted && _jobLocation == null)),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 10.sp),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: CustomDropdownFormFieldInvMaster(
                   label: 'Employment Type',
-                  dropdownColor: AppColors.background,
+                  labelStyle: _kFieldLabelStyle,
+                  //dropdownColor: AppColors.card,
                   hint: Text('Select Employment Type',
                       style: StyleText.fontSize12Weight400
                           .copyWith(color: AppColors.secondaryText)),
@@ -185,47 +216,58 @@ extension _JobEditSections on _JobListingEditPageState {
               ),
               SizedBox(width: 16.w),
               Expanded(
-                child: Column(
+                // No wrapper Column / manual top offset: the label line of
+                // every control has the same height, so the row aligns itself.
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox(height: 15.sp),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _field('Employment Duration', 'Text Number', _durationText),
-                        ),
-                        SizedBox(width: 8.w),
-                        SizedBox(
-                          width: 120.w,
-                          child: CustomDropdownFormFieldInvMaster(
-                            label: "",
-                            hint: Text('Duration',
-                                style: StyleText.fontSize12Weight400
-                                    .copyWith(color: AppColors.secondaryText)),
-                            primaryColor: _cmsPrimary(context),
-                            selectedValue: _durationType,
-                            items: _kDurations,
-                            dropdownColor: AppColors.background,
-                            widthIcon: 18,
-                            heightIcon: 18,
-                            height: 36,
-                            onChanged: (val) =>
-                                setState(() => _durationType = val),
-                          ),
-                        ),
-                      ],
+                    Expanded(
+                      child: _field('Employment Duration', 'Text Number', _durationText,
+                          onlyDigits: true), // numbers only (Figma hint "Text Number")
+                    ),
+                    SizedBox(width: 8.w),
+                    SizedBox(
+                      width: 120.w,
+                      child: CustomDropdownFormFieldInvMaster(
+                        // Empty (not null) label: reserves the same label line
+                        // so the control lines up with the one beside it.
+                        label: '',
+                        labelStyle: _kFieldLabelStyle,
+                        hint: Text('Duration',
+                            style: StyleText.fontSize12Weight400
+                                .copyWith(color: AppColors.secondaryText)),
+                        primaryColor: _cmsPrimary(context),
+                        selectedValue: _durationType,
+                        items: _kDurations,
+                        // dropdownColor: AppColors.background,
+                        widthIcon: 18,
+                        heightIcon: 18,
+                        height: 36,
+                        onChanged: (val) =>
+                            setState(() => _durationType = val),
+                      ),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-
           Row(
+            children: [
+              Expanded(child: _requiredError(_submitted && _employmentType == null)),
+              SizedBox(width: 16.w),
+              Expanded(child: _requiredError(_submitted && _durationType == null)),
+            ],
+          ),
+          SizedBox(height: 10.sp),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: CustomDropdownFormFieldInvMaster(
                   label: 'Experience Levels',
-                  dropdownColor: AppColors.background,
+                  labelStyle: _kFieldLabelStyle,
+                  // dropdownColor: AppColors.background,
                   hint: Text('Select Experience Level',
                       style: StyleText.fontSize12Weight400
                           .copyWith(color: AppColors.secondaryText)),
@@ -241,16 +283,22 @@ extension _JobEditSections on _JobListingEditPageState {
               SizedBox(width: 16.w),
               Expanded(
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: _field('Salary Range', 'Min Salary', _salaryMin),
+                      child: _field('Salary Range', 'Min Salary', _salaryMin,
+                          onlyDigits: true), // numbers only
                     ),
                     SizedBox(width: 8.w),
-                    Expanded(child: _field('  ', 'Max Salary', _salaryMax)),
+                    Expanded(
+                        child: _field('  ', 'Max Salary', _salaryMax,
+                            onlyDigits: true)), // numbers only
                     SizedBox(width: 8.w),
                     SizedBox(
                       width: 90.w,
                       child: CustomDropdownFormFieldInvMaster(
+                        label: '',
+                        labelStyle: _kFieldLabelStyle,
                         hint: Text('Currency',
                             style: StyleText.fontSize12Weight400
                                 .copyWith(color: AppColors.secondaryText)),
@@ -260,7 +308,7 @@ extension _JobEditSections on _JobListingEditPageState {
                         primaryColor: _cmsPrimary(context),
                         heightIcon: 18,
                         height: 36,
-                        dropdownColor: AppColors.background,
+                        // dropdownColor: AppColors.background,
                         onChanged: (val) => setState(() => _currency = val),
                       ),
                     ),
@@ -269,8 +317,25 @@ extension _JobEditSections on _JobListingEditPageState {
               ),
             ],
           ),
-
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _requiredError(_submitted && _experienceLevel == null)),
+              SizedBox(width: 16.w),
+              Expanded(child: _requiredError(_submitted && (_currency == null || _currency!.isEmpty))),
+            ],
+          ),
+          // BUG-28: max salary must be ≥ min salary.
+          Row(
+            children: [
+              const Expanded(child: SizedBox()),
+              SizedBox(width: 16.w),
+              Expanded(child: _inlineError(_salaryError)),
+            ],
+          ),
+          SizedBox(height: 10.sp),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: _field('Required Qualification', 'Text Here', _qualificationEn),
@@ -281,50 +346,64 @@ extension _JobEditSections on _JobListingEditPageState {
               ),
             ],
           ),
-
-          Row(
-            children: [
-              Expanded(
-                child: _field('Required Skills', 'Text Here', TextEditingController()),
-              ),
-              SizedBox(width: 16.w),
-              Expanded(
-                child: _fieldRtl('المهارات المطلوبة', 'أدخل النص هنا', TextEditingController()),
-              ),
-            ],
-          ),
-          SizedBox(height: 8.h),
-
+          SizedBox(height: 10.sp),
+          // BUG-08: the "Required Skills" row used to be built from
+          // `TextEditingController()` created inside build() — a throw-away
+          // controller nobody read, so the first skill was never saved. The
+          // first row is now simply the first entry of _skills and carries
+          // the section label.
           ...List.generate(
             _skills.length,
             (i) => Padding(
               padding: EdgeInsets.only(bottom: 8.h),
+              // BUG-156: the Arabic field reached only to the (−) button, so
+              // its label ended 34 px before every other Arabic label, and the
+              // (−) showed even with a single skill. The (−) now sits BETWEEN
+              // the two fields and only when there is more than one skill.
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Expanded(child: _field('', 'Skill', _skills[i]['en']!)),
+                  Expanded(
+                    child: _field(i == 0 ? 'Required Skills' : '',
+                        'Text Here',
+                        _skills[i]['en']!,
+                        required: false),
+                  ),
                   SizedBox(width: 8.w),
-                  Expanded(child: _fieldRtl('', 'مهارة', _skills[i]['ar']!)),
+                  SizedBox(
+                    width: 24.sp,
+                    child: _skills.length > 1
+                        ? Padding(
+                            padding: EdgeInsets.only(bottom: 6.h),
+                            child: GestureDetector(
+                              onTap: () => setState(() {
+                                _skills[i]['en']!.dispose();
+                                _skills[i]['ar']!.dispose();
+                                _skills.removeAt(i);
+                              }),
+                              child: Tooltip(
+                                message: 'Remove skill',
+                                // Figma zondicons:minus-solid (20×20, red).
+                                child: Icon(Icons.remove_circle,
+                                    size: 20.sp, color: ColorPick.red),
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
                   SizedBox(width: 8.w),
-                  GestureDetector(
-                    onTap: () => setState(() {
-                      _skills[i]['en']!.dispose();
-                      _skills[i]['ar']!.dispose();
-                      _skills.removeAt(i);
-                    }),
-                    child: Container(
-                      width: 24.sp,
-                      height: 24.sp,
-                      decoration: const BoxDecoration(
-                        color: ColorPick.red,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(Icons.remove, color: Colors.white, size: 14.sp),
-                    ),
+                  Expanded(
+                    child: _fieldRtl(i == 0 ? 'المهارات المطلوبة' : '',
+                        'أدخل النص هنا', _skills[i]['ar']!,
+                        required: false),
                   ),
                 ],
               ),
             ),
           ),
+          // A half-filled skill row (only one language) is flagged.
+          if (_submitted && !_skillsOk)
+            _inlineError('Fill in both the English and Arabic skill name.'),
 
           GestureDetector(
             onTap: () => setState(
@@ -346,20 +425,21 @@ extension _JobEditSections on _JobListingEditPageState {
 
   Widget _jobDetailsSection() {
     return Padding(
-      padding: EdgeInsets.all(16.sp),
+      padding: EdgeInsets.symmetric(vertical:  16.sp),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Figma (Create New Job Post): "Text Here" placeholders.
           _field('About This Position', 'Text Here', _aboutEn, maxLines: 4, height: 100),
-          SizedBox(height: 8.h),
+          SizedBox(height: 10.sp),
           _fieldRtl('', 'أدخل النص هنا', _aboutAr, maxLines: 4, height: 100),
-          SizedBox(height: 14.h),
+          SizedBox(height: 10.sp),
           _field('Requirements', 'Text Here', _requirementsEn, maxLines: 4, height: 100),
-          SizedBox(height: 8.h),
+          SizedBox(height: 10.sp),
           _fieldRtl('', 'أدخل النص هنا', _requirementsAr, maxLines: 4, height: 100),
-          SizedBox(height: 14.h),
+          SizedBox(height: 10.sp),
           _field('Preferred Skills', 'Text Here', _prefSkillsEn, maxLines: 4, height: 100),
-          SizedBox(height: 8.h),
+          SizedBox(height: 10.sp),
           _fieldRtl('', 'أدخل النص هنا', _prefSkillsAr, maxLines: 4, height: 100),
         ],
       ),
@@ -372,7 +452,7 @@ extension _JobEditSections on _JobListingEditPageState {
 
   Widget _benefitsSection() {
     return Padding(
-      padding: EdgeInsets.all(16.sp),
+      padding: EdgeInsets.symmetric(vertical:  16.sp),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -382,12 +462,13 @@ extension _JobEditSections on _JobListingEditPageState {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       'Benefit ${i + 1}',
-                      style: TextStyle(
-                        fontSize: 13.sp,
+                      style: StyleText.fontSize13Weight600.copyWith(
+                        fontSize: 16.sp,
                         fontWeight: FontWeight.w600,
                         color: AppColors.text,
                       ),
@@ -398,8 +479,8 @@ extension _JobEditSections on _JobListingEditPageState {
                         _benefits.removeAt(i);
                       }),
                       child: Container(
-                        width: 24.sp,
-                        height: 24.sp,
+                        width: 20.sp,
+                        height: 20.sp,
                         decoration: const BoxDecoration(
                           color: ColorPick.red,
                           shape: BoxShape.circle,
@@ -409,8 +490,9 @@ extension _JobEditSections on _JobListingEditPageState {
                     ),
                   ],
                 ),
-                SizedBox(height: 8.h),
+                SizedBox(height: 10.sp),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
                       child: _field('Title', 'Text Here', b['titleEn']!),
@@ -421,10 +503,10 @@ extension _JobEditSections on _JobListingEditPageState {
                     ),
                   ],
                 ),
-                SizedBox(height: 8.h),
-                _field('Short Description', 'Text Here', b['descEn']!, maxLines: 3, height: 80),
-                SizedBox(height: 8.h),
-                _fieldRtl('وصف مختصر', 'أدخل النص هنا', b['descAr']!, maxLines: 3, height: 80),
+                SizedBox(height: 10.sp),
+                _field('Short Description', 'One or two sentences about this benefit', b['descEn']!, maxLines: 3, height: 80),
+                SizedBox(height: 10.sp),
+                _fieldRtl('وصف مختصر', 'جملة أو جملتان عن هذه الميزة', b['descAr']!, maxLines: 3, height: 80),
                 SizedBox(height: 16.h),
                 if (i < _benefits.length - 1)
                   const Divider(color: Color(0xFFE8E8E8)),

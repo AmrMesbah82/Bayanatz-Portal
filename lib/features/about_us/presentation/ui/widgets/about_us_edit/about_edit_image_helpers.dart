@@ -149,13 +149,13 @@ extension _AboutEditImageHelpers on _AboutEditPageMasterState {
         height: 48.h,
         decoration: BoxDecoration(
           color: color,
-          borderRadius: BorderRadius.circular(10.r),
+          borderRadius: BorderRadius.circular(4.r),
         ),
         child: Center(
           child: Text(
             label,
             style: StyleText.fontSize15Weight600.copyWith(
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               color: Colors.white,
             ),
           ),

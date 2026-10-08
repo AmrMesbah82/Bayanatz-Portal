@@ -10,6 +10,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../../../core/constant/color.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -19,13 +20,30 @@ import '../../../data/models/job_listing_model.dart';
 import '../../controller/job_listing_cubit.dart';
 import '../../controller/job_listing_state.dart';
 import 'job_listing_main.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/job_listing_preview/preview_helper_widgets.dart';
 part '../widgets/job_listing_preview/job_listing_preview_ui.dart';
 
 class JobListingPreviewPage extends StatefulWidget {
   final String jobId;
-  const JobListingPreviewPage({super.key, required this.jobId});
+
+  /// BUG-09: the job exactly as it is on the edit form right now (including
+  /// unsaved changes). When given, it is what the preview shows — the page
+  /// used to fall back to a placeholder "UI and UX Designer" job instead.
+  final JobPostModel? draft;
+
+  /// BUG-91: "Save" used to behave like "Back" and save nothing. The edit
+  /// page passes its own publish/save action here; Save closes the preview
+  /// and runs it (validation + confirm + save → back to Job Listing).
+  final VoidCallback? onSave;
+
+  const JobListingPreviewPage({
+    super.key,
+    required this.jobId,
+    this.draft,
+    this.onSave,
+  });
 
   @override
   State<JobListingPreviewPage> createState() => _JobListingPreviewPageState();
@@ -41,7 +59,7 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
     // If job is not in local cache, fetch from Firestore
     final cubit = context.read<JobListingCubit>();
     final hasLocal = cubit.allJobs.any((j) => j.id == widget.jobId);
-    if (!hasLocal && widget.jobId != 'new') {
+    if (widget.draft == null && !hasLocal && widget.jobId != 'new') {
       cubit.loadJobDetail(widget.jobId);
     }
   }
@@ -49,6 +67,9 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
   @override
   Widget build(BuildContext context) {
     final cubit = context.read<JobListingCubit>();
+
+    // The form's current state always wins (BUG-09).
+    if (widget.draft != null) return _buildPreviewContent(widget.draft!);
 
     // Try to find job from local cache first
     JobPostModel? job;
@@ -73,14 +94,14 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                   children: [
                     Icon(Icons.error_outline, color: const Color(0xFFE53935), size: 48.sp),
                     SizedBox(height: 16.h),
-                    Text(state.message, style: TextStyle(fontSize: 14.sp, color: AppColors.secondaryText)),
+                    Text(state.message, style: StyleText.fontSize14Weight400.copyWith(fontSize: 14.sp, color: AppColors.secondaryText)),
                     SizedBox(height: 16.h),
                     GestureDetector(
                       onTap: () => Navigator.of(context).pop(),
                       child: Container(
                         padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 10.h),
                         decoration: BoxDecoration(color: ColorPick.primary, borderRadius: BorderRadius.circular(8.r)),
-                        child: Text('Back', style: TextStyle(fontSize: 14.sp, color: Colors.white, fontWeight: FontWeight.w600)),
+                        child: Text('Back', style: StyleText.fontSize14Weight600.copyWith(fontSize: 14.sp, color: Colors.white, fontWeight: FontWeight.w600)),
                       ),
                     ),
                   ],
@@ -90,7 +111,7 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
           }
           return const Scaffold(
             backgroundColor: ColorPick.background,
-            body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+            body: Center(child: CircleProgress()),
           );
         },
       );
@@ -118,11 +139,8 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
 
     return Scaffold(
       backgroundColor: ColorPick.background,
-      body: SingleChildScrollView(
-        child: SizedBox(
-          width: double.infinity,
-          child: Column(
-            children: [
+      body: AdminStickyBody(
+  children: [
 
               AppAdminNavbar(
                 activeLabel:    'Job Listing',
@@ -139,8 +157,8 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                   children: [
                     // ── Title ────────────────────────────────────
                     Text(
-                      'Preview Digital Journy Details',
-                      style: TextStyle(
+                      'Preview Job Post Details', // BUG-09: was "Digital Journy"
+                      style: StyleText.fontSize28Weight600.copyWith(
                         fontSize: 28.sp,
                         fontWeight: FontWeight.w700,
                         color: ColorPick.primary,
@@ -196,7 +214,7 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                                       Expanded(
                                         child: Text(
                                           'View',
-                                          style: TextStyle(
+                                          style: StyleText.fontSize14Weight600.copyWith(
                                             fontSize: 14.sp,
                                             fontWeight: FontWeight.w600,
                                             color: Colors.white,
@@ -224,12 +242,10 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                                       Text(
                                         isAr
                                             ? (job.title.ar.isEmpty
-                                            ? 'UI and UX Designer'
+                                            ? job.displayTitle
                                             : job.title.ar)
-                                            : (job.title.en.isEmpty
-                                            ? 'UI and UX Designer'
-                                            : job.title.en),
-                                        style: TextStyle(
+                                            : job.displayTitle,
+                                        style: StyleText.fontSize18Weight500.copyWith(
                                           fontSize: 18.sp,
                                           fontWeight: FontWeight.w600,
                                           color: AppColors.text,
@@ -246,23 +262,27 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                                       SizedBox(height: 10.h),
                                       _infoRow(
                                         'Work Type:',
-                                        job.workType.label,
-                                        'Employment Type:',
-                                        job.employmentDurationText.isEmpty
-                                            ? '3 Weeks'
-                                            : job.employmentDurationText,
+                                        job.isUnset('workType')
+                                            ? '-'
+                                            : job.workType.label,
+                                        'Employment Duration:',
+                                        _durationText(job),
                                       ),
                                       SizedBox(height: 10.h),
                                       _infoRow(
                                         'Employment Type:',
-                                        job.employmentType.label,
-                                        'Compensation Range',
-                                        '${job.salaryMin.toInt()} - ${job.salaryMax.toInt()}',
+                                        job.isUnset('employmentType')
+                                            ? '-'
+                                            : job.employmentType.label,
+                                        'Compensation Range:',
+                                        _salaryText(job),
                                       ),
                                       SizedBox(height: 10.h),
                                       _infoRow(
                                         'Experience Level:',
-                                        job.experienceLevel.label,
+                                        job.isUnset('experienceLevel')
+                                            ? '-'
+                                            : job.experienceLevel.label,
                                         '',
                                         '',
                                       ),
@@ -283,7 +303,7 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                                           children: [
                                             Text(
                                               'Skills:',
-                                              style: TextStyle(
+                                              style: StyleText.fontSize13Weight500.copyWith(
                                                 fontSize: 13.sp,
                                                 fontWeight: FontWeight.w500,
                                                 color: AppColors.secondaryText,
@@ -316,7 +336,7 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                                                     isAr
                                                         ? s.name.ar
                                                         : s.name.en,
-                                                    style: TextStyle(
+                                                    style: StyleText.fontSize12Weight400.copyWith(
                                                       fontSize: 12.sp,
                                                       color: AppColors.text,
                                                           
@@ -387,7 +407,7 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                               child: Center(
                                 child: Text(
                                   'Back',
-                                  style: TextStyle(
+                                  style: StyleText.fontSize15Weight600.copyWith(
                                     fontSize: 15.sp,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.white,
@@ -400,7 +420,10 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                         SizedBox(width: 20.w),
                         Expanded(
                           child: GestureDetector(
-                            onTap: () => Navigator.of(context).pop(),
+                            onTap: () {
+                              Navigator.of(context).pop();
+                              widget.onSave?.call(); // BUG-91
+                            },
                             child: Container(
                               height: 48.h,
                               decoration: BoxDecoration(
@@ -410,7 +433,7 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                               child: Center(
                                 child: Text(
                                   'Save',
-                                  style: TextStyle(
+                                  style: StyleText.fontSize15Weight600.copyWith(
                                     fontSize: 15.sp,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.white,
@@ -427,10 +450,25 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                 ),
               ),
             ],
-          ),
-        ),
-      ),
+),
     );
+  }
+
+  // BUG-09: real values only — no invented "3 Weeks" / "0 - 0".
+  String _durationText(JobPostModel job) {
+    final n = job.employmentDurationText.trim();
+    final unit = job.isUnset('employmentDurationType')
+        ? ''
+        : job.employmentDurationType.label;
+    if (unit == 'Open') return 'Open';
+    if (n.isEmpty && unit.isEmpty) return '-';
+    return [n, unit].where((s) => s.isNotEmpty).join(' ');
+  }
+
+  String _salaryText(JobPostModel job) {
+    if (job.salaryMin <= 0 && job.salaryMax <= 0) return '-';
+    return '${job.salaryMin.toInt()} - ${job.salaryMax.toInt()} ${job.salaryCurrency}'
+        .trim();
   }
 
   // ═════════════════════════════════════════════════════════════════════════════

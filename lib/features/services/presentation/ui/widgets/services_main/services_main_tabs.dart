@@ -19,8 +19,9 @@ extension _ServicesMainTabs on _ServicesMainPageMasterState {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // BUG-155: same 6.h gap as About Us / Careers sub-tabs.
                   Padding(
-                    padding: EdgeInsets.only(bottom: 2.h),
+                    padding: EdgeInsets.only(bottom: 6.h),
                     child: Text(
                       _statusLabels[i],
                       style: TextStyle(
@@ -108,10 +109,10 @@ extension _ServicesMainTabs on _ServicesMainPageMasterState {
             Row(children: [
               Expanded(
                 child: _readField('Section Title',
-                  model.journeyTitle.en.isEmpty ? 'Text Here' : model.journeyTitle.en),
+                  model.journeyTitle.en.isEmpty ? 'Text Here' : FormatHelper.capitalize(model.journeyTitle.en)),
               ),
               SizedBox(width: 16.w),
-              Expanded(child: _readFieldRtl('عنوان القسم', model.journeyTitle.ar)),
+              Expanded(child: _readFieldRtl('عنوان القسم', FormatHelper.capitalize(model.journeyTitle.ar))),
             ]),
             SizedBox(height: 14.h),
             if (model.journeyItems.isEmpty)
@@ -139,7 +140,7 @@ extension _ServicesMainTabs on _ServicesMainPageMasterState {
           return const Center(
             child: Padding(
               padding: EdgeInsets.symmetric(vertical: 60),
-              child: CircularProgressIndicator(color: ColorPick.primary),
+              child: CircleProgress(),
             ),
           );
         }
@@ -200,8 +201,7 @@ extension _ServicesMainTabs on _ServicesMainPageMasterState {
                   ),
                 ),
                 SizedBox(width: 12.w),
-                _actionBtn(label: 'Time Frame', onTap: () {}, outlined: false),
-                SizedBox(width: 12.w),
+                // 'Time Frame' removed — it did nothing (onTap: () {}).
                 _actionBtn(label: 'Add New Read', onTap: _navigateToCreate, outlined: false),
               ]),
               SizedBox(height: 16.h),
@@ -275,11 +275,17 @@ extension _ServicesMainTabs on _ServicesMainPageMasterState {
     );
   }
 
-  // ── 3-column blog card grid ───────────────────────────────────────────────────
+  // ── 2-column blog card grid ───────────────────────────────────────────────────
+  // Was 3 across. At a third of the width each card was too narrow for its own
+  // content: the title and description had to be clipped to two lines to sit
+  // beside the image. Two across gives each card enough room for the text to
+  // run its full height — see the two-column layout in _BlogCard.
+  static const int _kBlogCardsPerRow = 2;
+
   Widget _blogCardGrid(List<BlogPostModel> posts) {
     final List<List<BlogPostModel>> rows = [];
-    for (int i = 0; i < posts.length; i += 3) {
-      rows.add(posts.skip(i).take(3).toList());
+    for (int i = 0; i < posts.length; i += _kBlogCardsPerRow) {
+      rows.add(posts.skip(i).take(_kBlogCardsPerRow).toList());
     }
     return Column(
       children: rows.map((row) {
@@ -298,7 +304,10 @@ extension _ServicesMainTabs on _ServicesMainPageMasterState {
                   ),
                 ),
               )),
-              ...List.generate(3 - row.length, (_) => const Expanded(child: SizedBox())),
+              // Pad the last row so a lone card keeps its column width instead
+              // of stretching across the whole grid.
+              ...List.generate(_kBlogCardsPerRow - row.length,
+                  (_) => const Expanded(child: SizedBox())),
             ],
           ),
         );

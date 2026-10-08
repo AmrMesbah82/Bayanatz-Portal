@@ -23,6 +23,7 @@ import '../../features/job/data/models/application_model.dart';
 import '../../features/job/data/models/job_listing_model.dart';
 import '../custom/2-custom_textfield.dart';
 import '../theme/new_theme.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 // ── Colors ───────────────────────────────────────────────────────────────────
 class _C {
@@ -518,7 +519,7 @@ class _JobListingExportDialogState extends State<_JobListingExportDialog> {
                             ),
                           ),
                           child: Text(
-                            'Discard',
+                            'Cancel', // BUG-157: closes the dialog
                             style: TextStyle(
                               fontSize: 14.sp,
                               fontWeight: FontWeight.w600,
@@ -549,10 +550,7 @@ class _JobListingExportDialogState extends State<_JobListingExportDialog> {
                               ? SizedBox(
                             width: 18.sp,
                             height: 18.sp,
-                            child: const CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
+                            child: const CircleProgress(),
                           )
                               : Text(
                             'Download',

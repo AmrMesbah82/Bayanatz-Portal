@@ -89,17 +89,19 @@ extension _HomeEditSections2 on _MainEditPageState {
                     children: [
                       Text('عنوان المجموعة',
                           style: StyleText.fontSize14Weight500
-                              .copyWith(color: AppColors.secondaryText)),
+                              .copyWith(color: AppColors.text)),
                     ],
                   ),
                   SizedBox(height: 8.h),
+                  // BUG-67: read-only and now LOOKS read-only (grey); it
+                  // always shows the Arabic name of the chosen menu item.
                   CustomTextField(
                     controller: col['titleAr'] as TextEditingController,
                     readOnly: true,
                     textAlign: TextAlign.right,
                     textDirection: TextDirection.rtl,
-                    hint: 'الاسم بالعربي',
-                    fillColor: Colors.white,
+                    hint: 'يتبع اسم عنصر القائمة',
+                    fillColor: const Color(0xFFEDEDED),
                     height: 36,
                   ),
                 ],

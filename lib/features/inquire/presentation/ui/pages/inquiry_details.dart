@@ -12,6 +12,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 
 import '../../../../../core/constant/color.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -25,6 +26,7 @@ import '../../../../main/presentation/ui/pages/main_main.dart';
 import '../../../data/models/inquiry_model.dart';
 import '../../controller/inquiry_cubit.dart';
 import '../../controller/inquiry_state.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 
 
@@ -194,7 +196,7 @@ class _InquiryDetailPageState extends State<InquiryDetailPage> {
             if (inq == null) {
               return const Scaffold(
                 backgroundColor: ColorPick.background,
-                body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+                body: Center(child: CircleProgress()),
               );
             }
 
@@ -219,12 +221,10 @@ class _InquiryDetailPageState extends State<InquiryDetailPage> {
             return Scaffold(
               backgroundColor: ColorPick.background,
               body: Stack(children: [
-                SingleChildScrollView(
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: Column(children: [
+                AdminStickyBody(
+  children: [
                       AppAdminNavbar(
-                        activeLabel: 'Inquires',
+                        activeLabel: 'Inquiries',
                         homePage: CareersMainPageDashboard(),
                         webPage: MainMainPage(),
                         jobListingPage: JobListingMainPage(),
@@ -377,7 +377,7 @@ class _InquiryDetailPageState extends State<InquiryDetailPage> {
                                     alignment: Alignment.center,
                                     child: _isSaving
                                         ? SizedBox(width: 20.w, height: 20.h,
-                                        child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                        child: const CircleProgress())
                                         : Text('Submit',
                                         style: StyleText.fontSize14Weight600.copyWith(color: Colors.white)),
                                   ),
@@ -388,14 +388,13 @@ class _InquiryDetailPageState extends State<InquiryDetailPage> {
                           ),
                         ),
                       ),
-                    ]),
-                  ),
-                ),
+                    ],
+),
 
                 if (_isSaving)
                   Container(
                     color: Colors.black26,
-                    child: const Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+                    child: const Center(child: CircleProgress()),
                   ),
               ]),
             );

@@ -10,7 +10,8 @@ import 'package:web_app_admin/core/widget/custom_dropdwon.dart';
 import '../../features/job/data/models/application_model.dart';
 
 class _C {
-  static const Color primary = Color(0xFF008037);
+  // BUG-35: admin red, not the site's green.
+  static const Color primary = Color(0xFFD31426);
   static const Color cardBg  = Color(0xFFFFFFFF);
   static const Color label   = Color(0xFF333333);
   static const Color hint    = Color(0xFFAAAAAA);
@@ -208,16 +209,22 @@ class _ApplicationFilterDialogState extends State<_ApplicationFilterDialog> {
                   decoration: const BoxDecoration(
                     color: _C.primary, shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.sort_rounded, color: Colors.white, size: 18.sp),
+                  child: Icon(Icons.tune_rounded, color: Colors.white, size: 18.sp),
                 ),
                 SizedBox(width: 10.w),
                 Text(
-                  'Sort',
+                  'Filter', // BUG-35: the Filter button opened a dialog titled "Sort"
                   style: TextStyle(
                     fontSize:   20.sp,
                     fontWeight: FontWeight.w700,
                     color:      _C.label,
                   ),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Close',
+                  icon: Icon(Icons.close_rounded, color: _C.label, size: 20.sp),
+                  onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
             ),

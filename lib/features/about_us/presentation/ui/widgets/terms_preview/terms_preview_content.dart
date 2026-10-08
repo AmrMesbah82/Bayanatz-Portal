@@ -134,48 +134,25 @@ class _TermsPreviewContentState extends State<_TermsPreviewContent> {
     required VoidCallback onToggle,
     required Widget       child,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-
-        borderRadius: BorderRadius.circular(12),
+    // This renders a PREVIEW of the public site, so it keeps the site's green
+    // branding and its own responsive header sizing rather than the admin style.
+    return CustomAccordion(
+      title:       title,
+      isOpen:      isOpen,
+      onToggle:    onToggle,
+      headerColor: _primary,
+      headerRadius: 8,
+      headerPadding: EdgeInsets.symmetric(
+          horizontal: _isDesktop ? 24 : 16,
+          vertical: _isDesktop ? 18 : 14),
+      titleStyle: StyleText.fontSize16Weight600.copyWith(
+        fontSize: _isDesktop ? 16 : (_isMobView ? 13 : 14),
+        color: Colors.white,
       ),
-      child: Column(
-        children: [
-          GestureDetector(
-            onTap: onToggle,
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(
-                  horizontal: _isDesktop ? 24 : 16,
-                  vertical: _isDesktop ? 18 : 14),
-              decoration: BoxDecoration(
-                color: _primary,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(children: [
-                Expanded(
-                  child: Text(title,
-                      style: StyleText.fontSize16Weight600.copyWith(
-                        fontSize: _isDesktop ? 16 : (_isMobView ? 13 : 14),
-                        color: Colors.white,
-                      )),
-                ),
-                Icon(
-                  isOpen
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  color: Colors.white,
-                  size: _isDesktop ? 24 : 20,
-                ),
-              ]),
-            ),
-          ),
-          if (isOpen)
-            Padding(
-              padding: EdgeInsets.symmetric( horizontal:  _isDesktop ? 0 : 16 , vertical: 16.h),
-              child: child,
-            ),
-        ],
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+            horizontal: _isDesktop ? 0 : 16, vertical: 16.h),
+        child: child,
       ),
     );
   }

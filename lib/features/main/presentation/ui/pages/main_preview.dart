@@ -1,9 +1,19 @@
 /// ******************* FILE INFO *******************
 /// File Name: main_preview.dart
-/// UPDATED: Language toggle now drives LanguageCubit (same source AppNavbar uses).
-///          Removed local _langIndex — isRtl is read from LanguageCubit state.
-///          Navbar + footer truly full-width in preview frame.
-///          OverflowBox + Transform.scale anchored to topLeft.
+/// UPDATED: The preview frame now renders the REAL public-site widgets from
+///          `package:website_app` (AppNavbar / AppFooter) instead of the
+///          admin's own copies, fed by the Main draft through
+///          [SitePreviewScope]. What you see here is literally the site's own
+///          code — it can no longer drift from production.
+/// UPDATED: Tablet tab now uses a real 768×1024 viewport. It previously used
+///          1024×768, which is exactly the width at which the site switches to
+///          its DESKTOP navbar and footer — so the Tablet tab rendered a page
+///          identical to the Desktop tab.
+/// UPDATED: The ENG / AR toggle is PREVIEW-LOCAL. It no longer drives the
+///          app-wide LanguageCubit (which used to leave the whole CMS in
+///          Arabic after you left this screen); isRtl is passed straight to
+///          SiteShellPreview, which feeds the site's own LanguageCubit inside
+///          SitePreviewScope.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -13,10 +23,10 @@ import 'package:go_router/go_router.dart';
 import 'package:web_app_admin/core/custom_dialog.dart';
 
 import '../../../../../core/constant/color.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
-import '../../../../../core/main_widgets/app_footer.dart';
-import '../../../../../core/main_widgets/app_navbar.dart';
+import '../../../../../core/site_preview/site_shell_preview.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
 import '../../../../../core/two_tab.dart';
@@ -25,22 +35,16 @@ import '../../../../home/presentation/controller/home_cubit.dart';
 import '../../../../home/presentation/controller/home_state.dart';
 import '../../controller/main_cubit.dart';
 import '../../controller/main_state.dart';
-import '../../../../home/presentation/controller/lang_state.dart';
 import '../../../../job/presentation/ui/pages/job_listing_main.dart';
 import 'main_main.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
+
+// The real site shell (website_app's AppNavbar + AppFooter) lives in
+// core/site_preview/site_shell_preview.dart, which owns its own website_app
+// imports — see the note in that file for why they must not live here.
 
 part '../widgets/main_preview/preview_content.dart';
 part '../widgets/main_preview/mobile_phone_shell.dart';
-
-// class _C {
-//   static const Color primary   = Color(0xFF008037);
-//   static const Color sectionBg = Color(0xFFF5F5F5);
-//   static const Color cardBg    = Color(0xFFFFFFFF);
-//   static const Color border    = Color(0xFFE0E0E0);
-//   static const Color labelText = Color(0xFF333333);
-//   static const Color hintText  = Color(0xFFAAAAAA);
-//   static const Color back      = Color(0xFFF1F2ED);
-// }
 
 enum _PreviewDevice { desktop, tablet, mobile }
 
@@ -49,28 +53,55 @@ const double _kPhoneShellW = 300.0;
 const double _kFakeMobileW = 375.0;
 const double _kFakeMobileH = 812.0;
 
-// ── Desktop / Tablet fake viewport ───────────────────────────────────────────
+// ── Fake viewports — must match the site's own breakpoints ────────────────────
+// The site switches to its DESKTOP navbar and footer at width >= 1024
+// (AppNavbar._BP.tablet and AppFooter._BP.tablet are both 1024), so a 1024-wide
+// "Tablet" frame sat exactly ON the desktop side of the boundary and rendered
+// an identical page to the Desktop tab. The site's tablet band is 768–1023, and
+// website_app's own _getDesignSize returns 768×1024 for a portrait tablet — so
+// that is the viewport the Tablet tab simulates.
 const double _kFakeDesktopW = 1366.0;
 const double _kFakeDesktopH =  768.0;
+const double _kFakeTabletW  =  768.0;
+const double _kFakeTabletH  = 1024.0;
 
 class MainPreviewPage extends StatefulWidget {
-  const MainPreviewPage({super.key});
+  const MainPreviewPage({super.key, this.showPublish = true});
+
+  /// Whether this preview may publish.
+  ///
+  /// The page is reached two ways, and only one of them is an editing flow:
+  ///   • Edit Details → Preview  → you are reviewing your own unsaved changes,
+  ///     so Publish belongs here (the default).
+  ///   • Main → "Preview Screen" → you are just LOOKING at what is already
+  ///     live. There is nothing to publish, and offering the button invites
+  ///     re-publishing untouched content by accident, so it is hidden and Back
+  ///     takes the full row.
+  final bool showPublish;
+
   @override
   State<MainPreviewPage> createState() => _MainPreviewPageState();
 }
 
 class _MainPreviewPageState extends State<MainPreviewPage> {
   _PreviewDevice _device   = _PreviewDevice.desktop;
-  // ✅ REMOVED: int _langIndex — now read from LanguageCubit
   bool           _isSaving = false;
+
+  /// The ENG / AR toggle above the preview belongs to THIS SCREEN ONLY.
+  ///
+  /// It used to drive the app-wide LanguageCubit, so flipping the preview to
+  /// Arabic flipped the whole CMS to Arabic and left it that way after you
+  /// navigated back. It is local state now: it is handed to SiteShellPreview,
+  /// which feeds the site's OWN LanguageCubit inside SitePreviewScope, so the
+  /// preview renders RTL while the admin around it is untouched.
+  bool           _isRtl    = false;
 
   Future<void> _publish(MainCmsCubit cubit) async {
     setState(() => _isSaving = true);
     try {
+      // Main navbar items are saved with the rest of the Main doc — they no
+      // longer touch the HOME doc (that's a separate feature).
       await cubit.save(publishStatus: 'published');
-      // Nav buttons live in the HOME doc — write ONLY the Nav_Buttons_* keys
-      // (partial merge). Publishing Main never uploads home content.
-      await context.read<HomeCmsCubit>().saveNavButtonsOnly();
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -86,33 +117,25 @@ class _MainPreviewPageState extends State<MainPreviewPage> {
         if (state is MainCmsInitial || state is MainCmsLoading) {
           return const Scaffold(
             backgroundColor: ColorPick.background,
-            body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+            body: Center(child: CircleProgress()),
           );
         }
 
-        // ✅ Wrap entire scaffold in BlocBuilder<LanguageCubit> so every
-        //    widget below reacts to language changes automatically.
-        return BlocBuilder<LanguageCubit, LanguageState>(
-          builder: (context, langState) {
-            final bool isRtl = langState.isArabic;
+        // Language is preview-local — see the _isRtl field above.
+        return Builder(
+          builder: (context) {
+            final bool isRtl = _isRtl;
 
             return Stack(
               children: [
                 Scaffold(
                   backgroundColor: ColorPick.background,
-                  body: SingleChildScrollView(
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 1000.w,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
+                  body: AdminStickyBody(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  contentWidth: 1000.w,
+  children: [
                                 AppAdminNavbar(
-                                  activeLabel:    'web page',
+                                  activeLabel:    'Web Page',
                                   homePage:       CareersMainPageDashboard(),
                                   webPage:        MainMainPage(),
                                   jobListingPage: JobListingMainPage(),
@@ -120,8 +143,6 @@ class _MainPreviewPageState extends State<MainPreviewPage> {
 
                                 SizedBox(height: 20.h),
                                 AdminSubNavBar(activeIndex: 0),
-                                SizedBox(height: 16.h),
-
                                 // ── Page title ──────────────────────────────
                                 Text(
                                   'Preview Main Details',
@@ -142,16 +163,11 @@ class _MainPreviewPageState extends State<MainPreviewPage> {
                                     _deviceTab('Mobile',  _PreviewDevice.mobile),
                                     const Spacer(),
 
-                                    // ✅ Toggle now calls LanguageCubit,
-                                    //    selectedIndex read from langState.
                                     CustomSegmentedTabs(
                                       tabs: ['ENG', 'AR'],
                                       selectedIndex: isRtl ? 1 : 0,
-                                      onTabSelected: (i) {
-                                        context
-                                            .read<LanguageCubit>()
-                                            .setLanguage(i == 1 ? 'ar' : 'en');
-                                      },
+                                      onTabSelected: (i) =>
+                                          setState(() => _isRtl = i == 1),
                                       selectedColor:       ColorPick.primary,
                                       unselectedColor:     Colors.transparent,
                                       selectedTextColor:   Colors.white,
@@ -167,8 +183,6 @@ class _MainPreviewPageState extends State<MainPreviewPage> {
                                 SizedBox(height: 16.h),
 
                                 // ── Preview frame ────────────────────────────
-                                // ✅ isRtl now comes from LanguageCubit — same
-                                //    source AppNavbar uses internally.
                                 LayoutBuilder(
                                   builder: (ctx, constraints) => _previewFrame(
                                     constraints.maxWidth,
@@ -178,7 +192,7 @@ class _MainPreviewPageState extends State<MainPreviewPage> {
 
                                 SizedBox(height: 24.h),
 
-                                // ── Back + Publish ───────────────────────────
+                                // ── Back (+ Publish, only in the edit flow) ──
                                 Row(
                                   children: [
                                     Expanded(
@@ -187,7 +201,7 @@ class _MainPreviewPageState extends State<MainPreviewPage> {
                                         child: Container(
                                           height: 44.h,
                                           decoration: BoxDecoration(
-                                            color: Colors.grey.shade400,
+                                            color: AppColors.darkGrey,
                                             borderRadius:
                                             BorderRadius.circular(6.r),
                                           ),
@@ -201,6 +215,10 @@ class _MainPreviewPageState extends State<MainPreviewPage> {
                                         ),
                                       ),
                                     ),
+                                    // Nothing to publish when the page was
+                                    // opened from "Preview Screen" — see
+                                    // MainPreviewPage.showPublish.
+                                    if (widget.showPublish) ...[
                                     SizedBox(width: 400.w),
                                     Expanded(
                                       child: GestureDetector(
@@ -228,9 +246,7 @@ class _MainPreviewPageState extends State<MainPreviewPage> {
                                               width:  18.w,
                                               height: 18.h,
                                               child:
-                                              const CircularProgressIndicator(
-                                                  color: Colors.white,
-                                                  strokeWidth: 2),
+                                              const CircleProgress(),
                                             )
                                                 : Text('Publish',
                                                 style: StyleText
@@ -242,23 +258,19 @@ class _MainPreviewPageState extends State<MainPreviewPage> {
                                         ),
                                       ),
                                     ),
+                                    ],
                                   ],
                                 ),
                                 SizedBox(height: 40.h),
                               ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+),
                 ),
 
                 if (_isSaving)
                   Container(
                     color: Colors.black.withValues(alpha: 0.35),
                     child: const Center(
-                        child: CircularProgressIndicator(color: ColorPick.primary)),
+                        child: CircleProgress()),
                   ),
               ],
             );
@@ -293,8 +305,14 @@ class _MainPreviewPageState extends State<MainPreviewPage> {
           containerWidth: containerWidth, isRtl: isRtl);
     }
 
-    final double scale  = _safeScale(containerWidth / _kFakeDesktopW);
-    final double outerH = _kFakeDesktopH * scale;
+    // Desktop and Tablet cross different breakpoints on the real site, so they
+    // must be previewed at different viewport widths.
+    final bool isTablet = _device == _PreviewDevice.tablet;
+    final double fakeW = isTablet ? _kFakeTabletW : _kFakeDesktopW;
+    final double fakeH = isTablet ? _kFakeTabletH : _kFakeDesktopH;
+
+    final double scale  = _safeScale(containerWidth / fakeW);
+    final double outerH = fakeH * scale;
 
     return SizedBox(
       width:  double.infinity,
@@ -302,14 +320,14 @@ class _MainPreviewPageState extends State<MainPreviewPage> {
       child: ClipRect(
         child: OverflowBox(
           alignment: Alignment.topLeft,
-          maxWidth:  _kFakeDesktopW,
-          maxHeight: _kFakeDesktopH,
+          maxWidth:  fakeW,
+          maxHeight: fakeH,
           child: Transform.scale(
             scale:     scale,
             alignment: Alignment.topLeft,
-            child: _PreviewContent(
-              fakeWidth:  _kFakeDesktopW,
-              fakeHeight: _kFakeDesktopH,
+            child: SiteShellPreview(
+              fakeWidth:  fakeW,
+              fakeHeight: fakeH,
               isRtl:      isRtl,
             ),
           ),
@@ -323,4 +341,5 @@ class _MainPreviewPageState extends State<MainPreviewPage> {
 double _safeScale(double v) =>
     (v.isFinite && !v.isNaN && v > 0) ? v : 1.0;
 
-// ── Shared preview content ────────────────────────────────────────────────────
+// The draft accessor and hex helper moved into SiteShellPreview so that every
+// preview page can reuse them without copying code.

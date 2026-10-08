@@ -14,6 +14,8 @@ import 'package:web_app_admin/core/widget/network_image_view.dart';
 
 
 import '../../../../../core/constant/color.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -35,18 +37,35 @@ import 'department_edit.dart';
 //   static const Color hintText  = Color(0xFFAAAAAA);
 // }
 
-class DepartmentDetailPage extends StatelessWidget {
+class DepartmentDetailPage extends StatefulWidget {
   final DepartmentModel department;
 
   const DepartmentDetailPage({super.key, required this.department});
 
   @override
+  State<DepartmentDetailPage> createState() => _DepartmentDetailPageState();
+}
+
+class _DepartmentDetailPageState extends State<DepartmentDetailPage> {
+  DepartmentModel get department => widget.department;
+
+  bool _infoOpen = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // Opened directly (deep link / refresh) → make sure jobs are available.
+    final jobCubit = context.read<JobListingCubit>();
+    if (jobCubit.allJobs.isEmpty) jobCubit.loadJobs();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final allJobs = context.read<JobListingCubit>().allJobs;
+    // `watch`, not `read`: rebuild once the jobs finish loading.
+    final allJobs = context.watch<JobListingCubit>().allJobs;
 
     final deptJobs = allJobs
-        .where((j) =>
-    j.department.toLowerCase() == department.nameEn.toLowerCase())
+        .where((j) => department.matchesJob(j.department))
         .toList();
 
     final totalCount    = deptJobs.length;
@@ -55,21 +74,17 @@ class DepartmentDetailPage extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: ColorPick.background,
-      body: SingleChildScrollView(
-        child: SizedBox(
-          width: double.infinity,
-          child: Column(
-            children: [
+      body: AdminStickyBody(
+  children: [
               AppAdminNavbar(
-                activeLabel:    'Home',
+                activeLabel:    'Job Listing',
                 homePage:       CareersMainPageDashboard(),
                 webPage:        MainMainPage(),
                 jobListingPage: JobListingMainPage(),
               ),
-              SizedBox(height: 20.h),
 
               Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 20.h),
+                padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 0.h),
                 child: SizedBox(
                   width: 1000.w,
                   child: Column(
@@ -85,35 +100,35 @@ class DepartmentDetailPage extends StatelessWidget {
                       ),
                       SizedBox(height: 16.h),
 
-                      // ── Edit button ──
+                      // ── Edit button (same style as Main page) ──
                       Align(
                         alignment: Alignment.centerRight,
                         child: GestureDetector(
-                          onTap: () => navigateTo(
-                            context,
-                            DepartmentEditPage(department: department),
-                          ),
+                          onTap: _goToEdit,
                           child: Container(
-                            padding: EdgeInsets.symmetric(
-                                horizontal: 14.w, vertical: 8.h),
+                            width: 130.w, height: 36.h,
                             decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(6.r),
-
+                              color: ColorPick.white,
+                              borderRadius: BorderRadius.circular(4.r),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-
-                                Text(
-                                  'Edit Department Info',
-                                  style: StyleText.fontSize12Weight500
-                                      .copyWith(color: ColorPick.primary),
-                                ),
-
-                                SizedBox(width: 6.w),
-                                CustomSvg(assetPath: "assets/edit.svg",width: 16.w,height: 16.h,fit: BoxFit.scaleDown,)
-                              ],
+                            child: Center(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Edit Details',
+                                    style: StyleText.fontSize14Weight500
+                                        .copyWith(color: Colors.black),
+                                  ),
+                                  SizedBox(width: 6.w),
+                                  CustomSvg(
+                                    assetPath: 'assets/control/edit_icon_pick.svg',
+                                    width: 20.w, height: 20.h,
+                                    fit: BoxFit.scaleDown,
+                                    color: ColorPick.primary,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -121,8 +136,10 @@ class DepartmentDetailPage extends StatelessWidget {
                       SizedBox(height: 20.h),
 
                       // ── Accordion card ──
-                      _accordion(
-                        title: 'Department Information',
+                      CustomAccordion(
+                        title:    'Department Information',
+                        isOpen:   _infoOpen,
+                        onToggle: () => setState(() => _infoOpen = !_infoOpen),
                         child: _detailContent(context, department,
                             totalCount, activeCount, inactiveCount),
                       ),
@@ -133,56 +150,14 @@ class DepartmentDetailPage extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-        ),
-      ),
+),
     );
   }
 
-  Widget _accordion({required String title, required Widget child}) {
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(
-        children: [
-          // header
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-            decoration: BoxDecoration(
-              color: ColorPick.primary,
-              borderRadius: BorderRadius.only(
-                topLeft:  Radius.circular(6.r),
-                topRight: Radius.circular(6.r),
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(title,
-                      style: StyleText.fontSize14Weight600
-                          .copyWith(color: Colors.white)),
-                ),
-                Icon(Icons.keyboard_arrow_up_rounded,
-                    color: Colors.white, size: 20.sp),
-              ],
-            ),
-          ),
-          // body
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-
-              borderRadius: BorderRadius.only(
-                bottomLeft:  Radius.circular(6.r),
-                bottomRight: Radius.circular(6.r),
-              ),
-            ),
-            child: child,
-          ),
-        ],
-      ),
-    );
-  }
+  void _goToEdit() => navigateTo(
+        context,
+        DepartmentEditPage(department: department),
+      );
 
   Widget _detailContent(
       BuildContext context,
@@ -195,38 +170,29 @@ class DepartmentDetailPage extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(height: 20.h),
-        // ── Company logo / icon ──
-        BlocBuilder<MainCmsCubit, MainCmsState>(
-          builder: (context, state) {
-            final String logoUrl = switch (state) {
-              MainCmsLoaded(:final data) => data.branding.logoUrl,
-              MainCmsSaved(:final data)  => data.branding.logoUrl,
-              _                          => '',
-            };
-            return Container(
-              width: 70.w,
-              height: 70.h,
-              decoration: const BoxDecoration(
-                color: Color(0xFFD9D9D9),
-                shape: BoxShape.circle,
-              ),
-              child: ClipOval(
-                child: Padding(
-                  padding: EdgeInsets.all(70.w * 0.20), // 20% padding = 60% content
-                  child: logoUrl.isNotEmpty
-                      ? NetworkImageView(
-                    url: logoUrl,
-                    fit: BoxFit.contain,
-                  )
-                      : Icon(
-                    Icons.business_rounded,
-                    size: 70.sp * 0.6,
-                    color: ColorPick.primary,
-                  ),
-                ),
-              ),
-            );
-          },
+
+        // ── BUG-86: Department Image ──
+        Text('Department Image',
+            style: TextStyle(
+                fontSize: 12.sp,
+                fontWeight: FontWeight.w500,
+                color: AppColors.text)),
+        SizedBox(height: 8.h),
+        Container(
+          width: 64.w,
+          height: 64.h,
+          decoration: const BoxDecoration(
+              shape: BoxShape.circle, color: Colors.white),
+          child: ClipOval(
+            child: dept.iconUrl.isNotEmpty
+                ? NetworkImageView(
+                    url: dept.iconUrl,
+                    width: 64.w,
+                    height: 64.h,
+                    fit: BoxFit.cover)
+                : Icon(Icons.image_outlined,
+                    color: Colors.grey[500], size: 28.sp),
+          ),
         ),
         SizedBox(height: 20.h),
 

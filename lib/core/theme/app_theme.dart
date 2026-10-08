@@ -1,5 +1,5 @@
 // Date: 1/8/2024
-// By: Youssef Ashraf, Mohamed Ashraf, Nada Mohammed
+// By: Amr Mesbah
 // Last update: 29/9/2024
 // Objectives: This file is responsible for providing the app themes that is used in the app.
 // ADDED: applyFonts() — writes selected fonts to GetStorage then calls

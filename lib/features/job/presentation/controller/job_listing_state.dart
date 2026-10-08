@@ -59,16 +59,14 @@ class JobListingLoaded extends JobListingState {
         }).toList();
       }
 
-      // Location — matches job.workType label (On Site / Remotely / Hybrid)
-      // Filter dialog location keys: 'cairo', 'alex', 'giza', 'remote'
-      // For 'remote' key → match WorkType.remote; others → match onSite/hybrid
+      // BUG-54: Location keys are now the REAL job locations (plus 'remote'),
+      // not the fake Cairo / Alexandria / Giza list.
       if (af.location != null && af.location!.isNotEmpty) {
+        final key = af.location!.trim().toLowerCase();
         result = result.where((j) {
-          if (af.location == 'remote') {
-            return j.workType == WorkType.remote;
-          }
-          // Non-remote locations → show onSite and hybrid jobs
-          return j.workType == WorkType.onSite || j.workType == WorkType.hybrid;
+          if (key == 'remote') return j.workType == WorkType.remote;
+          return j.workType != WorkType.remote &&
+              j.location.trim().toLowerCase() == key;
         }).toList();
       }
 
@@ -120,6 +118,12 @@ class JobListingLoaded extends JobListingState {
   /// Maps year-range keys to the closest experience level(s)
   bool _matchesExperienceLevel(ExperienceLevel level, String yoeKey) {
     switch (yoeKey) {
+      // BUG-43: filter now uses the job form's experience levels.
+      case 'intern':     return level == ExperienceLevel.intern;
+      case 'junior':     return level == ExperienceLevel.junior;
+      case 'senior':     return level == ExperienceLevel.senior;
+      case 'leadership': return level == ExperienceLevel.leadership;
+      // Legacy year-range keys (kept for any saved filter state).
       case '0_1':
         return level == ExperienceLevel.intern;
       case '1_3':

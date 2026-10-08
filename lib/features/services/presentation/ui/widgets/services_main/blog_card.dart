@@ -52,148 +52,131 @@ class _BlogCard extends StatelessWidget {
     return GestureDetector(
       onTap: onEdit,
       child: Container(
+
         padding: EdgeInsets.all(10.w),
         decoration: BoxDecoration(
           color: AppColors.card,
           borderRadius: BorderRadius.circular(10.r),
         ),
-        child: Column(
+        // ── TWO COLUMNS, not three stacked rows ──────────────────────────
+        // The card used to be: [date + badge] / [text | image] / [Read More].
+        // That put the text in a middle band whose height was decided by the
+        // image beside it, so the title and description were clipped to two
+        // lines each no matter how much room the card had.
+        //
+        // Now the card is one Row of two columns: everything textual on the
+        // left, everything image-ish on the right. The Row takes the height of
+        // its TALLER column, so the text is free to run past the bottom of the
+        // image instead of being squeezed to fit next to it.
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
           children: [
-            // ── Row 1: date + status badge ─────────────────────────────────
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Row(
+            // ── Left column: date, title, description ────────────────────
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
                     children: [
                       Text(
                         '$_datePrefix ',
-                        style: StyleText.fontSize11Weight400
+                        style: StyleText.fontSize10Weight400
                             .copyWith(color: AppColors.secondaryText),
                         overflow: TextOverflow.ellipsis,
                       ),
-                      Text('${_fmtDate(post.createdAt)}' ,   style: StyleText.fontSize11Weight400
-                          .copyWith(color: AppColors.text),
-                  overflow: TextOverflow.ellipsis,)
-                    ],
-                  ),
-                ),
-                Container(
-                  padding:
-                  EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
-                  decoration: BoxDecoration(
-                    color: _statusColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(4.r),
-                  ),
-                  child: Text(
-                    _statusLabel,
-                    style: StyleText.fontSize12Weight500
-                        .copyWith(color: _statusColor),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 12.h),
-
-            // ── Row 2: text (left) + image (right) ────────────────────────
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        post.question.en.isNotEmpty
-                            ? FormatHelper.capitalize(post.question.en)
-                            : 'Untitled',
-                        style: StyleText.fontSize13Weight600.copyWith(
-                          color: ColorPick.primary,
-                          fontWeight: FontWeight.w700,
+                      Flexible(
+                        child: Text(
+                          _fmtDate(post.createdAt),
+                          style: StyleText.fontSize10Weight400
+                              .copyWith(color: AppColors.text),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      SizedBox(height: 6.h),
-                      Text(
-                        post.shortDescription.en.isNotEmpty
-                            ? FormatHelper.capitalize(post.shortDescription.en)
-                            : 'Short Description...',
-                        style: StyleText.fontSize12Weight400
-                            .copyWith(color: AppColors.secondaryText),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
-                ),
-                SizedBox(width: 12.w),
-
-                // ── Image — auto-detects SVG vs raster via XHR ─────────
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8.r),
-                  child: hasImage
-                      ? _XhrImage(
-                    url:    cleanUrl,
-                    width:  100.w,
-                    height: 80.h,
-                  )
-                      : _imgPlaceholder(),
-                ),
-              ],
-            ),
-            SizedBox(height: 16.h),
-
-            // ── Row 3: edit/delete icons + Read More button ───────────────
-            Row(
-              children: [
-                // // Edit icon
-                // GestureDetector(
-                //   onTap: onEdit,
-                //   child: Container(
-                //     padding: EdgeInsets.all(6.r),
-                //     decoration: BoxDecoration(
-                //       color: ColorPick.background,
-                //       borderRadius: BorderRadius.circular(4.r),
-                //     ),
-                //     child: Icon(Icons.edit_outlined,
-                //         size: 16.sp, color: AppColors.text),
-                //   ),
-                // ),
-                // SizedBox(width: 8.w),
-                // // Delete icon
-                // GestureDetector(
-                //   onTap: onDelete,
-                //   child: Container(
-                //     padding: EdgeInsets.all(6.r),
-                //     decoration: BoxDecoration(
-                //       color: ColorPick.background,
-                //       borderRadius: BorderRadius.circular(4.r),
-                //     ),
-                //     child: Icon(Icons.delete_outline,
-                //         size: 16.sp, color: Colors.red),
-                //   ),
-                // ),
-                const Spacer(),
-                GestureDetector(
-                  onTap: (){},
-                  child: Container(
-                    padding: EdgeInsets.symmetric(
-                        horizontal: 14.w, vertical: 7.h),
-                    decoration: BoxDecoration(
+                  SizedBox(height: 10.h),
+                  Text(
+                    post.question.en.isNotEmpty
+                        ? post.question.en
+                        : 'Untitled',
+                    style: StyleText.fontSize13Weight600.copyWith(
                       color: ColorPick.primary,
-                      borderRadius: BorderRadius.circular(6.r),
+                      fontWeight: FontWeight.w700,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  SizedBox(height: 6.h),
+                  Text(
+                    post.shortDescription.en.isNotEmpty
+                        ? post.shortDescription.en
+                        : 'Short Description...',
+                    style: StyleText.fontSize12Weight400
+                        .copyWith(color: AppColors.secondaryText),
+                    // Was 2. The description is the whole point of the card and
+                    // it no longer has to end where the image ends.
+                    maxLines: 6,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(width: 12.w),
+
+            // ── Right column: status, image, Read More ───────────────────
+            SizedBox(
+              width: 110.w,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
+                    decoration: BoxDecoration(
+                      color: _statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4.r),
                     ),
                     child: Text(
-                      'Read More',
+                      _statusLabel,
                       style: StyleText.fontSize12Weight500
-                          .copyWith(color: Colors.white),
+                          .copyWith(color: _statusColor),
                     ),
                   ),
-                ),
-              ],
+                  SizedBox(height: 10.h),
+
+                  // Image — auto-detects SVG vs raster via XHR.
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8.r),
+                    child: hasImage
+                        ? _XhrImage(
+                            url:    cleanUrl,
+                            width:  110.w,
+                            height: 80.h,
+                          )
+                        : _imgPlaceholder(),
+                  ),
+                  SizedBox(height: 12.h),
+
+                  GestureDetector(
+                    onTap: onEdit,
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 14.w, vertical: 7.h),
+                      decoration: BoxDecoration(
+                        color: ColorPick.primary,
+                        borderRadius: BorderRadius.circular(4.r),
+                      ),
+                      child: Text(
+                        'Read More',
+                        style: StyleText.fontSize12Weight500
+                            .copyWith(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -202,7 +185,7 @@ class _BlogCard extends StatelessWidget {
   }
 
   Widget _imgPlaceholder() => Container(
-    width: 100.w, height: 80.h,
+    width: 110.w, height: 80.h,
     decoration: BoxDecoration(
       color: ColorPick.background,
       borderRadius: BorderRadius.circular(8.r),

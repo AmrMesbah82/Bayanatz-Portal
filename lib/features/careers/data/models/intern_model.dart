@@ -10,6 +10,14 @@ class InternModel {
   final String degrees;
   final DateTime? joinedDate;
   final String whatHaveILearned;
+
+  // BUG-74: Arabic versions (the Arabic site had no way to show interns in
+  // Arabic). Empty = fall back to the English value.
+  final String firstNameAr;
+  final String lastNameAr;
+  final String positionAr;
+  final String degreesAr;
+  final String whatHaveILearnedAr;
   // final List<String> tags;
 
   const InternModel({
@@ -21,10 +29,28 @@ class InternModel {
     this.degrees = '',
     this.joinedDate,
     required this.whatHaveILearned,
+    this.firstNameAr        = '',
+    this.lastNameAr         = '',
+    this.positionAr         = '',
+    this.degreesAr          = '',
+    this.whatHaveILearnedAr = '',
     // this.tags = const [],
   });
 
   String get fullName => '$firstName $lastName'.trim();
+
+  // BUG-74: language-aware getters (Arabic falls back to English when empty).
+  String _pick(bool ar, String arValue, String enValue) =>
+      ar && arValue.trim().isNotEmpty ? arValue : enValue;
+  String fullNameFor(bool ar) {
+    final f = _pick(ar, firstNameAr, firstName);
+    final l = _pick(ar, lastNameAr, lastName);
+    return '$f $l'.trim();
+  }
+  String positionFor(bool ar)         => _pick(ar, positionAr, position);
+  String degreesFor(bool ar)          => _pick(ar, degreesAr, degrees);
+  String whatHaveILearnedFor(bool ar) =>
+      _pick(ar, whatHaveILearnedAr, whatHaveILearned);
 
   String get joinDateLabel {
     if (joinedDate == null) return '';
@@ -44,6 +70,11 @@ class InternModel {
     String? degrees,
     DateTime? joinedDate,
     String? whatHaveILearned,
+    String? firstNameAr,
+    String? lastNameAr,
+    String? positionAr,
+    String? degreesAr,
+    String? whatHaveILearnedAr,
     // List<String>? tags,
   }) {
     return InternModel(
@@ -55,6 +86,11 @@ class InternModel {
       degrees:          degrees          ?? this.degrees,
       joinedDate:       joinedDate       ?? this.joinedDate,
       whatHaveILearned: whatHaveILearned ?? this.whatHaveILearned,
+      firstNameAr:        firstNameAr        ?? this.firstNameAr,
+      lastNameAr:         lastNameAr         ?? this.lastNameAr,
+      positionAr:         positionAr         ?? this.positionAr,
+      degreesAr:          degreesAr          ?? this.degreesAr,
+      whatHaveILearnedAr: whatHaveILearnedAr ?? this.whatHaveILearnedAr,
       // tags:             tags             ?? this.tags,
     );
   }
@@ -68,6 +104,11 @@ class InternModel {
     'degrees':          degrees,
     'joinedDate':       joinedDate?.toIso8601String(),
     'whatHaveILearned': whatHaveILearned,
+    'firstNameAr':        firstNameAr,
+    'lastNameAr':         lastNameAr,
+    'positionAr':         positionAr,
+    'degreesAr':          degreesAr,
+    'whatHaveILearnedAr': whatHaveILearnedAr,
     // 'tags':             tags,
   };
 
@@ -82,6 +123,11 @@ class InternModel {
         'degrees': '',
         'joinedDate': '',
         'whatHaveILearned': '',
+        'firstNameAr': '',
+        'lastNameAr': '',
+        'positionAr': '',
+        'degreesAr': '',
+        'whatHaveILearnedAr': '',
         // 'tags': [''],
       };
 
@@ -96,6 +142,11 @@ class InternModel {
         ? DateTime.tryParse(map['joinedDate'] as String)
         : null,
     whatHaveILearned: map['whatHaveILearned'] as String? ?? '',
+    firstNameAr:        map['firstNameAr']        as String? ?? '',
+    lastNameAr:         map['lastNameAr']         as String? ?? '',
+    positionAr:         map['positionAr']         as String? ?? '',
+    degreesAr:          map['degreesAr']          as String? ?? '',
+    whatHaveILearnedAr: map['whatHaveILearnedAr'] as String? ?? '',
     // tags:             (map['tags'] as List<dynamic>?)
     //     ?.map((e) => e as String)
     //     .toList() ?? [],

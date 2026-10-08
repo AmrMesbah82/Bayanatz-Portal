@@ -171,7 +171,7 @@ class _PreviewContentState extends State<_PreviewContent> {
       case 2:
         return _buildPlaceholder(widget.isAr
             ? 'محتوى الشروط والأحكام متاح في التطبيق'
-            : 'Terms & Conditions content is available in the live app');
+            : 'Terms and Conditions content is available in the live app');
       case 3:
         return _buildPlaceholder(widget.isAr
             ? 'محتوى سياسة الخصوصية متاح في التطبيق'

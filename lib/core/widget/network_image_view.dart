@@ -114,14 +114,15 @@ class NetworkImageView extends StatelessWidget {
         decoration: BoxDecoration(color: backgroundColor, shape: BoxShape.circle),
         child: url.isNotEmpty
             ? Center(
+                // The logo / icon used to fill only 43 % of the circle and
+                // looked tiny everywhere this circle is used (Main logo,
+                // section icons …). It now fills the circle's inner square
+                // (≈ 70 %), so nothing is cut and the image reads clearly.
                 child: ClipOval(
-                  child: Padding(
-                    padding: EdgeInsets.all(d * 0.14),
-                    child: SizedBox(
-                      width: d * 0.43,
-                      height: d * 0.43,
-                      child: _htmlImage(),
-                    ),
+                  child: SizedBox(
+                    width: d * 0.7,
+                    height: d * 0.7,
+                    child: _htmlImage(),
                   ),
                 ),
               )

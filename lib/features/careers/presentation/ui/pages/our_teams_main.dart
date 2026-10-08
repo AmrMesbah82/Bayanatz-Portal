@@ -26,6 +26,8 @@ import '../../controller/our_teams_cubit.dart';
 import '../../controller/our_teams_state.dart';
 import 'our_teams_edit.dart';
 import 'our_teams_preview.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 
 // class _C {
@@ -53,7 +55,7 @@ class _OurTeamsViewPageState extends State<OurTeamsViewPage> {
       builder: (context, state) {
         if (state is OurTeamsInitial || state is OurTeamsLoading) {
           return const Center(
-            child: CircularProgressIndicator(color: ColorPick.primary),
+            child: CircleProgress(),
           );
         }
 
@@ -63,7 +65,7 @@ class _OurTeamsViewPageState extends State<OurTeamsViewPage> {
 
         if (data == null) {
           return const Center(
-            child: CircularProgressIndicator(color: ColorPick.primary),
+            child: CircleProgress(),
           );
         }
 
@@ -138,7 +140,7 @@ class _OurTeamsViewPageState extends State<OurTeamsViewPage> {
 
             // ── Accordion ─────────────────────────────────────────────────────
             _accordion(
-              title:   'Our Teams',
+              title:   'Our Team', // BUG-143
               isOpen:  _accordionOpen,
               onToggle: () =>
                   setState(() => _accordionOpen = !_accordionOpen),
@@ -267,47 +269,13 @@ class _OurTeamsViewPageState extends State<OurTeamsViewPage> {
     required VoidCallback onToggle,
     required List<Widget> children,
   }) {
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: onToggle,
+      child:    Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: onToggle,
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(
-                  horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: BorderRadius.circular(6.r),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: StyleText.fontSize14Weight600
-                          .copyWith(color: Colors.white),
-                    ),
-                  ),
-                  Icon(
-                    isOpen
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white,
-                    size:  20.sp,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (isOpen)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: children,
-            ),
-        ],
+        children: children,
       ),
     );
   }

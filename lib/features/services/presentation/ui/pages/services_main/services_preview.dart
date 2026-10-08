@@ -1,7 +1,13 @@
 // ******************* FILE INFO *******************
 // File Name: services_preview.dart
 // Screen 3 — Services CMS: Preview "Main" section (Desktop/Tablet/Mobile)
-// UPDATED: Added responsive sizing and CENTER alignment for all content
+// UPDATED: The preview now renders the REAL public Services page from
+//          `package:website_app` (header, service cards, journey section, blog
+//          strip, navbar and footer) driven by the draft being edited, instead
+//          of the two lines of title + description it used to show. See
+//          core/site_preview/site_services_preview.dart.
+// UPDATED: Dropped the stray admin AppNavbar that sat above the page title —
+//          the real Services page brings its own navbar inside the frame.
 // Save button shows confirm dialog before persisting.
 
 import 'package:flutter/material.dart';
@@ -10,8 +16,9 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../../../../core/constant/color.dart';
 import '../../../../../../core/custom_dialog.dart';
+import '../../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../../core/main_widgets/app_admin_navbar.dart';
-import '../../../../../../core/main_widgets/app_navbar.dart';
+import '../../../../../../core/site_preview/site_preview_frame.dart';
 import '../../../../../../core/theme/appcolors.dart';
 import '../../../../../../core/theme/new_theme.dart';
 import '../../../../../../core/two_tab.dart';
@@ -20,31 +27,37 @@ import '../../../../data/models/services_model.dart';
 import '../../../controller/services_cubit.dart';
 import '../../../controller/services_state.dart';
 import '../services_main/services_main.dart'; // ← same import as edit page
-
-// class _C {
-//   static const Color primary   = Color(0xFF008037);
-//   static const Color sectionBg = Color(0xFFF5F5F5);
-//   static const Color cardBg    = Color(0xFFFFFFFF);
-//   static const Color border    = Color(0xFFE0E0E0);
-//   static const Color grey      = Color(0xFF9E9E9E);
-//   static const Color labelText = Color(0xFF333333);
-//   static const Color hintText  = Color(0xFF797979);
-// }
-
-enum _Device { desktop, tablet, mobile }
+import '../../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/main_widgets/admin_sub_navbar.dart';
 
 class ServicesMainPreviewPage extends StatefulWidget {
   final ServicePageModel model;
-  const ServicesMainPreviewPage({super.key, required this.model});
+
+  /// Whether this preview can publish.
+  ///
+  /// The edit flow opens it with Save, because it is showing unsaved work. The
+  /// "Preview Screen" button on the main page opens it read-only — you are
+  /// looking at what is already live, so there is nothing to save.
+  final bool showSave;
+
+  /// Heading above the frame, so each tab's preview says what it is showing.
+  final String title;
+
+  const ServicesMainPreviewPage({
+    super.key,
+    required this.model,
+    this.showSave = true,
+    this.title = 'Preview Services Details',
+  });
 
   @override
   State<ServicesMainPreviewPage> createState() => _ServicesMainPreviewPageState();
 }
 
 class _ServicesMainPreviewPageState extends State<ServicesMainPreviewPage> {
-  _Device _device   = _Device.desktop;
-  bool    _isAr     = false;
-  bool    _viewOpen = true;
+  SitePreviewDevice _device   = SitePreviewDevice.desktop;
+  bool              _isAr     = false;
+  bool              _viewOpen = true;
 
   // ── Responsive container width ─────────────────────────────────────────────
   double get _containerWidth {
@@ -74,8 +87,8 @@ class _ServicesMainPreviewPageState extends State<ServicesMainPreviewPage> {
     //    Use addPostFrameCallback so the navigator stack is stable
     if (mounted) {
       // Defer navigation OUT of the frame (fixes mouse_tracker
-          // !_debugDuringDeviceUpdate assertion on Flutter web debug).
-          Future.delayed(Duration.zero, () {
+      // !_debugDuringDeviceUpdate assertion on Flutter web debug).
+      Future.delayed(Duration.zero, () {
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(
@@ -130,13 +143,12 @@ class _ServicesMainPreviewPageState extends State<ServicesMainPreviewPage> {
             );
           }
         },
-        child: SingleChildScrollView(
-          child: Center(
-            child: Container(
-              width: _containerWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+        child: AdminStickyBody(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  // Without this the page runs edge-to-edge. Same constraint main_preview.dart
+  // uses — _containerWidth resolves to 1000.w on desktop and narrows below it.
+  contentWidth: _containerWidth,
+  children: [
                   AppAdminNavbar(
                     activeLabel:    'Web Page',
                     homePage:       MainMainPage(),
@@ -144,12 +156,10 @@ class _ServicesMainPreviewPageState extends State<ServicesMainPreviewPage> {
                     jobListingPage: MainMainPage(),
                   ),
                   SizedBox(height: 20.h),
-
-                  AppNavbar(currentRoute: '/services'),
-                  SizedBox(height: 8.h),
+                  AdminSubNavBar(activeIndex: 2),
 
                   Text(
-                    'Preview Services Details',
+                    widget.title,
                     style: StyleText.fontSize45Weight600.copyWith(
                       color: ColorPick.primary,
                       fontWeight: FontWeight.w700,
@@ -167,10 +177,7 @@ class _ServicesMainPreviewPageState extends State<ServicesMainPreviewPage> {
                   _buildActionButtons(),
                   SizedBox(height: 40.h),
                 ],
-              ),
-            ),
-          ),
-        ),
+),
       ),
     );
   }
@@ -221,24 +228,36 @@ class _ServicesMainPreviewPageState extends State<ServicesMainPreviewPage> {
 
   Widget _buildActionButtons() {
     final isMobile = MediaQuery.of(context).size.width < 600;
+    final back = SizedBox(
+      height: 44.h,
+      child: ElevatedButton(
+        onPressed: _onBack,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.darkGrey,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8.r)),
+        ),
+        child: Text('Back',
+            style: StyleText.fontSize14Weight600
+                .copyWith(color: Colors.white)),
+      ),
+    );
+
+    // Read-only: Back keeps the width and position it has next to Save — the
+    // empty half is left empty rather than stretching the button across.
+    if (!widget.showSave) {
+      return Row(
+        children: [
+          Expanded(child: back),
+          SizedBox(width: isMobile ? 12.w : 300.w),
+          const Expanded(child: SizedBox()),
+        ],
+      );
+    }
+
     return Row(
       children: [
-        Expanded(
-          child: SizedBox(
-            height: 44.h,
-            child: ElevatedButton(
-              onPressed: _onBack,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ColorPick.back,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8.r)),
-              ),
-              child: Text('Back',
-                  style: StyleText.fontSize14Weight600
-                      .copyWith(color: Colors.white)),
-            ),
-          ),
-        ),
+        Expanded(child: back),
         SizedBox(width: isMobile ? 12.w : 300.w),
         Expanded(
           child: SizedBox(
@@ -261,7 +280,11 @@ class _ServicesMainPreviewPageState extends State<ServicesMainPreviewPage> {
   }
 
   Widget _buildDeviceTabBar() {
-    final tabs = [_Device.desktop, _Device.tablet, _Device.mobile];
+    const tabs = [
+      SitePreviewDevice.desktop,
+      SitePreviewDevice.tablet,
+      SitePreviewDevice.mobile,
+    ];
     final screenWidth = MediaQuery.of(context).size.width;
     final spacing = screenWidth < 600 ? 16.w : 24.w;
 
@@ -270,7 +293,6 @@ class _ServicesMainPreviewPageState extends State<ServicesMainPreviewPage> {
       children: List.generate(tabs.length, (i) {
         final d        = tabs[i];
         final isActive = _device == d;
-        final label    = d.name[0].toUpperCase() + d.name.substring(1);
         return Padding(
           padding: EdgeInsets.only(right: spacing),
           child: GestureDetector(
@@ -282,7 +304,7 @@ class _ServicesMainPreviewPageState extends State<ServicesMainPreviewPage> {
                   Padding(
                     padding: EdgeInsets.only(bottom: 6.h),
                     child: Text(
-                      label,
+                      d.label,
                       style: TextStyle(
                         fontSize:   screenWidth < 600 ? 13.sp : 15.sp,
                         fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
@@ -304,68 +326,32 @@ class _ServicesMainPreviewPageState extends State<ServicesMainPreviewPage> {
   }
 
   Widget _viewAccordion() {
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() => _viewOpen = !_viewOpen),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: BorderRadius.circular(6.r),
-              ),
-              child: Row(children: [
-                Expanded(
-                  child: Text('View',
-                      style: StyleText.fontSize14Weight600
-                          .copyWith(color: Colors.white)),
-                ),
-                Icon(
-                  _viewOpen
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  color: Colors.white,
-                  size: 20.sp,
-                ),
-              ]),
-            ),
-          ),
-          if (_viewOpen)
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: 16.w),
-              child: Center(child: _previewContent()),
-            ),
-        ],
+    return CustomAccordion(
+      title:    'View',
+      isOpen:   _viewOpen,
+      onToggle: () => setState(() => _viewOpen = !_viewOpen),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: 16.w),
+        // Admin-only preview (no dependency on the website_app project).
+        child: Center(child: _previewContent()),
       ),
     );
   }
 
   Widget _previewContent() {
     final double maxW = switch (_device) {
-      _Device.desktop => double.infinity,
-      _Device.tablet  => 600.w,
-      _Device.mobile  => 320.w,
+      SitePreviewDevice.desktop => double.infinity,
+      SitePreviewDevice.tablet  => 600.w,
+      SitePreviewDevice.mobile  => 320.w,
     };
 
     final String title = _isAr
-        ? (widget.model.title.ar.isNotEmpty
-        ? widget.model.title.ar
-        : 'الخدمات')
-        : (widget.model.title.en.isNotEmpty
-        ? widget.model.title.en
-        : 'Services');
+        ? (widget.model.title.ar.isNotEmpty ? widget.model.title.ar : 'الخدمات')
+        : (widget.model.title.en.isNotEmpty ? widget.model.title.en : 'Services');
 
     final String desc = _isAr
-        ? (widget.model.shortDescription.ar.isNotEmpty
         ? widget.model.shortDescription.ar
-        : 'تقدم بياناتز مجموعة من الخدمات المصممة لدعم مبادرات التحول الرقمي.')
-        : (widget.model.shortDescription.en.isNotEmpty
-        ? widget.model.shortDescription.en
-        : 'Bayanatz offers a range of services designed to support digital transformation initiatives within your organization.');
+        : widget.model.shortDescription.en;
 
     return Directionality(
       textDirection: _isAr ? TextDirection.rtl : TextDirection.ltr,
@@ -378,7 +364,7 @@ class _ServicesMainPreviewPageState extends State<ServicesMainPreviewPage> {
               title,
               style: StyleText.fontSize45Weight600.copyWith(
                 color:    ColorPick.primary,
-                fontSize: _device == _Device.mobile ? 22.sp : 28.sp,
+                fontSize: _device == SitePreviewDevice.mobile ? 22.sp : 28.sp,
               ),
             ),
             SizedBox(height: 10.h),
@@ -386,7 +372,7 @@ class _ServicesMainPreviewPageState extends State<ServicesMainPreviewPage> {
               desc,
               style: StyleText.fontSize14Weight400.copyWith(
                 color:    AppColors.secondaryText,
-                fontSize: _device == _Device.mobile ? 12.sp : 14.sp,
+                fontSize: _device == SitePreviewDevice.mobile ? 12.sp : 14.sp,
                 height:   1.7,
               ),
             ),

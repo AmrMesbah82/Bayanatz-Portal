@@ -17,10 +17,12 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:web_app_admin/core/custom_svg.dart';
+import 'package:web_app_admin/core/widget/format.dart';
 import 'package:web_app_admin/core/widget/custom_dropdwon.dart';
 import 'package:web_app_admin/core/widget/textfield.dart';
 
 import '../../../../../core/constant/color.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -32,6 +34,7 @@ import '../../../data/models/application_model.dart';
 import '../../controller/application_cubit.dart';
 import '../../controller/application_state.dart';
 import 'job_listing_main.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/application_detail/detail_cards.dart';
 
@@ -100,11 +103,40 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
 
   ApplicationModel? _currentApp;
 
+  List<TextEditingController> get _scoreCtrls => [
+        _technicalCtrl,
+        _communicationCtrl,
+        _experienceCtrl,
+        _cultureFitCtrl,
+        _leadershipCtrl,
+      ];
+
   @override
   void initState() {
     super.initState();
     context.read<ApplicationCubit>().loadDetail(widget.jobId, widget.appId);
+    // Clamp every scoring field to max 5 + refresh the live Score header.
+    for (final c in _scoreCtrls) {
+      c.addListener(() => _onScoreChanged(c));
+    }
   }
+
+  void _onScoreChanged(TextEditingController c) {
+    final v = int.tryParse(c.text);
+    if (v != null && v > 5) {
+      c.text = '5';
+      c.selection = TextSelection.collapsed(offset: c.text.length);
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// Sum of the five 1–5 degrees (max 25).
+  int get _scoreTotal =>
+      _scoreCtrls.fold(0, (sum, c) => sum + (int.tryParse(c.text) ?? 0));
+
+  /// Percentage out of 100 — e.g. 25/25 → 100%.
+  String get _scorePercent =>
+      _scoreTotal > 0 ? '${(_scoreTotal / 25 * 100).round()}%' : '—';
 
   void _seedControllers(ApplicationModel app) {
     if (_didLoad) return;
@@ -157,7 +189,7 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
               SizedBox(height: 20.h),
               Text(
                 'CHANGE STATUS',
-                style: TextStyle(
+                style: StyleText.fontSize18Weight500.copyWith(
                   fontSize: 18.sp,
                   fontWeight: FontWeight.w700,
                   color: AppColors.text,
@@ -167,7 +199,7 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
               Text(
                 'Are you sure you want to change this Submissions status from ${app.status.label} to ${newStatus.label}?',
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: StyleText.fontSize13Weight400.copyWith(
                   fontSize: 13.sp,
                   color: AppColors.secondaryText,
                   height: 1.5,
@@ -188,7 +220,7 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
                         child: Center(
                           child: Text(
                             'Back',
-                            style: TextStyle(
+                            style: StyleText.fontSize14Weight600.copyWith(
                               fontSize: 14.sp,
                               fontWeight: FontWeight.w600,
                               color: AppColors.text,
@@ -218,7 +250,7 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
                         child: Center(
                           child: Text(
                             'Confirm',
-                            style: TextStyle(
+                            style: StyleText.fontSize14Weight600.copyWith(
                               fontSize: 14.sp,
                               fontWeight: FontWeight.w600,
                               color: Colors.white,
@@ -432,7 +464,7 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
           SizedBox(width: 6.w),
           Text(
             label,
-            style: TextStyle(
+            style: StyleText.fontSize12Weight600.copyWith(
               fontSize: 12.sp,
               fontWeight: FontWeight.w600,
               color: ColorPick.primary,
@@ -459,7 +491,7 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
           SizedBox(width: 6.w),
           Text(
             label,
-            style: TextStyle(
+            style: StyleText.fontSize12Weight600.copyWith(
               fontSize: 12.sp,
               fontWeight: FontWeight.w600,
               color: ColorPick.red,
@@ -498,7 +530,7 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
                 return Scaffold(
                   backgroundColor: ColorPick.background,
                   body: Center(
-                    child: CircularProgressIndicator(color: cmsPrimary),
+                    child: CircleProgress(),
                   ),
                 );
               }
@@ -512,11 +544,8 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
 
               return Scaffold(
                 backgroundColor: ColorPick.background,
-                body: SingleChildScrollView(
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: Column(
-                      children: [
+                body: AdminStickyBody(
+  children: [
                         AppAdminNavbar(
                           activeLabel: 'Applications',
                           homePage: CareersMainPageDashboard(),
@@ -538,16 +567,39 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
                                 Text(
                                   'Applications',
                                   style: StyleText.fontSize45Weight600.copyWith(
-                                    color: cmsPrimary,
+                                    color: ColorPick.primary,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
                                 SizedBox(height: 12.h),
 
                                 // ══════════════════════════════════════════
-                                // ── STATUS PIPELINE (aligned to end) ──
+                                // ── SCORE (left) + STATUS PIPELINE (right) ──
                                 // ══════════════════════════════════════════
-                                Align(
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    // Live score — sum of the 5 degrees as a
+                                    // percentage out of 100.
+                                    Text(
+                                      'Score : ',
+                                      style: StyleText.fontSize16Weight700
+                                          .copyWith(
+                                        fontSize: 16.sp,
+                                        color: AppColors.secondaryText,
+                                      ),
+                                    ),
+                                    Text(
+                                      _scorePercent,
+                                      style: StyleText.fontSize16Weight700
+                                          .copyWith(
+                                        fontSize: 16.sp,
+                                        color: AppColors.text,
+                                      ),
+                                    ),
+                                    SizedBox(width: 16.w),
+                                    Expanded(
+                                      child: Align(
                                   alignment: Alignment.centerRight,
                                   child: SingleChildScrollView(
                                     scrollDirection: Axis.horizontal,
@@ -584,7 +636,7 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
                                               dropdownColor: Colors.white,
                                               hint: Text(
                                                 _getDropdownHint(app!.status),
-                                                style: TextStyle(
+                                                style: StyleText.fontSize12Weight400.copyWith(
                                                   fontSize: 12.sp,
                                                   color: AppColors.text,
                                                 ),
@@ -604,6 +656,9 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
                                       ],
                                     ),
                                   ),
+                                ),
+                                    ),
+                                  ],
                                 ),
                                 SizedBox(height: 24.h),
 
@@ -626,7 +681,7 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
                                         vertical: 12.h,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: cmsPrimary,
+                                        color: ColorPick.primary,
                                         borderRadius:
                                         BorderRadius.circular(6.r),
                                       ),
@@ -635,14 +690,11 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
                                         width: 16.sp,
                                         height: 16.sp,
                                         child:
-                                        const CircularProgressIndicator(
-                                          color: Colors.white,
-                                          strokeWidth: 2,
-                                        ),
+                                        const CircleProgress(),
                                       )
                                           : Text(
                                         'Save Scoring',
-                                        style: TextStyle(
+                                        style: StyleText.fontSize14Weight600.copyWith(
                                           fontSize: 14.sp,
                                           fontWeight: FontWeight.w600,
                                           color: Colors.white,
@@ -657,9 +709,7 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                ),
+),
               );
             },
           );

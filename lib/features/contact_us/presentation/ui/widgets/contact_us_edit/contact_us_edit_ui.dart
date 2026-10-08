@@ -54,49 +54,11 @@ extension _ContactUsEditUi on _ContactUsCmsEditPageState {
     required VoidCallback onToggle,
     required Widget   child,
   }) {
-    return Column(
-      children: [
-        GestureDetector(
-          onTap: onToggle,
-          child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 14.h),
-            decoration: BoxDecoration(
-              color: ColorPick.primary,
-              borderRadius: isOpen
-                  ? BorderRadius.circular(8)
-                  : BorderRadius.circular(12.r),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  title,
-                  style: StyleText.fontSize16Weight700.copyWith(
-                    color: Colors.white,
-                  ),
-                ),
-                Icon(
-                  isOpen
-                      ? Icons.keyboard_arrow_up
-                      : Icons.keyboard_arrow_down,
-                  color: Colors.white,
-                  size:  22.sp,
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (isOpen)
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              borderRadius:
-              BorderRadius.vertical(bottom: Radius.circular(12.r)),
-            ),
-            child:   child,
-          ),
-      ],
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: onToggle,
+      child:    child,
     );
   }
 
@@ -107,7 +69,7 @@ extension _ContactUsEditUi on _ContactUsCmsEditPageState {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(height: 15.h),
-        _fieldLabel('Sub description'),
+        _fieldLabel('Short Description'), // BUG-157
         SizedBox(height: 8.h),
         CustomValidatedTextFieldMaster(
           hint:          'Text Here',
@@ -182,7 +144,7 @@ extension _ContactUsEditUi on _ContactUsCmsEditPageState {
                   crossAxisCount:  2,
                   crossAxisSpacing: 10.w,
                   mainAxisSpacing:  10.h,
-                  mainAxisExtent:   80.sp,
+                  mainAxisExtent:   60.sp,
                 ),
                 itemCount:    _socialIconItems.length,
                 itemBuilder:  (context, index) =>
@@ -226,21 +188,17 @@ extension _ContactUsEditUi on _ContactUsCmsEditPageState {
           _fieldLabel('Link'),
           SizedBox(height: 8.h),
           Container(
-            height: 48.h,
-            padding: EdgeInsets.symmetric(horizontal: 12.w),
+            height: 36.h,
+            padding: EdgeInsets.symmetric(horizontal: 4.w),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(8.r),
+              borderRadius: BorderRadius.circular(4.r),
             ),
             child: Row(
               children: [
                 Container(
                   width: 36.w,
                   height: 36.w,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8F5EE),
-                    borderRadius: BorderRadius.circular(6.r),
-                  ),
                   child: Center(
                     child: (link != null && link.iconUrl.isNotEmpty)
                         ? NetworkImageView(
@@ -278,20 +236,28 @@ extension _ContactUsEditUi on _ContactUsCmsEditPageState {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ..._officeLocationItems.map(_officeLocationWidget).toList(),
-        GestureDetector(
-          onTap: _addOfficeLocation,
-          child: Container(
-            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
-            decoration: BoxDecoration(
-                color: const Color(0xFF797979),
-                borderRadius: BorderRadius.circular(4.r)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.add, size: 14.sp, color: Colors.white),
-              SizedBox(width: 4.w),
-              Text('Location',
-                  style: StyleText.fontSize12Weight500
-                      .copyWith(color: Colors.white)),
-            ]),
+        Padding(
+          padding: EdgeInsets.only(top: 10.sp),
+          child: GestureDetector(
+            onTap: _addOfficeLocation,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
+              decoration: BoxDecoration(
+                  color: const Color(0xFF797979),
+                  borderRadius: BorderRadius.circular(4.r)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                CustomSvg(
+                  assetPath: 'assets/add.svg',
+                  width:  14.sp,
+                  height: 14.sp,
+                  color:  Colors.white,
+                ),
+                SizedBox(width: 4.w),
+                Text('Location',
+                    style: StyleText.fontSize12Weight500
+                        .copyWith(color: Colors.white)),
+              ]),
+            ),
           ),
         ),
       ],
@@ -579,42 +545,15 @@ extension _ContactUsEditUi on _ContactUsCmsEditPageState {
   // ── Action Buttons ────────────────────────────────────────────────────────
 
   Widget _actionButtons() {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _btn(
-                label:  'Preview',
-                color:  const Color(0xFF608570),
-                onTap:  () => context.goNamed('contact-cms-preview'),
-              ),
-            ),
-            SizedBox(width: 400.w),
-            Expanded(
-              child: _btn(
-                label:  'Publish',
-                color:  ColorPick.primary,
-                onTap:  _handlePublish,
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: 12.h),
-        Row(
-          children: [
-            Expanded(
-              child: _btn(
-                label:  'Discard',
-                color:  Color(0xFF797979),
-                onTap:  () => context.goNamed('contact-cms'),
-              ),
-            ),
-            SizedBox(width: 400.sp),
-            Expanded(child: Container()),
-          ],
-        ),
-      ],
+    // Shared action buttons — style lives in core/main_widgets/edit_action_buttons.dart
+    return EditActionButtons(
+      onPreview: _openDraftPreview, // BUG-52 / BUG-53
+      onPublish: _handlePublish,
+      // BUG-105: same "Discard Changes?" dialog as Main / Home.
+      onDiscard: () => confirmDiscard(
+        context,
+        onDiscard: () => context.goNamed('contact-cms'),
+      ),
     );
   }
 
@@ -634,7 +573,7 @@ extension _ContactUsEditUi on _ContactUsCmsEditPageState {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const CircularProgressIndicator(color: ColorPick.primary),
+              const CircleProgress(),
               SizedBox(height: 12.h),
               Text(
                 'Saving...',

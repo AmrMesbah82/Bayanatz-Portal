@@ -99,7 +99,7 @@ class _TableSettingDialogContentState
                   SizedBox(width: 10.w),
                   Text(
                     'Table Setting',
-                    style: TextStyle(
+                    style: StyleText.fontSize16Weight700.copyWith(
                       fontSize: 16.sp,
                       fontWeight: FontWeight.w700,
                       color: AppColors.text,
@@ -120,7 +120,7 @@ class _TableSettingDialogContentState
                       ),
                       child: Text(
                         'Reset',
-                        style: TextStyle(
+                        style: StyleText.fontSize12Weight600.copyWith(
                           fontSize: 12.sp,
                           fontWeight: FontWeight.w600,
                           color: const Color(0xFF666666),
@@ -201,7 +201,7 @@ class _TableSettingDialogContentState
                         child: Center(
                           child: Text(
                             'Back',
-                            style: TextStyle(
+                            style: StyleText.fontSize14Weight600.copyWith(
                               fontSize: 14.sp,
                               fontWeight: FontWeight.w600,
                               color: const Color(0xFF666666),
@@ -228,7 +228,7 @@ class _TableSettingDialogContentState
                         child: Center(
                           child: Text(
                             'Save',
-                            style: TextStyle(
+                            style: StyleText.fontSize14Weight600.copyWith(
                               fontSize: 14.sp,
                               fontWeight: FontWeight.w600,
                               color: Colors.white,
@@ -259,7 +259,7 @@ class _TableSettingDialogContentState
           Expanded(
             child: Text(
               label,
-              style: TextStyle(
+              style: StyleText.fontSize13Weight500.copyWith(
                 fontSize: 13.sp,
                 fontWeight: FontWeight.w500,
                 color: AppColors.text,

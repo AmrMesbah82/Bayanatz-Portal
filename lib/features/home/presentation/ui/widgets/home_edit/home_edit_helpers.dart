@@ -9,12 +9,16 @@ extension _HomeEditHelpers on _HomeEditPageMasterState {
     }
   }
 
-  Future<_PickedImage?> _pickImage() async {
+  /// BUG-68: [allowRaster] lets section images be real photos (PNG / JPG /
+  /// WebP) — they used to be rejected with "Only SVG files are allowed".
+  Future<_PickedImage?> _pickImage({bool allowRaster = false}) async {
     final completer = Completer<_PickedImage?>();
     bool completed = false;
     final input = web.HTMLInputElement()
       ..type = 'file'
-      ..accept = '.svg,image/svg+xml';
+      ..accept = allowRaster
+          ? '.svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp'
+          : '.svg,image/svg+xml';
     void complete(_PickedImage? val) {
       if (!completed) {
         completed = true;
@@ -31,14 +35,19 @@ extension _HomeEditHelpers on _HomeEditPageMasterState {
           return;
         }
         final file = files.item(0)!;
-        if (!file.name.toLowerCase().endsWith('.svg') &&
-            file.type != 'image/svg+xml') {
+        final name = file.name.toLowerCase();
+        final isSvg = name.endsWith('.svg') || file.type == 'image/svg+xml';
+        final isRaster = RegExp(r'\.(png|jpe?g|webp)$').hasMatch(name) ||
+            const ['image/png', 'image/jpeg', 'image/webp'].contains(file.type);
+        if (!isSvg && !(allowRaster && isRaster)) {
           complete(null);
           if (mounted) {
             showConfirmDialog(
               context: context,
               title: 'Invalid File',
-              subtitle: 'Only SVG files are allowed',
+              subtitle: allowRaster
+                  ? 'Please choose an SVG, PNG, JPG or WebP image'
+                  : 'Only SVG files are allowed',
               confirmLabel: 'OK',
               cancelLabel: '',
               onConfirm: () {},
@@ -153,13 +162,44 @@ extension _HomeEditHelpers on _HomeEditPageMasterState {
     String publishStatus = 'published',
     DateTime? scheduledPublishDate,
   }) async {
-    if (publishStatus == 'published') {
+    // A draft may be incomplete — that is the point of a draft. Anything that
+    // will go live, now or on a schedule, has to pass validation first.
+    if (publishStatus == 'published' || publishStatus == 'scheduled') {
       setState(() => _submitted = true);
       if (!_isFormValid) return;
     }
 
     setState(() => _isSaving = true);
     try {
+      _syncFormToCubit(cubit);
+      for (var i = 0; i < _sections.length; i++) {
+        if (_sections[i].image.bytes != null)
+          await cubit.uploadSectionImage(i, _sections[i].image.bytes!);
+        if (_sections[i].icon.bytes != null)
+          await cubit.uploadSectionIcon(i, _sections[i].icon.bytes!);
+      }
+
+      // NOTE: footer/social/branding are saved from the MAIN page (MainCmsCubit).
+
+      // The caller decides the slot: _bottomButtons picks 'scheduled' when a
+      // future publish date is set, 'published' otherwise, and 'draft' for
+      // Save For Later. No re-routing happens here.
+      await cubit.save(
+        publishStatus: publishStatus,
+        scheduledPublishDate: scheduledPublishDate,
+      );
+    } catch (_) {
+      // errors are reported by the cubit state (HomeCmsError)
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  /// BUG-53: copies every TEXT / switch value of the form into the cubit
+  /// model (no uploads, nothing saved). Used by Save and by Preview, so the
+  /// preview shows the edits being made instead of the published text.
+  void _syncFormToCubit(HomeCmsCubit cubit) {
+    {
       cubit.updateTitle(en: _titleEn.text, ar: _titleAr.text);
       cubit.updateShortDescription(
         en: _shortDescEn.text,
@@ -191,31 +231,8 @@ extension _HomeEditHelpers on _HomeEditPageMasterState {
           ar: _sections[i].descAr.text,
         );
         cubit.updateSectionVisibility(i, _sections[i].visibility);
-        if (_sections[i].image.bytes != null)
-          await cubit.uploadSectionImage(i, _sections[i].image.bytes!);
-        if (_sections[i].icon.bytes != null)
-          await cubit.uploadSectionIcon(i, _sections[i].icon.bytes!);
       }
-
-      // NOTE: footer/social/branding are saved from the MAIN page (MainCmsCubit).
-
-      String finalStatus = publishStatus;
-      DateTime? finalScheduleDate = scheduledPublishDate;
-
-      if (publishStatus == 'published' &&
-          _publishDate != null &&
-          _publishDate!.isAfter(DateTime.now())) {
-        finalStatus = 'scheduled';
-        finalScheduleDate = _publishDate;
-      }
-
-      await cubit.save(
-        publishStatus: finalStatus,
-        scheduledPublishDate: finalScheduleDate,
-      );
-    } catch (e, st) {
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
     }
   }
+
 }

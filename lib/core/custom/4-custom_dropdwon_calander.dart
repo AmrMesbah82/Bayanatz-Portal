@@ -1,21 +1,13 @@
-// ******************* FILE INFO *******************
-// File Name: 4-custom_dropdwon_calander.dart
-// Description: The single shared date-picker field. EVERY date/calendar input
-//              in the app must use this widget. Matches CustomTextField /
-//              CustomDropdown height & style so it lines up with adjacent
-//              fields. Self-contained: uses AppColors + StyleText only.
-// Created by: Amr Mesbah
-
-/// Module: core › custom
-
 import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:get/get.dart';
 import 'package:intl/intl.dart';
+import 'package:web_app_admin/core/theme/appcolors.dart';
+import 'package:web_app_admin/core/theme/new_theme.dart';
+import 'package:web_app_admin/core/constant/color.dart'; // BUG-28: brand red, not the theme yellow
 
-import '../theme/appcolors.dart';
-import '../theme/new_theme.dart';
 
 class CustomDropdownCalendar extends StatefulWidget {
   final DateTime? value;
@@ -83,35 +75,52 @@ class _CustomDropdownCalendarState extends State<CustomDropdownCalendar> {
         calendarViewMode: CalendarDatePicker2Mode.day,
         closeDialogOnCancelTapped: true,
         closeDialogOnOkTapped: true,
-        currentDate: widget.value ?? DateTime.now(),
+        // Open on a selectable month: a stored date earlier than firstDate
+        // (e.g. an old end date) would otherwise open on a fully disabled month.
+        currentDate: (widget.firstDate != null &&
+                (widget.value ?? DateTime.now()).isBefore(widget.firstDate!))
+            ? widget.firstDate
+            : (widget.value ?? DateTime.now()),
         centerAlignModePicker: true,
         dayBorderRadius: BorderRadius.circular(8.r),
         dayBuilder: _buildDay,
         customModePickerIcon: SvgPicture.asset(
           'assets/arrowdown.svg',
           fit: BoxFit.fitHeight,
-          colorFilter: ColorFilter.mode(AppColors.primary, BlendMode.srcIn),
+          colorFilter: ColorFilter.mode(ColorPick.primary, BlendMode.srcIn),
           height: 14.sp,
         ),
-        lastMonthIcon: Icon(Icons.chevron_left, color: AppColors.primary),
-        nextMonthIcon: Icon(Icons.chevron_right, color: AppColors.primary),
-        okButton: _buildActionButton('Set Date'),
-        cancelButton: _buildActionButton('Cancel', isCancel: true),
-        weekdayLabelTextStyle:
-            StyleText.fontSize16Weight400.copyWith(color: AppColors.primary),
-        controlsTextStyle:
-            StyleText.fontSize14Weight400.copyWith(color: AppColors.primary),
-        selectedYearTextStyle:
-            StyleText.fontSize14Weight400.copyWith(color: AppColors.primary),
-        selectedDayHighlightColor: AppColors.primary,
+        lastMonthIcon: Transform.rotate(
+          angle: Get.locale.toString().contains('ar') ? 3.14 : 0,
+          child: SvgPicture.asset(
+            'assets/arrow.svg',
+            colorFilter: ColorFilter.mode(ColorPick.primary, BlendMode.srcIn),
+          ),
+        ),
+        nextMonthIcon: Transform.rotate(
+          angle: Get.locale.toString().contains('ar') ? 0 : 3.14,
+          child: SvgPicture.asset(
+            'assets/arrow.svg',
+            colorFilter: ColorFilter.mode(ColorPick.primary, BlendMode.srcIn),
+          ),
+        ),
+        okButton: _buildActionButton('Set Date'.tr),
+        cancelButton: _buildActionButton('Cancel'.tr, isCancel: true),
+        weekdayLabelTextStyle: StyleText.fontSize16Weight400
+            .copyWith(color: ColorPick.primary),
+        controlsTextStyle: StyleText.fontSize14Weight400
+            .copyWith(color: ColorPick.primary),
+        selectedYearTextStyle: StyleText.fontSize14Weight400
+            .copyWith(color: ColorPick.primary),
+        selectedDayHighlightColor: ColorPick.primary,
         dayTextStyle:
-            StyleText.fontSize14Weight400.copyWith(color: AppColors.text),
-        selectedDayTextStyle:
-            StyleText.fontSize14Weight400.copyWith(color: AppColors.textButton),
+        StyleText.fontSize14Weight400.copyWith(color: AppColors.text),
+        selectedDayTextStyle: StyleText.fontSize14Weight400
+            .copyWith(color: Colors.white),
         yearTextStyle:
-            StyleText.fontSize14Weight400.copyWith(color: AppColors.text),
+        StyleText.fontSize14Weight400.copyWith(color: AppColors.text),
         todayTextStyle:
-            StyleText.fontSize14Weight400.copyWith(color: AppColors.text),
+        StyleText.fontSize14Weight400.copyWith(color: AppColors.text),
         buttonPadding: EdgeInsets.symmetric(horizontal: 14.sp),
       ),
       dialogSize: Size(320.w, 320.h),
@@ -140,9 +149,9 @@ class _CustomDropdownCalendarState extends State<CustomDropdownCalendar> {
         height: 25.sp,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8.r),
-          color: isSelected == true ? AppColors.primary : AppColors.field,
+          color: isSelected == true ? ColorPick.primary : AppColors.field,
           border: Border.all(
-            color: isTodayDate ? AppColors.primary : Colors.transparent,
+            color: isTodayDate ? ColorPick.primary : Colors.transparent,
           ),
         ),
         child: Center(
@@ -150,7 +159,7 @@ class _CustomDropdownCalendarState extends State<CustomDropdownCalendar> {
             date.day.toString(),
             style: StyleText.fontSize14Weight400.copyWith(
               color: isSelected == true
-                  ? AppColors.textButton
+                  ? Colors.white
                   : AppColors.secondaryText,
             ),
           ),
@@ -166,13 +175,13 @@ class _CustomDropdownCalendarState extends State<CustomDropdownCalendar> {
         width: 120.sp,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8.r),
-          color: isCancel ? AppColors.secondaryButton : AppColors.primary,
+          color: isCancel ? AppColors.secondaryButton : ColorPick.primary,
         ),
         child: Center(
           child: Text(
             label,
             style: StyleText.fontSize14Weight400.copyWith(
-              color: isCancel ? AppColors.text : AppColors.textButton,
+              color: isCancel ? AppColors.text : Colors.white,
             ),
           ),
         ),
@@ -203,16 +212,11 @@ class _CustomDropdownCalendarState extends State<CustomDropdownCalendar> {
                     color: hasError
                         ? AppColors.red
                         : isDisabled
-                            ? AppColors.text.withOpacity(0.4)
-                            : AppColors.text,
+                        ? AppColors.text.withOpacity(0.4)
+                        : AppColors.text,
                   ),
               children: widget.required
-                  ? [
-                      TextSpan(
-                          text: ' *',
-                          style: StyleText.fontSize14Weight500
-                              .copyWith(color: AppColors.red))
-                    ]
+                  ? [TextSpan(text: ' *', style: StyleText.fontSize14Weight500.copyWith(color: AppColors.red))]
                   : [],
             ),
           ),
@@ -223,71 +227,69 @@ class _CustomDropdownCalendarState extends State<CustomDropdownCalendar> {
           child: SizedBox(
             height: widget.height?.h,
             child: InputDecorator(
-              isFocused: false,
-              isEmpty: displayText == null,
-              decoration: InputDecoration(
-                isDense: true,
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 12.w, vertical: 12.h),
-                filled: true,
-                fillColor: isDisabled
-                    ? (widget.fillColor ?? AppColors.card).withOpacity(0.5)
-                    : widget.fillColor ?? AppColors.card,
-                border: OutlineInputBorder(
-                    borderRadius: radius, borderSide: BorderSide.none),
-                enabledBorder: hasError
-                    ? OutlineInputBorder(
-                        borderRadius: radius,
-                        borderSide:
-                            BorderSide(color: AppColors.red, width: 1.5.w))
-                    : OutlineInputBorder(
-                        borderRadius: radius, borderSide: BorderSide.none),
-                focusedBorder: hasError
-                    ? OutlineInputBorder(
-                        borderRadius: radius,
-                        borderSide:
-                            BorderSide(color: AppColors.red, width: 1.5.w))
-                    : OutlineInputBorder(
-                        borderRadius: radius, borderSide: BorderSide.none),
-                disabledBorder: OutlineInputBorder(
-                    borderRadius: radius, borderSide: BorderSide.none),
-                prefixIcon: null,
-                prefixIconConstraints: const BoxConstraints(),
-                suffixIcon: Padding(
-                  padding: EdgeInsets.only(left: 8.w, right: 12.w),
-                  child: SvgPicture.asset(
-                    'assets/images/calender.svg',
-                    width: 18.sp,
-                    height: 18.sp,
-                    colorFilter: ColorFilter.mode(
-                      hasError
-                          ? AppColors.red
-                          : isDisabled
-                              ? AppColors.text.withOpacity(0.3)
-                              : AppColors.text.withOpacity(0.5),
-                      BlendMode.srcIn,
-                    ),
+            isFocused: false,
+            isEmpty: displayText == null,
+            decoration: InputDecoration(
+              isDense: true,
+              contentPadding:
+              EdgeInsets.symmetric(horizontal: 12.w, vertical: 12.h),
+              filled: true,
+              fillColor: isDisabled
+                  ? (widget.fillColor ?? AppColors.card).withOpacity(0.5)
+                  : widget.fillColor ?? AppColors.card,
+              border: OutlineInputBorder(
+                  borderRadius: radius, borderSide: BorderSide.none),
+              enabledBorder: hasError
+                  ? OutlineInputBorder(
+                  borderRadius: radius,
+                  borderSide: BorderSide(color: AppColors.red, width: 1.5.w))
+                  : OutlineInputBorder(
+                  borderRadius: radius, borderSide: BorderSide.none),
+              focusedBorder: hasError
+                  ? OutlineInputBorder(
+                  borderRadius: radius,
+                  borderSide: BorderSide(color: AppColors.red, width: 1.5.w))
+                  : OutlineInputBorder(
+                  borderRadius: radius, borderSide: BorderSide.none),
+              disabledBorder: OutlineInputBorder(
+                  borderRadius: radius, borderSide: BorderSide.none),
+              prefixIcon: null,
+              prefixIconConstraints: const BoxConstraints(),
+              // ── calendar icon now on the right, arrow removed ──
+              suffixIcon: Padding(
+                padding: EdgeInsets.only(left: 8.w, right: 12.w),
+                child: SvgPicture.asset(
+                  'assets/images/calender.svg',
+                  width: 18.sp,
+                  height: 18.sp,
+                  colorFilter: ColorFilter.mode(
+                    hasError
+                        ? AppColors.red
+                        : isDisabled
+                        ? AppColors.text.withOpacity(0.3)
+                        : AppColors.text.withOpacity(0.5),
+                    BlendMode.srcIn,
                   ),
                 ),
-                suffixIconConstraints: const BoxConstraints(),
-                hintText: displayText == null ? (widget.hint ?? '') : null,
-                hintStyle: widget.hintStyle ??
-                    StyleText.fontSize14Weight400
-                        .copyWith(color: AppColors.text.withOpacity(0.4)),
-                errorText: null,
               ),
-              child: displayText != null
-                  ? Text(
-                      displayText,
-                      style: widget.valueStyle ??
-                          StyleText.fontSize14Weight400.copyWith(
-                            color: isDisabled
-                                ? AppColors.text.withOpacity(0.4)
-                                : AppColors.text,
-                          ),
-                      overflow: TextOverflow.ellipsis,
-                    )
-                  : const SizedBox.shrink(),
+              suffixIconConstraints: const BoxConstraints(),
+              hintText: displayText == null ? (widget.hint ?? '') : null,
+              hintStyle: widget.hintStyle ??
+                  StyleText.fontSize14Weight400.copyWith(color: AppColors.text.withOpacity(0.4)),
+              errorText: null,
+            ),
+            child: displayText != null
+                ? Text(
+              displayText,
+              style: widget.valueStyle ??
+                  StyleText.fontSize14Weight400.copyWith(
+                    color: isDisabled
+                        ? AppColors.text.withOpacity(0.4)
+                        : AppColors.text,
+                  ),
+              overflow: TextOverflow.ellipsis,
+            )
+                : const SizedBox.shrink(),
             ),
           ),
         ),
@@ -307,3 +309,17 @@ class _CustomDropdownCalendarState extends State<CustomDropdownCalendar> {
     );
   }
 }
+
+/*
+// ── Usage ─────────────────────────────────────────────────────────────────────
+DateTime? _date;
+
+CustomDropdownCalendar(
+  label: 'Birth Date',
+  hint: 'Select date',
+  required: true,
+  value: _date,
+  // errorText: 'Date is required',
+  onChanged: (d) => setState(() => _date = d),
+)
+*/

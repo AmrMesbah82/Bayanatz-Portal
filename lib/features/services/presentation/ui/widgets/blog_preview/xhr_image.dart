@@ -99,8 +99,7 @@ class _XhrImageState extends State<_XhrImage> {
       return SizedBox(
         width: widget.width, height: widget.height,
         child: const Center(
-          child: CircularProgressIndicator(
-              strokeWidth: 2, color: ColorPick.primary),
+          child: CircleProgress(),
         ),
       );
     }

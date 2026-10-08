@@ -25,9 +25,33 @@ class DepartmentCubit extends Cubit<DepartmentState> {
       .map((d) => {'key': d.nameEn, 'value': d.nameEn})
       .toList();
 
-  Future<void> loadDepartments() async {
+  // ── Duplicate-name guard ──────────────────────────────────────────────────
+
+  /// The existing department that already uses [name] (English OR Arabic),
+  /// or null when the name is free. Case- and whitespace-insensitive.
+  /// [excludeId] skips one department — used when editing, so a department
+  /// never clashes with itself.
+  DepartmentModel? findByName(String name, {String? excludeId}) {
+    final needle = name.trim().toLowerCase();
+    if (needle.isEmpty) return null;
+    for (final d in _allDepartments) {
+      if (excludeId != null && d.id == excludeId) continue;
+      if (d.nameEn.trim().toLowerCase() == needle ||
+          d.nameAr.trim().toLowerCase() == needle) {
+        return d;
+      }
+    }
+    return null;
+  }
+
+  bool nameExists(String name, {String? excludeId}) =>
+      findByName(name, excludeId: excludeId) != null;
+
+  /// [silent]: refresh without the full-page loading state (BUG-46 — the
+  /// loading Scaffold swallowed the "saved" confirmation).
+  Future<void> loadDepartments({bool silent = false}) async {
     try {
-      emit(DepartmentLoading());
+      if (!silent) emit(DepartmentLoading());
       _allDepartments = await _repo.fetchAllDepartments();
       emit(DepartmentLoaded(_allDepartments));
     } catch (e) {
@@ -41,6 +65,15 @@ class DepartmentCubit extends Cubit<DepartmentState> {
     String iconUrl = '',
   }) async {
     try {
+      // Server-side of the same rule the form checks: never create a second
+      // department under a name that is already taken.
+      if (nameExists(nameEn) || nameExists(nameAr)) {
+        emit(DepartmentError(
+          'A department with this name already exists.',
+          lastDepartments: _allDepartments,
+        ));
+        return;
+      }
 
       final dept = DepartmentModel(
         id:        '',
@@ -70,6 +103,15 @@ class DepartmentCubit extends Cubit<DepartmentState> {
     String iconUrl = '',
   }) async {
     try {
+      // Same rule when renaming — but a department may keep its own name.
+      if (nameExists(nameEn, excludeId: id) ||
+          nameExists(nameAr, excludeId: id)) {
+        emit(DepartmentError(
+          'A department with this name already exists.',
+          lastDepartments: _allDepartments,
+        ));
+        return;
+      }
 
       final updated = DepartmentModel(
         id:        id,

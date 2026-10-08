@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import 'package:web_app_admin/core/constant/color.dart';
 import 'package:web_app_admin/core/custom_svg.dart';
 import 'package:web_app_admin/core/widget/custom_dropdwon.dart';
 import 'package:web_app_admin/core/widget/date_pic.dart';
@@ -24,7 +25,7 @@ import '../../features/main/presentation/controller/main_state.dart';
 
 // ── Shared color palette ──────────────────────────────────────────────────────
 class _C {
-  static const Color primary = Color(0xFF008037);
+  static const Color primary = ColorPick.primary;
   static const Color cardBg  = Color(0xFFFFFFFF);
   static const Color label   = Color(0xFF333333);
   static const Color hint    = Color(0xFFAAAAAA);
@@ -37,16 +38,9 @@ Color _cmsHexColor(String hex) {
     final clean = hex.replaceAll('#', '');
     if (clean.length == 6) return Color(int.parse('FF$clean', radix: 16));
   } catch (_) {}
-  return const Color(0xFF008037);
+  return ColorPick.primary;
 }
 
-Color _primaryFromState(MainCmsState state) {
-  return switch (state) {
-    MainCmsLoaded(:final data) => _cmsHexColor(data.branding.primaryColor),
-    MainCmsSaved(:final data)  => _cmsHexColor(data.branding.primaryColor),
-    _                          => const Color(0xFF008037),
-  };
-}
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  DATA MODEL  ─ carries selected filter values back to the caller
@@ -119,13 +113,24 @@ const _kEmpTypes = [
   {'key': 'full_time',  'value': 'Full-Time'},
   {'key': 'part_time',  'value': 'Part-Time'},
 ];
+// BUG-43: the same Experience Levels as the job form (the filter offered
+// year ranges that don't exist on jobs).
 const _kYearsOfExp = [
-  {'key': '0_1',  'value': '0 – 1 year'},
-  {'key': '1_3',  'value': '1 – 3 years'},
-  {'key': '3_5',  'value': '3 – 5 years'},
-  {'key': '5_10', 'value': '5 – 10 years'},
-  {'key': '10+',  'value': '10+ years'},
+  {'key': 'intern',     'value': 'Intern'},
+  {'key': 'junior',     'value': 'Junior'},
+  {'key': 'senior',     'value': 'Senior'},
+  {'key': 'leadership', 'value': 'Leadership'},
 ];
+
+/// BUG-43: readable label for a filter key (chips showed "part_time").
+String jobFilterLabel(String key) {
+  for (final list in [_kDepts, _kLocations, _kEmpTypes, _kYearsOfExp]) {
+    for (final m in list) {
+      if (m['key'] == key) return m['value'] ?? key;
+    }
+  }
+  return key;
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  DIALOG  (private)
@@ -242,7 +247,9 @@ class _JobListingFilterDialogState
   Widget build(BuildContext context) {
     return BlocBuilder<MainCmsCubit, MainCmsState>(
       builder: (context, cmsState) {
-        final Color primary = _primaryFromState(cmsState);
+        // BUG-42: the admin's own red — not the public site's (green) CMS
+        // colour, which made this dialog look like part of another app.
+        final Color primary = ColorPick.primary;
 
         return Dialog(
           backgroundColor: Colors.transparent,
@@ -279,6 +286,13 @@ class _JobListingFilterDialogState
                         fontWeight: FontWeight.w700,
                         color:      _C.label,
                       ),
+                    ),
+                    const Spacer(),
+                    // BUG-42: a visible way to close without applying.
+                    IconButton(
+                      tooltip: 'Close',
+                      icon: Icon(Icons.close_rounded, color: _C.label, size: 22.sp),
+                      onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
                 ),

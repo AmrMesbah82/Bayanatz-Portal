@@ -16,6 +16,9 @@ class _DashboardTab extends StatelessWidget {
   int get _unqualified => applications
       .where((a) => a.status == ApplicationStatus.unqualified)
       .length;
+  /// Still sitting on "Applied" (not yet screened). Kept for readability —
+  /// the funnel's Applied stage counts EVERY application, not just these.
+  // ignore: unused_element
   int get _applied =>
       applications.where((a) => a.status == ApplicationStatus.applied).length;
   int get _interviewPassed => applications
@@ -38,10 +41,44 @@ class _DashboardTab extends StatelessWidget {
       .length;
   int get _hired =>
       applications.where((a) => a.status == ApplicationStatus.hired).length;
-  int get _appliedStage => _applied + _qualified + _unqualified;
-  int get _interviewStage =>
-      _interviewPassed + _interviewFailed + _interviewWithdrew;
-  int get _offerStage => _offerApproved + _offerPending + _offerRejected;
+  // ── Funnel stages: "reached", not "currently sitting on" ──────────────────
+  // An application stores ONE current status. Someone now `hired` is no longer
+  // `offerApproved`, no longer `interviewPassed`, no longer `applied` — so
+  // counting each stage by exact status makes every earlier stage read 0 while
+  // Hired reads 1, which is impossible in a funnel. These helpers count who
+  // reached a stage, including everyone who has since moved past it.
+  static const Set<ApplicationStatus> _interviewStatuses = {
+    ApplicationStatus.interviewPassed,
+    ApplicationStatus.interviewFailed,
+    ApplicationStatus.interviewWithdrew,
+  };
+  static const Set<ApplicationStatus> _offerStatuses = {
+    ApplicationStatus.offerApproved,
+    ApplicationStatus.offerPending,
+    ApplicationStatus.offerRejected,
+  };
+
+  bool _isHired(ApplicationModel a) => a.status == ApplicationStatus.hired;
+
+  /// Got an offer (or was hired, which requires one).
+  bool _reachedOffer(ApplicationModel a) =>
+      _offerStatuses.contains(a.status) || _isHired(a);
+
+  /// Was interviewed (or got past the interview to an offer / hire).
+  bool _reachedInterview(ApplicationModel a) =>
+      _interviewStatuses.contains(a.status) || _reachedOffer(a);
+
+  /// Passed the interview — explicitly, or implicitly by receiving an offer.
+  bool _passedInterview(ApplicationModel a) =>
+      a.status == ApplicationStatus.interviewPassed || _reachedOffer(a);
+
+  /// Approved their offer — explicitly, or implicitly by being hired.
+  bool _approvedOffer(ApplicationModel a) =>
+      a.status == ApplicationStatus.offerApproved || _isHired(a);
+
+  int get _appliedStage => applications.length; // everyone applied
+  int get _interviewStage => applications.where(_reachedInterview).length;
+  int get _offerStage => applications.where(_reachedOffer).length;
 
   Map<int, int> get _appsByMonth {
     final map = <int, int>{};
@@ -91,7 +128,7 @@ class _DashboardTab extends StatelessWidget {
       return Center(
         child: Padding(
           padding: EdgeInsets.all(40.sp),
-          child: const CircularProgressIndicator(color: ColorPick.primary),
+          child: const CircleProgress(),
         ),
       );
     if (applications.isEmpty)
@@ -100,7 +137,7 @@ class _DashboardTab extends StatelessWidget {
           padding: EdgeInsets.all(40.sp),
           child: Text(
             'No applications yet for this job.',
-            style: TextStyle(fontSize: 14.sp, color: AppColors.secondaryText),
+            style: StyleText.fontSize14Weight400.copyWith(fontSize: 14.sp, color: AppColors.secondaryText),
           ),
         ),
       );
@@ -150,9 +187,9 @@ class _DashboardTab extends StatelessWidget {
     ];
     final byMonth = _appsByMonth;
     final values = List.generate(12, (i) => (byMonth[i + 1] ?? 0).toDouble());
-    final maxY =
-    ((values.isEmpty ? 10.0 : values.reduce((a, b) => a > b ? a : b)) + 10)
-        .toDouble();
+    // Same nice axis scale as careers_charts.dart — small steps (0, 2, 4…).
+    final maxY = _niceMax(values);
+    final interval = _niceInterval(maxY);
     return _card(
       title: 'Applications Received',
       subtitle: 'Total: ${_fmtNum(_total)}',
@@ -184,10 +221,10 @@ class _DashboardTab extends StatelessWidget {
                 sideTitles: SideTitles(
                   showTitles: true,
                   reservedSize: 35.sp,
-                  interval: maxY > 50 ? (maxY / 5).ceilToDouble() : 10,
+                  interval: interval,
                   getTitlesWidget: (v, _) => Text(
                     v.toInt().toString(),
-                    style: TextStyle(fontSize: 9.sp, color: Colors.grey),
+                    style: StyleText.fontSize14Weight400.copyWith(fontSize: 9.sp, color: Colors.grey.shade800),
                   ),
                 ),
               ),
@@ -200,9 +237,9 @@ class _DashboardTab extends StatelessWidget {
                     return i >= 0 && i < 12
                         ? Text(
                       labels[i],
-                      style: TextStyle(
+                      style: StyleText.fontSize8Weight400.copyWith(
                         fontSize: 8.sp,
-                        color: Colors.grey,
+                        color: Colors.grey.shade800,
                       ),
                     )
                         : const SizedBox.shrink();
@@ -218,7 +255,7 @@ class _DashboardTab extends StatelessWidget {
             gridData: FlGridData(
               show: true,
               drawVerticalLine: false,
-              horizontalInterval: maxY > 50 ? (maxY / 5).ceilToDouble() : 10,
+              horizontalInterval: interval,
               getDrawingHorizontalLine: (_) =>
               const FlLine(color: Color(0xFFEFF3F9), strokeWidth: 1),
             ),
@@ -231,7 +268,7 @@ class _DashboardTab extends StatelessWidget {
                 tooltipBorder: BorderSide.none,
                 getTooltipItem: (group, _, rod, __) => BarTooltipItem(
                   rod.toY.toInt().toString(),
-                  TextStyle(
+                  StyleText.fontSize14Weight400.copyWith(
                     fontSize: 9.sp,
                     fontWeight: FontWeight.w600,
                     color: _Ch.darkGreen,
@@ -310,11 +347,11 @@ class _DashboardTab extends StatelessWidget {
                       Text(
                         'Total\nApplication',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 9.sp, color: Colors.black54),
+                        style: StyleText.fontSize14Weight400.copyWith(fontSize: 9.sp, color: Colors.black87),
                       ),
                       Text(
                         _fmtNum(_total),
-                        style: TextStyle(
+                        style: StyleText.fontSize16Weight700.copyWith(
                           fontSize: 16.sp,
                           fontWeight: FontWeight.w700,
                           color: Colors.black,
@@ -337,11 +374,11 @@ class _DashboardTab extends StatelessWidget {
     final rejected = _unqualified + _interviewFailed + _offerRejected + _interviewWithdrew;
 
     final stages = [
-      _FunnelItem('Applied', _appliedStage, _Ch.darkGreen),
-      _FunnelItem('Interviewed', _interviewStage, const Color(0xFF2E7D32)),
-      _FunnelItem('Rejected', rejected, _Ch.lightGreen),
-      _FunnelItem('Offer Sent', _offerStage, const Color(0xFF4CAF50)),
-      _FunnelItem('Hired', _hired, const Color(0xFFA5D6A7)),
+      _FunnelItem('Applied', _appliedStage, ColorPick.primary),
+      _FunnelItem('Interviewed', _interviewStage, ColorPick.primary.withValues(alpha: 0.8)),
+      _FunnelItem('Rejected', rejected, ColorPick.primary.withValues(alpha: 0.6)),
+      _FunnelItem('Offer Sent', _offerStage, ColorPick.primary.withValues(alpha: 0.4)),
+      _FunnelItem('Hired', _hired, ColorPick.primary.withValues(alpha: 0.2)),
     ];
 
     final maxVal = stages
@@ -379,9 +416,9 @@ class _DashboardTab extends StatelessWidget {
                         Expanded(
                           child: Text(
                             s.label,
-                            style: TextStyle(
+                            style: StyleText.fontSize10Weight400.copyWith(
                               fontSize: 10.sp,
-                              color: Colors.black54,
+                              color: Colors.black87,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -429,7 +466,7 @@ class _DashboardTab extends StatelessWidget {
                             child: Center(
                               child: Text(
                                 _fmtNum(stages[i].value),
-                                style: TextStyle(
+                                style: StyleText.fontSize11Weight600.copyWith(
                                   fontSize: 11.sp,
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
@@ -451,10 +488,12 @@ class _DashboardTab extends StatelessWidget {
   }
 
   Widget _buildInterviewStage() {
-    final passed = _interviewPassed;
+    // "Passed" includes everyone who moved on to an offer or a hire — they
+    // cannot have reached those stages without passing the interview.
+    final passed = applications.where(_passedInterview).length;
     final failed = _interviewFailed;
     final withdrew = _interviewWithdrew;
-    final total = passed + failed + withdrew;
+    final total = passed + failed + withdrew; // = everyone who was interviewed
     final pPct = total > 0 ? (passed / total * 100).round() : 0;
     final fPct = total > 0 ? (failed / total * 100).round() : 0;
     final wPct = total > 0 ? 100 - pPct - fPct : 0;
@@ -514,12 +553,15 @@ class _DashboardTab extends StatelessWidget {
   }
 
   Widget _buildJobOffer() {
+    // A hired candidate approved their offer — their status simply moved on.
+    final approved = applications.where(_approvedOffer).length;
     final items = [
-      _PieItem('Approved', _offerApproved.toDouble(), _Ch.green),
-      _PieItem('Pending', _offerPending.toDouble(), _Ch.yellow),
+      _PieItem('Approved', approved.toDouble(), ColorPick.activeColor),
+      // Pending = orange (yellow read as another shade of the same state).
+      _PieItem('Pending', _offerPending.toDouble(), _Ch.orange),
       _PieItem('Rejected', _offerRejected.toDouble(), _Ch.red),
     ];
-    final sum = _offerApproved + _offerPending + _offerRejected;
+    final sum = approved + _offerPending + _offerRejected;
     return _card(
       title: 'Job Offer',
       height: 280,
@@ -549,7 +591,7 @@ class _DashboardTab extends StatelessWidget {
                         Expanded(
                           child: Text(
                             item.label,
-                            style: TextStyle(
+                            style: StyleText.fontSize11Weight400.copyWith(
                               fontSize: 11.sp,
                               color: Colors.black87,
                             ),
@@ -557,7 +599,7 @@ class _DashboardTab extends StatelessWidget {
                         ),
                         Text(
                           _fmtNum(item.value.toInt()),
-                          style: TextStyle(
+                          style: StyleText.fontSize11Weight600.copyWith(
                             fontSize: 11.sp,
                             fontWeight: FontWeight.w600,
                             color: Colors.black87,
@@ -597,7 +639,7 @@ class _DashboardTab extends StatelessWidget {
                     children: [
                       Text(
                         _fmtNum(sum),
-                        style: TextStyle(
+                        style: StyleText.fontSize16Weight700.copyWith(
                           fontSize: 16.sp,
                           fontWeight: FontWeight.w700,
                           color: Colors.black,
@@ -605,9 +647,9 @@ class _DashboardTab extends StatelessWidget {
                       ),
                       Text(
                         'Total',
-                        style: TextStyle(
+                        style: StyleText.fontSize10Weight400.copyWith(
                           fontSize: 10.sp,
-                          color: Colors.black54,
+                          color: Colors.black87,
                         ),
                       ),
                     ],
@@ -656,14 +698,14 @@ class _DashboardTab extends StatelessWidget {
                     SizedBox(height: 4.sp),
                     Text(
                       s.label,
-                      style: TextStyle(
+                      style: StyleText.fontSize14Weight400.copyWith(
                         fontSize: 9.sp,
-                        color: Colors.black54,
+                        color: Colors.black87,
                       ),
                     ),
                     Text(
                       _fmtNum(s.value),
-                      style: TextStyle(
+                      style: StyleText.fontSize10Weight700.copyWith(
                         fontSize: 10.sp,
                         fontWeight: FontWeight.w600,
                         color: Colors.black87,
@@ -722,7 +764,7 @@ class _DashboardTab extends StatelessWidget {
         children: [
           Text(
             title,
-            style: TextStyle(
+            style: StyleText.fontSize13Weight600.copyWith(
               fontSize: 13.sp,
               fontWeight: FontWeight.w700,
               color: const Color(0xFF333333),
@@ -732,7 +774,7 @@ class _DashboardTab extends StatelessWidget {
             SizedBox(height: 2.h),
             Text(
               subtitle,
-              style: TextStyle(fontSize: 11.sp, color: Colors.black45),
+              style: StyleText.fontSize11Weight400.copyWith(fontSize: 11.sp, color: Colors.black87),
             ),
           ],
           SizedBox(height: 10.h),
@@ -755,7 +797,7 @@ class _DashboardTab extends StatelessWidget {
         children: [
           Text(
             percent,
-            style: TextStyle(
+            style: StyleText.fontSize14Weight700.copyWith(
               fontSize: 14.sp,
               fontWeight: FontWeight.w700,
               color: Colors.black,
@@ -763,12 +805,37 @@ class _DashboardTab extends StatelessWidget {
           ),
           Text(
             label,
-            style: TextStyle(fontSize: 11.sp, color: Colors.black54),
+            style: StyleText.fontSize11Weight400.copyWith(fontSize: 11.sp, color: Colors.black87),
           ),
         ],
       ),
     ],
   );
+
+  // ── Nice axis scale — same as careers_charts.dart ──────────────────────────
+  double _niceMax(List<double> values) {
+    if (values.isEmpty) return 10;
+    final dataMax = values.reduce((a, b) => a > b ? a : b);
+    if (dataMax == 0) return 10;
+    final intMax = dataMax.ceil();
+    if (intMax <= 10) return 10;
+    if (intMax <= 20) return 20;
+    if (intMax <= 50) return ((intMax / 10).ceil() * 10).toDouble();
+    if (intMax <= 100) return ((intMax / 20).ceil() * 20).toDouble();
+    if (intMax <= 500) return ((intMax / 50).ceil() * 50).toDouble();
+    return ((intMax / 100).ceil() * 100).toDouble();
+  }
+
+  double _niceInterval(double maxY) {
+    if (maxY <= 5)   return 1;
+    if (maxY <= 10)  return 2;
+    if (maxY <= 20)  return 5;
+    if (maxY <= 50)  return 10;
+    if (maxY <= 100) return 20;
+    if (maxY <= 200) return 50;
+    if (maxY <= 500) return 100;
+    return (maxY / 5).ceilToDouble();
+  }
 
   String _fmtNum(int n) {
     final s = n.toString();

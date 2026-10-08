@@ -35,15 +35,33 @@ extension _HomeMainBuilders on _HomeMainPageMasterState {
     ),
   );
 
-  Widget _body(HomePageModel data) {
-    final primary = context.primaryBrandColor;
+  // ── Slot helpers ──────────────────────────────────────────────────────────
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final targetIndex = _statusIndexFromModel(data.publishStatus);
-      if (_tabController.index != targetIndex && !_tabController.indexIsChanging) {
-        _tabController.animateTo(targetIndex);
-      }
-    });
+  String _slotLabel(HomeVersionSlot slot) => switch (slot) {
+        HomeVersionSlot.published => 'Published',
+        HomeVersionSlot.scheduled => 'Scheduled',
+        HomeVersionSlot.draft     => 'Draft',
+      };
+
+  HomePageModel? _slotModel(HomeCmsCubit cubit, HomeVersionSlot slot) =>
+      switch (slot) {
+        HomeVersionSlot.published => cubit.publishedModel,
+        HomeVersionSlot.scheduled => cubit.scheduledModel,
+        HomeVersionSlot.draft     => cubit.draftModel,
+      };
+
+  // ── Page body ─────────────────────────────────────────────────────────────
+
+  Widget _body(HomeCmsCubit cubit, List<HomeVersionSlot> slots) {
+    final HomePageModel? active = _slotModel(cubit, _activeSlot);
+
+    // Published always exists as a tab, but the document may still be empty on
+    // a brand-new site.
+    final HomePageModel data = active ?? cubit.current;
+
+    // Only a scheduled release or a draft can be thrown away. The live page
+    // is never removable from here.
+    final bool canRemove = _activeSlot != HomeVersionSlot.published;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -52,6 +70,37 @@ extension _HomeMainBuilders on _HomeMainPageMasterState {
           children: [
             Text('Home', style: StyleText.fontSize45Weight600.copyWith(color: ColorPick.primary, fontWeight: FontWeight.w700)),
             const Spacer(),
+
+            // ── Remove this version ───────────────────────────────────────
+            if (canRemove) ...[
+              GestureDetector(
+                onTap: () => _confirmRemove(cubit, _activeSlot),
+                child: Container(
+                  height: 36.h,
+                  padding: EdgeInsets.symmetric(horizontal: 14.w),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6.r),
+                    border: Border.all(color: const Color(0xFFE53935)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.delete_outline,
+                          size: 18.sp, color: const Color(0xFFE53935)),
+                      SizedBox(width: 6.w),
+                      Text(
+                        'Remove ${_slotLabel(_activeSlot)}',
+                        style: StyleText.fontSize14Weight500
+                            .copyWith(color: const Color(0xFFE53935)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(width: 12.w),
+            ],
+
             GestureDetector(
               onTap: () => navigateTo(context, HomePreviewPageMaster()),
               child: Container(
@@ -64,32 +113,40 @@ extension _HomeMainBuilders on _HomeMainPageMasterState {
           ],
         ),
         SizedBox(height: 14.h),
-        Container(
+
+        // ── Status tabs — only the versions that actually exist ────────────
+        SizedBox(
           height: 40.h,
           child: Row(
-            children: List.generate(_statusLabels.length, (i) {
-              final isActive = _tabController.index == i;
+            children: slots.map((slot) {
+              final isActive = _activeSlot == slot;
               return Padding(
                 padding: EdgeInsets.only(right: 24.w),
                 child: GestureDetector(
-                  onTap: () { _tabController.animateTo(i); setState(() {}); },
-                  child: IntrinsicWidth(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Padding(
-                      padding: EdgeInsets.only(bottom: 0.h),
-                      child: Text(_statusLabels[i], style: TextStyle(
-                        fontSize: 16.sp,
-                        fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                        color: isActive ? ColorPick.primary : AppColors.secondaryText,
-                      )),
+                  onTap: () => setState(() => _activeSlot = slot),
+                  child: IntrinsicWidth(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _slotLabel(slot),
+                          style: TextStyle(
+                            fontSize: 16.sp,
+                            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                            color: isActive ? ColorPick.primary : AppColors.secondaryText,
+                          ),
+                        ),
+                        Container(height: 2, color: isActive ? ColorPick.primary : Colors.transparent),
+                      ],
                     ),
-                    Container(height: 2, color: isActive ? ColorPick.primary : Colors.transparent),
-                  ])),
+                  ),
                 ),
               );
-            }),
+            }).toList(),
           ),
         ),
         SizedBox(height: 12.h),
+
         Row(
           children: [
             Container(
@@ -102,7 +159,12 @@ extension _HomeMainBuilders on _HomeMainPageMasterState {
             ),
             const Spacer(),
             GestureDetector(
-              onTap: () => navigateTo(context, HomeEditPageMaster()),
+              onTap: () {
+                // Open the editor on the version being viewed, so editing the
+                // draft edits the draft — not whatever loaded first.
+                cubit.editSlot(_activeSlot);
+                navigateTo(context, HomeEditPageMaster());
+              },
               child: Container(
                 width: 130.w, height: 36.h,
                 decoration: BoxDecoration(color: ColorPick.white, borderRadius: BorderRadius.circular(4.r)),
@@ -117,29 +179,14 @@ extension _HomeMainBuilders on _HomeMainPageMasterState {
           ],
         ),
         SizedBox(height: 16.h),
+
         SizedBox(
           height: 900.h,
-          child: TabBarView(
-            controller: _tabController,
-            children: [
-              _buildStatusContent(data, 'published'),
-              _buildStatusContent(data, 'scheduled'),
-              _buildStatusContent(data, 'draft'),
-            ],
-          ),
+          child: _buildSlotContent(active, _activeSlot),
         ),
         SizedBox(height: 40.h),
       ],
     );
-  }
-
-  int _statusIndexFromModel(String status) {
-    switch (status) {
-      case 'published': return 0;
-      case 'scheduled': return 1;
-      case 'draft':     return 2;
-      default:          return 0;
-    }
   }
 
   String _buildLastUpdatedText(HomePageModel data) {
@@ -180,45 +227,34 @@ extension _HomeMainBuilders on _HomeMainPageMasterState {
     );
   }
 
-  Widget _buildStatusContent(HomePageModel data, String targetStatus) {
-    final isCurrentStatus = data.publishStatus == targetStatus;
-
-    if (!isCurrentStatus) {
-      String message, subMessage;
-      IconData icon;
-      switch (targetStatus) {
-        case 'published':
-          message = 'No published version yet';
-          subMessage = 'Click "Edit Details" → "Publish" to publish your home page.';
-          icon = Icons.public;
-          break;
-        case 'scheduled':
-          message = 'No scheduled version';
-          subMessage = 'Set a publish date in the editor and click "Schedule" to schedule.';
-          icon = Icons.schedule;
-          break;
-        case 'draft':
-        default:
-          message = 'No draft saved';
-          subMessage = 'Click "Edit Details" → "Save For Later" to save a draft.';
-          icon = Icons.drafts_outlined;
-          break;
-      }
-      return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(icon, size: 48.sp, color: AppColors.secondaryText),
-        SizedBox(height: 16.h),
-        Text(message, style: StyleText.fontSize16Weight600.copyWith(color: AppColors.text)),
-        SizedBox(height: 8.h),
-        Text(subMessage, style: StyleText.fontSize12Weight400.copyWith(color: AppColors.secondaryText),
-            textAlign: TextAlign.center),
-      ]));
+  /// Renders one stored version. [data] is null only for the Published tab on
+  /// a site that has never been published — the other tabs only exist when
+  /// their document does.
+  Widget _buildSlotContent(HomePageModel? data, HomeVersionSlot slot) {
+    if (data == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.public, size: 48.sp, color: AppColors.secondaryText),
+            SizedBox(height: 16.h),
+            Text('No published version yet',
+                style: StyleText.fontSize16Weight600.copyWith(color: AppColors.text)),
+            SizedBox(height: 8.h),
+            Text('Click "Edit Details" → "Publish" to publish your home page.',
+                style: StyleText.fontSize12Weight400.copyWith(color: AppColors.secondaryText),
+                textAlign: TextAlign.center),
+          ],
+        ),
+      );
     }
 
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (targetStatus == 'scheduled' && data.scheduledPublishDate != null) ...[
+          if (slot == HomeVersionSlot.scheduled &&
+              data.scheduledPublishDate != null) ...[
             Container(
               width: double.infinity,
               padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
@@ -230,15 +266,40 @@ extension _HomeMainBuilders on _HomeMainPageMasterState {
               child: Row(children: [
                 Icon(Icons.schedule, color: ColorPick.scheduled, size: 18.sp),
                 SizedBox(width: 8.w),
-                Text(
-                  'Scheduled to publish on ${data.scheduledPublishDate!.day}/${data.scheduledPublishDate!.month}/${data.scheduledPublishDate!.year}',
-                  style: StyleText.fontSize13Weight500.copyWith(color: ColorPick.scheduled),
+                Expanded(
+                  child: Text(
+                    'Scheduled to publish on ${data.scheduledPublishDate!.day}/${data.scheduledPublishDate!.month}/${data.scheduledPublishDate!.year}'
+                    ' — the published version stays live until then.',
+                    style: StyleText.fontSize13Weight500.copyWith(color: ColorPick.scheduled),
+                  ),
                 ),
               ]),
             ),
             SizedBox(height: 12.h),
           ],
 
+          if (slot == HomeVersionSlot.draft) ...[
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(6.r),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Row(children: [
+                Icon(Icons.drafts_outlined, color: Colors.grey.shade700, size: 18.sp),
+                SizedBox(width: 8.w),
+                Expanded(
+                  child: Text(
+                    'Unpublished draft — the published version stays live until you publish it.',
+                    style: StyleText.fontSize13Weight500.copyWith(color: Colors.grey.shade700),
+                  ),
+                ),
+              ]),
+            ),
+            SizedBox(height: 12.h),
+          ],
 
           _accordion(key: 'headings', title: 'Headings', children: [
             SizedBox(height: 15.h), _headingsReadOnly(data),

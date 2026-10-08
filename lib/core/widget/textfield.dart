@@ -52,6 +52,10 @@ class CustomValidatedTextFieldMaster extends StatelessWidget {
   final int minLength;
   final String? Function(String?)? validator;
 
+  /// Overrides the label style so a screen can match its other field titles.
+  /// Defaults to the legacy 14sp / w500 style.
+  final TextStyle? labelStyle;
+
   const CustomValidatedTextFieldMaster({
     super.key,
     this.label,
@@ -76,6 +80,7 @@ class CustomValidatedTextFieldMaster extends StatelessWidget {
     this.isRequired = false,
     this.minLength = 0,
     this.validator,
+    this.labelStyle,
   });
 
   @override
@@ -84,7 +89,7 @@ class CustomValidatedTextFieldMaster extends StatelessWidget {
     final bool isMultiline = maxLines > 1;
 
     final Color resolvedFill = fillColor ??
-        (lightMode ? const Color(0xFFF1F2ED) : AppColors.background);
+        AppColors.card;
 
     final EdgeInsetsGeometry contentPadding = isMultiline
         ? EdgeInsets.symmetric(vertical: 12.h, horizontal: 12.w)
@@ -96,9 +101,10 @@ class CustomValidatedTextFieldMaster extends StatelessWidget {
     final Widget labelText = Text(
       label ?? '',
       textDirection: textDirection,
-      style: StyleText.fontSize12Weight600.copyWith(
-        color: const Color(0xFF1A1A1A),
-      ),
+      style: labelStyle ??
+          StyleText.fontSize14Weight500.copyWith(
+            color: AppColors.text,
+          ),
     );
 
     final field = custom.CustomTextField(
@@ -117,7 +123,7 @@ class CustomValidatedTextFieldMaster extends StatelessWidget {
       keyboardType: onlyDigits ? TextInputType.number : TextInputType.text,
       onChanged: onChanged,
       fillColor: resolvedFill,
-      contentPadding: contentPadding,
+      // contentPadding: contentPadding,
       valueStyle: textStyle ??
           StyleText.fontSize12Weight400.copyWith(color: AppColors.text),
       hintStyle: hintStyle ??
@@ -143,9 +149,10 @@ class CustomValidatedTextFieldMaster extends StatelessWidget {
                         label!,
                         textDirection: textDirection,
                         overflow: TextOverflow.ellipsis,
-                        style: StyleText.fontSize12Weight600.copyWith(
-                          color: const Color(0xFF1A1A1A),
-                        ),
+                        style: labelStyle ??
+                            StyleText.fontSize14Weight600.copyWith(
+                              color: const Color(0xFF1A1A1A),
+                            ),
                       ),
                     ),
                     labelTrailing!,

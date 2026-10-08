@@ -136,37 +136,11 @@ extension _AboutEditBuilders on _AboutEditPageMasterState {
     required VoidCallback onToggle,
     required Widget child,
   }) {
-    return Column(
-      children: [
-        GestureDetector(
-          onTap: onToggle,
-          child: Container(
-            width: double.infinity,
-            padding:
-                EdgeInsets.symmetric(horizontal: 15.w, vertical: 14.h),
-            decoration: BoxDecoration(
-              color: ColorPick.primary,
-              borderRadius: BorderRadius.circular(6.r),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(title,
-                    style: StyleText.fontSize16Weight400
-                        .copyWith(color: Colors.white)),
-                Icon(
-                  isOpen
-                      ? Icons.keyboard_arrow_up
-                      : Icons.keyboard_arrow_down,
-                  color: Colors.white,
-                  size: 26.sp,
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (isOpen) child,
-      ],
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: onToggle,
+      child:    child,
     );
   }
 
@@ -376,16 +350,26 @@ extension _AboutEditBuilders on _AboutEditPageMasterState {
         padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 6.h),
         decoration: BoxDecoration(
           color: const Color(0xFF797979),
-          borderRadius: BorderRadius.circular(8.r),
+          // 4.r — the app's button radius. This one was 8.r and read as a
+          // different, rounder button than the identical "add" chips elsewhere.
+          borderRadius: BorderRadius.circular(4.r),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.add, color: Colors.white, size: 16.sp),
+            // The app's own plus asset, not the Material glyph — same icon the
+            // Bullet Point / Paragraph / Numbering chips use.
+            CustomSvg(
+              assetPath: 'assets/plus.svg',
+              width:  14.w,
+              height: 14.w,
+              fit:    BoxFit.scaleDown,
+              color:  Colors.white,
+            ),
             SizedBox(width: 6.w),
             Text(
               'Add Value',
-              style: StyleText.fontSize13Weight600.copyWith(color: Colors.white),
+              style: StyleText.label.copyWith(color: Colors.white),
             ),
           ],
         ),
@@ -429,11 +413,11 @@ extension _AboutEditBuilders on _AboutEditPageMasterState {
                     ),
                     decoration: BoxDecoration(
                       color: Colors.red,
-                      borderRadius: BorderRadius.circular(6.r),
+                      borderRadius: BorderRadius.circular(4.r),
                     ),
                     child: Text(
                       'Remove',
-                      style: StyleText.fontSize12Weight600
+                      style: StyleText.removeButton
                           .copyWith(color: Colors.white),
                     ),
                   ),
@@ -504,64 +488,15 @@ extension _AboutEditBuilders on _AboutEditPageMasterState {
   Widget _actionButtons() {
     final bool formValid = _isFormValid;
 
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _btn(
-                label: 'Preview',
-                color: formValid
-                    ? const Color(0xFF608570)
-                    : const Color(0xFF608570).withValues(alpha: 0.4),
-                onTap: formValid ? _onPreview : null,
-              ),
-            ),
-            SizedBox(width: 400.w),
-            Expanded(
-              child: _btn(
-                label: 'Publish',
-                color: formValid
-                    ? ColorPick.primary
-                    : ColorPick.primary.withValues(alpha: 0.4),
-                onTap: formValid ? () => _showPublishConfirmDialog() : null,
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: 12.h),
-        Row(
-          children: [
-            Expanded(
-              child: _btn(
-                label: 'Discard',
-                color: const Color(0xFF797979),
-                onTap: () {
-                  showConfirmDialog(
-                    context: context,
-                    title: 'Discard Changes',
-                    subtitle:
-                        'Are you sure you want to discard all changes?',
-                    confirmLabel: 'Discard',
-                    cancelLabel: 'Cancel',
-                    onConfirm: () => Navigator.of(context).pop(),
-                  );
-                },
-              ),
-            ),
-            SizedBox(width: 400.w),
-            Expanded(
-              child: _btn(
-                label: 'Save For Later',
-                color: formValid
-                    ? Colors.grey.shade600
-                    : Colors.grey.shade600.withValues(alpha: 0.4),
-                onTap: formValid ? () => _showSaveDraftDialog() : null,
-              ),
-            ),
-          ],
-        ),
-      ],
+    // Shared action buttons — style lives in core/main_widgets/edit_action_buttons.dart
+    return EditActionButtons(
+      publishEnabled: formValid,
+      onPreview:      formValid ? _onPreview : null,
+      onPublish:      () => _showPublishConfirmDialog(),
+      onSaveForLater: () { if (formValid) _showSaveDraftDialog(); },
+      onDiscard: () {
+        confirmDiscard(context, onDiscard: () => Navigator.of(context).pop());
+      },
     );
   }
 

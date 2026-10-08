@@ -20,6 +20,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:web_app_admin/core/widget/network_image_view.dart';
 import '../../../../../core/constant/color.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -27,6 +28,7 @@ import '../../../../../core/two_tab.dart';
 import '../../../data/models/careers_section_model.dart';
 import '../../controller/careers_section_cubit.dart';
 import '../../controller/careers_section_state.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/why_join_preview/desktop_frame.dart';
 part '../widgets/why_join_preview/tablet_frame.dart';
@@ -136,7 +138,7 @@ class _CareersSectionPreviewPageState
           return const Scaffold(
             backgroundColor: ColorPick.white,
             body: Center(
-                child: CircularProgressIndicator(color: ColorPick.primary)),
+                child: CircleProgress()),
           );
         }
 
@@ -146,17 +148,12 @@ class _CareersSectionPreviewPageState
 
         return Scaffold(
           backgroundColor: ColorPick.white,
-          body: SingleChildScrollView(
-            child: Center(
-              child: SizedBox(
-                width: 1000.w,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+          body: AdminStickyBody(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  contentWidth: 1000.w,
+  children: [
                     SizedBox(height: 20.h),
                     AdminSubNavBar(activeIndex: 5),
-                    SizedBox(height: 16.h),
-
                     // ── Page title ─────────────────────────────────────────
                     Text(
                       'Preview ${widget.sectionTitle} Details',
@@ -246,9 +243,7 @@ class _CareersSectionPreviewPageState
                                     ? SizedBox(
                                   width:  18.w,
                                   height: 18.h,
-                                  child: const CircularProgressIndicator(
-                                      color:       Colors.white,
-                                      strokeWidth: 2),
+                                  child: const CircleProgress(),
                                 )
                                     : Text(
                                   'Save',
@@ -263,10 +258,7 @@ class _CareersSectionPreviewPageState
                     ),
                     SizedBox(height: 40.h),
                   ],
-                ),
-              ),
-            ),
-          ),
+),
         );
       },
     );

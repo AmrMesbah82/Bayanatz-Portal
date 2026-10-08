@@ -15,6 +15,7 @@ class ApplicationModel {
   static const String CULTURE_FIT = 'cultureFit';
   static const String CURRENCY = 'currency';
   static const String DEPARTMENT = 'department';
+  static const String DOCUMENTS = 'documents';
   static const String EMAIL = 'email';
   static const String EMPLOYMENT_DURATION = 'employmentDuration';
   static const String EMPLOYMENT_TYPE = 'employmentType';
@@ -42,6 +43,7 @@ class ApplicationModel {
   static const String UNQUALIFIED = 'unqualified';
   static const String WORK_TYPE = 'workType';
   static const String YEAR_OF_GRADUATION = 'yearOfGraduation';
+  static const String GENDER = 'gender'; // BUG-85
 
   final String id;
   final String jobId;
@@ -55,12 +57,18 @@ class ApplicationModel {
   final String phone;
   final String countryCode;
   final String yearOfGraduation;
+  /// BUG-85: 'Male' / 'Female' / '' (not answered) — from the Apply form.
+  final String gender;
 
   // Profile / Documents
   final String resumeUrl;
   final String resumeName;
   final String coverLetterUrl;
   final String coverLetterName;
+
+  /// Dynamic documents array written by the apply form:
+  /// [{name, docType (PDF|Link), url, fileName}]
+  final List<ApplicationDocument> documents;
 
   // Status
   final ApplicationStatus status;
@@ -100,10 +108,12 @@ class ApplicationModel {
     this.phone = '',
     this.countryCode = '+234',
     this.yearOfGraduation = '',
+    this.gender = '',
     this.resumeUrl = '',
     this.resumeName = '',
     this.coverLetterUrl = '',
     this.coverLetterName = '',
+    this.documents = const [],
     this.status = ApplicationStatus.applied,
     this.tag = '',
     this.technicalSkills = 0,
@@ -141,10 +151,15 @@ class ApplicationModel {
       phone: map[PHONE] as String? ?? '',
       countryCode: map[COUNTRY_CODE] as String? ?? '+234',
       yearOfGraduation: map[YEAR_OF_GRADUATION] as String? ?? '',
+      gender: map[GENDER] as String? ?? '',
       resumeUrl: map[RESUME_URL] as String? ?? '',
       resumeName: map[RESUME_NAME] as String? ?? '',
       coverLetterUrl: map[COVER_LETTER_URL] as String? ?? '',
       coverLetterName: map[COVER_LETTER_NAME] as String? ?? '',
+      documents: ((map[DOCUMENTS] as List<dynamic>?) ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map((d) => ApplicationDocument.fromMap(d))
+          .toList(),
       status: ApplicationStatusExt.fromString(map[STATUS] as String? ?? 'Applied'),
       tag: map[TAG] as String? ?? '',
       technicalSkills: map[TECHNICAL_SKILLS] as int? ?? 0,
@@ -185,10 +200,12 @@ class ApplicationModel {
     PHONE: phone,
     COUNTRY_CODE: countryCode,
     YEAR_OF_GRADUATION: yearOfGraduation,
+    GENDER: gender,
     RESUME_URL: resumeUrl,
     RESUME_NAME: resumeName,
     COVER_LETTER_URL: coverLetterUrl,
     COVER_LETTER_NAME: coverLetterName,
+    DOCUMENTS: documents.map((d) => d.toMap()).toList(),
     STATUS: status.label,
     TAG: tag,
     TECHNICAL_SKILLS: technicalSkills,
@@ -223,10 +240,12 @@ class ApplicationModel {
     String? phone,
     String? countryCode,
     String? yearOfGraduation,
+    String? gender,
     String? resumeUrl,
     String? resumeName,
     String? coverLetterUrl,
     String? coverLetterName,
+    List<ApplicationDocument>? documents,
     ApplicationStatus? status,
     String? tag,
     int? technicalSkills,
@@ -260,10 +279,12 @@ class ApplicationModel {
         phone: phone ?? this.phone,
         countryCode: countryCode ?? this.countryCode,
         yearOfGraduation: yearOfGraduation ?? this.yearOfGraduation,
+        gender: gender ?? this.gender,
         resumeUrl: resumeUrl ?? this.resumeUrl,
         resumeName: resumeName ?? this.resumeName,
         coverLetterUrl: coverLetterUrl ?? this.coverLetterUrl,
         coverLetterName: coverLetterName ?? this.coverLetterName,
+        documents: documents ?? this.documents,
         status: status ?? this.status,
         tag: tag ?? this.tag,
         technicalSkills: technicalSkills ?? this.technicalSkills,
@@ -286,6 +307,37 @@ class ApplicationModel {
         requiredQualification: requiredQualification ?? this.requiredQualification,
         requiredSkills: requiredSkills ?? this.requiredSkills,
       );
+}
+
+// ── Application Document (from the dynamic apply form) ───────────────────────
+
+class ApplicationDocument {
+  final String name;     // e.g. "Resume", "Portfolio"
+  final String docType;  // "PDF" or "Link"
+  final String url;
+  final String fileName;
+
+  const ApplicationDocument({
+    this.name = '',
+    this.docType = 'PDF',
+    this.url = '',
+    this.fileName = '',
+  });
+
+  factory ApplicationDocument.fromMap(Map<String, dynamic> map) =>
+      ApplicationDocument(
+        name: map['name'] as String? ?? '',
+        docType: map['docType'] as String? ?? 'PDF',
+        url: map['url'] as String? ?? '',
+        fileName: map['fileName'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toMap() => {
+        'name': name,
+        'docType': docType,
+        'url': url,
+        'fileName': fileName,
+      };
 }
 
 // ── Status Enum ──────────────────────────────────────────────────────────────

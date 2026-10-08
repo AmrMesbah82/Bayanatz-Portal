@@ -21,9 +21,7 @@ class _DepartmentCardState extends State<_DepartmentCard> {
   @override
   Widget build(BuildContext context) {
     final deptJobs = widget.allJobs
-        .where((j) =>
-    j.department.toLowerCase() ==
-        widget.department.nameEn.toLowerCase())
+        .where((j) => widget.department.matchesJob(j.department))
         .toList();
 
     final totalCount    = deptJobs.length;
@@ -69,29 +67,24 @@ class _DepartmentCardState extends State<_DepartmentCard> {
                     // ── Company logo ──
                     BlocBuilder<MainCmsCubit, MainCmsState>(
                       builder: (context, state) {
-                        final String logoUrl = switch (state) {
-                          MainCmsLoaded(:final data) => data.branding.logoUrl,
-                          MainCmsSaved(:final data)  => data.branding.logoUrl,
-                          _                          => '',
-                        };
-                        return Container(
-                          width:  30.sp,
-                          height: 30.sp,
-                          decoration: BoxDecoration(
-                            color:        const Color(0xFFF0F0F0),
-                            borderRadius: BorderRadius.circular(8.r),
-                          ),
+                        // BUG-86: the department's own image first.
+                        // No department image → the admin header logo.
+                        final String logoUrl = widget.department.iconUrl;
+                        final double sz = 36.sp;
+                        return SizedBox(
+                          width: sz,
+                          height: sz,
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8.r),
                             child: logoUrl.isNotEmpty
                                 ? NetworkImageView(
                               url:    logoUrl,
-                              width:  30.sp,
-                              height: 30.sp,
-                              fit:    BoxFit.fill,
+                              width:  sz,
+                              height: sz,
+                              fit:    BoxFit.cover,
                             )
-                                : Icon(Icons.business_rounded,
-                                size:  18.sp, color: ColorPick.primary),
+                                : Image.asset('assets/images/login/logo.png',
+                                width: sz, height: sz, fit: BoxFit.contain),
                           ),
                         );
                       },
@@ -101,7 +94,7 @@ class _DepartmentCardState extends State<_DepartmentCard> {
                       child: Text(
                         widget.department.nameEn.isEmpty
                             ? 'Department Name'
-                            : widget.department.nameEn,
+                            : FormatHelper.capitalize(widget.department.nameEn),
                         style: TextStyle(
                           fontSize:   15.sp,
                           fontWeight: FontWeight.w700,
@@ -111,9 +104,7 @@ class _DepartmentCardState extends State<_DepartmentCard> {
                         overflow:  TextOverflow.ellipsis,
                       ),
                     ),
-                    // ── Arrow indicator ──
-                    Icon(Icons.arrow_forward_ios_rounded,
-                        size: 12.sp, color: AppColors.secondaryText),
+
                   ],
                 ),
               ),
@@ -137,6 +128,7 @@ class _DepartmentCardState extends State<_DepartmentCard> {
                 ),
               ),
 
+              SizedBox(height: 10.sp),
               const Spacer(),
 
               // ── Bottom bar ──

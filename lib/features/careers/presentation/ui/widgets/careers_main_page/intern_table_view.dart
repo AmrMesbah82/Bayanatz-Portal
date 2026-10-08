@@ -8,15 +8,13 @@ class _InternTableView extends StatelessWidget {
   Map<int, TableColumnWidth> get _columnWidths => {
     0: const FlexColumnWidth(1.1),
     1: const FlexColumnWidth(1.4),
-    2: const FlexColumnWidth(1.0),
-    3: const FlexColumnWidth(1.0),
-    4: const FlexColumnWidth(1.1),
-    5: const FlexColumnWidth(1.1),
-    6: const FlexColumnWidth(2.0),
+    2: const FlexColumnWidth(1.1),
+    3: const FlexColumnWidth(1.1),
+    4: const FlexColumnWidth(2.0),
   };
 
   static const _headers = [
-    'Joined Date', 'Interns Name', 'First Name', 'Last Name',
+    'Joined Date', 'Interns Name',
     'Position', 'Degrees', 'What Have I Learned',
   ];
 
@@ -25,16 +23,6 @@ class _InternTableView extends StatelessWidget {
 
   TextStyle get _cellStyle => StyleText.fontSize12Weight400.copyWith(
       color: AppColors.text, fontSize: 12.sp, height: 1.4);
-
-  String _firstName(String n) {
-    final p = n.trim().split(' ');
-    return p.isNotEmpty ? p.first : '-';
-  }
-
-  String _lastName(String n) {
-    final p = n.trim().split(' ');
-    return p.length > 1 ? p.sublist(1).join(' ') : '-';
-  }
 
   Widget _headerCell(String text) => Container(
     padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 14.h),
@@ -110,14 +98,14 @@ class _InternTableView extends StatelessWidget {
     const Color divider = Color(0xFFE0E0E0);
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(8.r),
+      borderRadius: BorderRadius.circular(4.r),
       child: Column(
         children: [
           Container(
             decoration: BoxDecoration(
               color: ColorPick.primary,
               borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(8.r), topRight: Radius.circular(8.r)),
+                  topLeft: Radius.circular(4.r), topRight: Radius.circular(4.r)),
             ),
             child: Table(
               columnWidths: _columnWidths,
@@ -131,11 +119,11 @@ class _InternTableView extends StatelessWidget {
             decoration: BoxDecoration(
               border: Border.all(color: divider, width: 0.5),
               borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(8.r), bottomRight: Radius.circular(8.r)),
+                  bottomLeft: Radius.circular(4.r), bottomRight: Radius.circular(4.r)),
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(8.r), bottomRight: Radius.circular(8.r)),
+                  bottomLeft: Radius.circular(4.r), bottomRight: Radius.circular(4.r)),
               child: Table(
                 columnWidths: _columnWidths,
                 defaultVerticalAlignment: TableCellVerticalAlignment.middle,
@@ -162,8 +150,6 @@ class _InternTableView extends StatelessWidget {
                     children: [
                       tap(_textCell(intern.joinDateLabel, maxLines: 1)),
                       tap(_nameCell(intern)),
-                      tap(_textCell(_firstName(intern.fullName))),
-                      tap(_textCell(_lastName(intern.fullName))),
                       tap(_textCell(intern.position)),
                       tap(_textCell(intern.degrees)),
                       tap(_textCell(intern.whatHaveILearned, maxLines: 3)),

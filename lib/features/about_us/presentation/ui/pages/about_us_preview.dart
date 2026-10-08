@@ -15,6 +15,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:web_app_admin/core/constant/color.dart';
 
 import '../../../../../core/custom_dialog.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -23,6 +24,11 @@ import '../../../data/models/about_us_model.dart';
 import '../../controller/about_us_cubit.dart';
 import '../../controller/about_us_state.dart';
 import 'about_us_main.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
+import 'package:web_app_admin/core/main_widgets/app_admin_navbar.dart';
+import 'package:web_app_admin/features/careers/presentation/ui/pages/careers_main.dart';
+import 'package:web_app_admin/features/main/presentation/ui/pages/main_main.dart';
+import 'package:web_app_admin/features/job/presentation/ui/pages/job_listing_main.dart';
 
 part '../widgets/about_us_preview/desktop_frame.dart';
 part '../widgets/about_us_preview/tablet_frame.dart';
@@ -112,10 +118,18 @@ class AboutPreviewPageLast extends StatefulWidget {
   final AboutPageModel model;
   final Map<String, Uint8List> imageUploads;
 
+  /// Whether this preview can publish.
+  ///
+  /// The edit flow opens it with Save, because it is showing unsaved work. The
+  /// "Preview Screen" button on the main page opens it read-only — you are
+  /// looking at what is already live, so there is nothing to save.
+  final bool showSave;
+
   const AboutPreviewPageLast({
     super.key,
     required this.model,
     this.imageUploads = const {},
+    this.showSave = true,
   });
 
   @override
@@ -192,17 +206,18 @@ class _AboutPreviewPageLastState extends State<AboutPreviewPageLast> {
         children: [
           Scaffold(
             backgroundColor: ColorPick.background,
-            body: SingleChildScrollView(
-              child: Center(
-                child: SizedBox(
-                  width: 1000.w,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+            body: AdminStickyBody(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  contentWidth: 1000.w,
+  children: [
+                      AppAdminNavbar(
+                        activeLabel:    'Web Page',
+                        homePage:       CareersMainPageDashboard(),
+                        webPage:        MainMainPage(),
+                        jobListingPage: JobListingMainPage(),
+                      ),
                       SizedBox(height: 20.h),
                       AdminSubNavBar(activeIndex: 3),
-                      SizedBox(height: 16.h),
-
                       Text(
                         'Preview About Us Details',
                         style: StyleText.fontSize45Weight600.copyWith(
@@ -247,75 +262,84 @@ class _AboutPreviewPageLastState extends State<AboutPreviewPageLast> {
 
                       SizedBox(height: 24.h),
 
-                      // ── Back + Save ────────────────────────────────
-                      Row(
-                        children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: _onBack,
-                              child: Container(
-                                height: 44.h,
-                                decoration: BoxDecoration(
-                                    color: ColorPick.back,
-                                    borderRadius:
-                                    BorderRadius.circular(6.r)),
-                                child: Center(
-                                  child: Text('Back',
-                                      style: StyleText.fontSize14Weight600
-                                          .copyWith(color: Colors.white)),
-                                ),
-                              ),
-                            ),
-                          ),
-                          SizedBox(width: 300.w),
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: _isPublishing ? null : _onSave,
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
-                                height: 44.h,
-                                decoration: BoxDecoration(
-                                    color: _isPublishing
-                                        ? ColorPick.primary.withValues(alpha: 0.5)
-                                        : ColorPick.primary,
-                                    borderRadius:
-                                    BorderRadius.circular(6.r)),
-                                child: Center(
-                                  child: _isPublishing
-                                      ? SizedBox(
-                                    width: 18.w,
-                                    height: 18.h,
-                                    child:
-                                    const CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2),
-                                  )
-                                      : Text('Save',
-                                      style: StyleText.fontSize14Weight600
-                                          .copyWith(
-                                          color: Colors.white)),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                      // ── Back (+ Save, only when there is unsaved work) ──
+                      _actions(),
                       SizedBox(height: 40.h),
                     ],
-                  ),
-                ),
-              ),
-            ),
+),
           ),
 
           if (_isPublishing)
             Container(
               color: Colors.black.withValues(alpha: 0.35),
               child: const Center(
-                  child: CircularProgressIndicator(color: ColorPick.primary)),
+                  child: CircleProgress()),
             ),
         ],
       ),
+    );
+  }
+
+  // ── Bottom actions ─────────────────────────────────────────────────────────
+  // Read-only preview (opened from the main page): Back alone, full width.
+  Widget _actions() {
+    final back = GestureDetector(
+      onTap: _onBack,
+      child: Container(
+        height: 44.h,
+        decoration: BoxDecoration(
+            color: AppColors.darkGrey,
+            borderRadius: BorderRadius.circular(6.r)),
+        child: Center(
+          child: Text('Back',
+              style: StyleText.fontSize14Weight600
+                  .copyWith(color: Colors.white)),
+        ),
+      ),
+    );
+
+    // Read-only: Back keeps the width and position it has next to Save — the
+    // empty half is left empty rather than stretching the button across.
+    if (!widget.showSave) {
+      return Row(
+        children: [
+          Expanded(child: back),
+          SizedBox(width: 300.w),
+          const Expanded(child: SizedBox()),
+        ],
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(child: back),
+        SizedBox(width: 300.w),
+        Expanded(
+          child: GestureDetector(
+            onTap: _isPublishing ? null : _onSave,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              height: 44.h,
+              decoration: BoxDecoration(
+                  color: _isPublishing
+                      ? ColorPick.primary.withValues(alpha: 0.5)
+                      : ColorPick.primary,
+                  borderRadius: BorderRadius.circular(6.r)),
+              child: Center(
+                child: _isPublishing
+                    ? SizedBox(
+                        width: 18.w,
+                        height: 18.h,
+                        child: const CircleProgress(),
+                      )
+                    : Text('Save',
+                        style: StyleText.fontSize14Weight600
+                            .copyWith(color: Colors.white)),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -343,6 +367,7 @@ class _AboutPreviewPageLastState extends State<AboutPreviewPageLast> {
     );
   }
 
+  // Admin-only preview (no dependency on the website_app project).
   Widget _buildFrame(double containerW) {
     switch (_device) {
       case _PreviewDevice.desktop:

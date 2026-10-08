@@ -15,6 +15,7 @@ import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_switch/flutter_switch.dart';
@@ -24,8 +25,11 @@ import 'package:web_app_admin/core/custom_svg.dart';
 import 'package:web_app_admin/core/widget/calender_widget.dart';
 import 'package:web_app_admin/core/widget/custom_dropdwon.dart';
 import 'package:web_app_admin/core/widget/date_pic.dart';
+import 'package:web_app_admin/core/widget/format.dart';
 import 'package:web_app_admin/core/widget/navigator.dart';
+import 'package:web_app_admin/core/widget/textfield.dart';
 
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/main_widgets/job_listing_export_dialog.dart';
 import '../../../../../core/theme/appcolors.dart';
@@ -39,6 +43,7 @@ import '../../controller/job_listing_cubit.dart';
 import '../../controller/job_listing_state.dart';
 import 'job_listing_edit.dart';
 import 'job_listing_main.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/job_listing_detail/ch.dart';
 part '../widgets/job_listing_detail/table_setting_dialog_content.dart';
@@ -71,6 +76,7 @@ class ColumnKey {
   static const String interviewDate = 'interviewDate';
   static const String lastUpdate = 'lastUpdate';
   static const String yearOfGraduation = 'yearOfGraduation';
+  static const String comment = 'comment';
 
   static const List<String> all = [
     firstName,
@@ -79,17 +85,18 @@ class ColumnKey {
     code,
     phone,
     source,
-    location,
+    yearOfGraduation,
     resume,
     coverLetter,
-    status,
     stage,
+    status,
     score,
     tags,
     appliedDate,
     interviewDate,
     lastUpdate,
-    yearOfGraduation,
+    location,
+    comment, // always the last column
   ];
 
   static const Map<String, String> labels = {
@@ -110,6 +117,7 @@ class ColumnKey {
     interviewDate: 'Interview Date',
     lastUpdate: 'Last Update',
     yearOfGraduation: 'Year Of Graduation',
+    comment: 'Comment',
   };
 
   static Map<String, bool> defaultVisibility() {
@@ -131,17 +139,20 @@ class ColumnKey {
       interviewDate: false,
       lastUpdate: false,
       yearOfGraduation: true,
+      comment: true,
     };
   }
 
   static String valueFromApp(String key, ApplicationModel a) {
-    final avgScore =
+    // Total of the five 1–5 degrees (max 25) shown as a percentage of 100.
+    final totalScore =
     (a.technicalSkills +
         a.communicationSkills +
         a.experienceBackground +
         a.cultureFit +
         a.leadershipPotential);
-    final scoreText = avgScore > 0 ? (avgScore / 5).toStringAsFixed(1) : '';
+    final scoreText =
+        totalScore > 0 ? '${(totalScore / 25 * 100).round()}%' : '';
 
     String fmtDate(DateTime? dt) {
       if (dt == null) return '';
@@ -197,6 +208,8 @@ class ColumnKey {
         return fmtDate(a.lastUpdate);
       case ColumnKey.yearOfGraduation:
         return a.yearOfGraduation;
+      case ColumnKey.comment:
+        return a.comments;
       default:
         return '';
     }
@@ -351,11 +364,8 @@ class _JobListingDetailPageState extends State<JobListingDetailPage>
       },
       child: Scaffold(
         backgroundColor: ColorPick.background,
-        body: SingleChildScrollView(
-          child: SizedBox(
-            width: double.infinity,
-            child: Column(
-              children: [
+        body: AdminStickyBody(
+  children: [
                 AppAdminNavbar(
                   activeLabel: 'Job Listing',
                   homePage: CareersMainPageDashboard(),
@@ -366,7 +376,7 @@ class _JobListingDetailPageState extends State<JobListingDetailPage>
                 Padding(
                   padding: EdgeInsets.symmetric(
                     horizontal: 20.w,
-                    vertical: 20.h,
+                    vertical: 0.h,
                   ),
                   child: SizedBox(
                     width: 1000.w,
@@ -393,34 +403,33 @@ class _JobListingDetailPageState extends State<JobListingDetailPage>
                                     context,
                                     JobListingEditPage(jobId: widget.jobId),
                                   ),
+                                  // Same edit button as the Main page
+                                  // (features/main/.../main_main.dart).
                                   child: Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 14.w,
-                                      vertical: 8.h,
-                                    ),
+                                    width: 130.w, height: 36.h,
                                     decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(6.r),
+                                      color: ColorPick.white,
+                                      borderRadius: BorderRadius.circular(4.r),
                                     ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          'Edit Job Info',
-                                          style: TextStyle(
-                                            fontSize: 13.sp,
-                                            fontWeight: FontWeight.w600,
+                                    child: Center(
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            'Edit Job Info',
+                                            style: StyleText.fontSize14Weight500
+                                                .copyWith(color: Colors.black),
+                                          ),
+                                          SizedBox(width: 6.w),
+                                          CustomSvg(
+                                            assetPath:
+                                                'assets/control/edit_icon_pick.svg',
+                                            width: 20.w, height: 20.h,
+                                            fit: BoxFit.scaleDown,
                                             color: ColorPick.primary,
                                           ),
-                                        ),
-                                        SizedBox(width: 6.w),
-                                        CustomSvg(
-                                          assetPath: "assets/edit.svg",
-                                          width: 16.w,
-                                          height: 16.h,
-                                          fit: BoxFit.fill,
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -433,9 +442,7 @@ class _JobListingDetailPageState extends State<JobListingDetailPage>
                           Center(
                             child: Padding(
                               padding: EdgeInsets.all(40.sp),
-                              child: const CircularProgressIndicator(
-                                color: ColorPick.primary,
-                              ),
+                              child: const CircleProgress(),
                             ),
                           )
                         else
@@ -469,9 +476,7 @@ class _JobListingDetailPageState extends State<JobListingDetailPage>
                   ),
                 ),
               ],
-            ),
-          ),
-        ),
+),
       ),
     );
   }
@@ -493,8 +498,7 @@ class _JobListingDetailPageState extends State<JobListingDetailPage>
                     padding: EdgeInsets.only(bottom: 6.h),
                     child: Text(
                       tabs[i],
-                      style: TextStyle(
-                        fontSize: 15.sp,
+                      style: StyleText.fontSize15Weight500.copyWith(
                         fontWeight: isActive
                             ? FontWeight.w700
                             : FontWeight.w500,

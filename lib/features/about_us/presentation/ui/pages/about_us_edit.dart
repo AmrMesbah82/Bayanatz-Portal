@@ -31,7 +31,9 @@ import 'package:web_app_admin/core/custom_svg.dart';
 import 'package:web_app_admin/core/widget/textfield.dart';
 
 import '../../../../../core/custom_dialog.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../core/main_widgets/edit_action_buttons.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -43,6 +45,8 @@ import '../../controller/about_us_cubit.dart';
 import '../../controller/about_us_state.dart';
 import 'about_us_main.dart';
 import 'about_us_preview.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/about_us_edit/value_item.dart';
 part '../widgets/about_us_edit/about_edit_file_pickers.dart';
@@ -557,11 +561,8 @@ class _AboutEditPageMasterState extends State<AboutEditPageMaster> {
 
         return Scaffold(
           backgroundColor: Color(0xFFF1F2ED),
-          body: SingleChildScrollView(
-            child: Container(
-              width: double.infinity,
-              child: Column(
-                children: [
+          body: AdminStickyBody(
+  children: [
                   AppAdminNavbar(
                     activeLabel: 'Web Page',
                     homePage: CareersMainPageDashboard(),
@@ -573,16 +574,12 @@ class _AboutEditPageMasterState extends State<AboutEditPageMaster> {
                     width: 1000.w,
                     child: isLoading
                         ? const Center(
-                      child: CircularProgressIndicator(
-                        color: ColorPick.primary,
-                      ),
+                      child: CircleProgress(),
                     )
                         : _buildForm(),
                   ),
                 ],
-              ),
-            ),
-          ),
+),
         );
       },
     );

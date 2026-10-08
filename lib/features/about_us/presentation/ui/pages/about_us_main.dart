@@ -23,6 +23,7 @@ import 'package:web_app_admin/features/about_us/presentation/ui/pages/terms_page
 
 import '../../../../../core/constant/color.dart';
 import '../../../../../core/custom_svg.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
@@ -35,6 +36,7 @@ import 'about_us_edit.dart';
 import 'about_us_preview.dart';
 import 'strategy_page/strategy_main.dart';
 import 'strategy_page/strategy_preview.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
 
 part '../widgets/about_us_main/about_main_helpers.dart';
 
@@ -69,7 +71,7 @@ class _AboutMainPageMasterDashboardState
   final List<String> _tabLabels = [
     'About Us',
     'Our Strategy',
-    'Terms of Service',
+    'Terms and Conditions', // BUG-143: same name as the public site
   ];
 
   final Map<String, bool> _open = {
@@ -125,6 +127,10 @@ class _AboutMainPageMasterDashboardState
   }
 
   // ── Preview button handler — respects active tab ──────────────────────────
+  //
+  // Every tab opens its preview READ-ONLY (showSave: false): this button shows
+  // what is already live, so there is nothing here to publish. Save belongs to
+  // the edit screens, which open the same previews with unsaved work in hand.
   void _onPreviewTap(AboutPageModel aboutModel) {
     switch (_tabIndex) {
       case 0:
@@ -132,7 +138,11 @@ class _AboutMainPageMasterDashboardState
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => BlocProvider.value(
             value: cubit,
-            child: AboutPreviewPageLast(model: aboutModel, imageUploads: const {}),
+            child: AboutPreviewPageLast(
+              model: aboutModel,
+              imageUploads: const {},
+              showSave: false,
+            ),
           ),
         ));
 
@@ -152,7 +162,11 @@ class _AboutMainPageMasterDashboardState
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => BlocProvider.value(
             value: _strategyCubit,
-            child: StrategyPreviewPage(model: sm, imageUploads: const {}),
+            child: StrategyPreviewPage(
+              model: sm,
+              imageUploads: const {},
+              showSave: false,
+            ),
           ),
         ));
 
@@ -172,7 +186,11 @@ class _AboutMainPageMasterDashboardState
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => BlocProvider.value(
             value: _termsCubit,
-            child: TermsPreviewPage(model: tm, imageUploads: const {}),
+            child: TermsPreviewPage(
+              model: tm,
+              imageUploads: const {},
+              showSave: false,
+            ),
           ),
         ));
     }
@@ -204,12 +222,8 @@ class _AboutMainPageMasterDashboardState
 
         return Scaffold(
           backgroundColor: ColorPick.background,
-          body: SingleChildScrollView(
-            child: Container(
-              width: double.infinity,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+          body: AdminStickyBody(
+  children: [
                   AppAdminNavbar(
                     activeLabel: 'Web Page',
                     homePage: MainMainPage(),
@@ -218,12 +232,9 @@ class _AboutMainPageMasterDashboardState
                   ),
                   SizedBox(height: 20.h),
                   AdminSubNavBar(activeIndex: 3),
-                  SizedBox(height: 20.h),
                   SizedBox(width: 1000.w, child: _body(model)),
                 ],
-              ),
-            ),
-          ),
+),
         );
       },
     );
@@ -466,18 +477,23 @@ class _AboutMainPageMasterDashboardState
     return Column(
       children: rows.map((row) => Padding(
         padding: EdgeInsets.only(bottom: 8.h),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ...row.map((item) => Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(right: 8.w),
-                child: _valueMiniCard(item),
-              ),
-            )),
-            ...List.generate(
-                4 - row.length, (_) => const Expanded(child: SizedBox())),
-          ],
+        // IntrinsicHeight + CrossAxisAlignment.stretch makes every card in the
+        // row as tall as the tallest one, so a value with a long title or
+        // description no longer leaves its neighbours short.
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ...row.map((item) => Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: 8.w),
+                  child: _valueMiniCard(item),
+                ),
+              )),
+              ...List.generate(
+                  4 - row.length, (_) => const Expanded(child: SizedBox())),
+            ],
+          ),
         ),
       )).toList(),
     );

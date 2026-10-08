@@ -71,8 +71,9 @@ Color _hexColor(String hex, Color fallback) {
 String _staticCopyright(bool isRtl) {
   final year = DateTime.now().year.toString();
   return isRtl
-      ? 'حقوق النشر © $year بيانات زي للتحول الرقمي. جميع الحقوق محفوظة.'
-      : 'Copyright © $year Bayanat. ALL RIGHT RESERVED.';
+      // BUG-49 / BUG-81: same text as the public site's footer.
+      ? '© $year بيانات زي. جميع الحقوق محفوظة.'
+      : '© $year Bayanatz. All rights reserved.';
 }
 
 class AppFooter extends StatelessWidget {

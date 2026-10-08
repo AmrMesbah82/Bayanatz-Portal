@@ -25,7 +25,9 @@ import '../../../../../core/custom/1-custom_dropdwon.dart';
 import '../../../../../core/custom/image_upload_circle.dart';
 import '../../../../../core/custom_dialog.dart';
 import '../../../../../core/custom_svg.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../core/main_widgets/edit_action_buttons.dart';
 import '../../../../../core/theme/new_theme.dart';
 import '../../../../../core/theme/text.dart';
 import '../../../../home/data/models/home_model.dart';
@@ -34,6 +36,13 @@ import '../../../../main/presentation/controller/main_state.dart';
 import '../../../data/models/contact_us_model_location.dart';
 import '../../controller/contact_us_location_cubit.dart';
 import '../../controller/contact_us_location_state.dart';
+import 'contact_us_preview.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
+import 'package:web_app_admin/core/main_widgets/app_admin_navbar.dart';
+import 'package:web_app_admin/features/careers/presentation/ui/pages/careers_main.dart';
+import 'package:web_app_admin/features/main/presentation/ui/pages/main_main.dart';
+import 'package:web_app_admin/features/job/presentation/ui/pages/job_listing_main.dart';
 
 part '../widgets/contact_us_edit/social_link_dropdown.dart';
 part '../widgets/contact_us_edit/social_icon_item.dart';
@@ -243,6 +252,19 @@ class _ContactUsCmsEditPageState extends State<ContactUsCmsEditPage> {
 
     input.click();
     return completer.future;
+  }
+
+  // ── Preview ───────────────────────────────────────────────────────────────
+
+  /// BUG-52 / BUG-53: Preview used `context.goNamed(...)`, which REPLACED the
+  /// edit page (unsaved edits lost, Back had nothing to return to → white
+  /// screen) and the preview re-read the PUBLISHED document. Now the preview
+  /// is pushed on top of the form with the current draft, so Back returns to
+  /// the form with every change still in place.
+  void _openDraftPreview() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ContactUsCmsPreviewPage(draft: _buildModel('draft')),
+    ));
   }
 
   // ── Build model ───────────────────────────────────────────────────────────
@@ -480,37 +502,27 @@ class _ContactUsCmsEditPageState extends State<ContactUsCmsEditPage> {
             backgroundColor:  Color(0xFFF1F2ED),
             body: Stack(
               children: [
-                SingleChildScrollView(
-                  child: Container(
-                    width: double.infinity,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 1000.w,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
+                AdminStickyBody(
+  contentWidth: 1000.w,
+  children: [
+                              AppAdminNavbar(
+                                activeLabel:    'Web Page',
+                                homePage:       CareersMainPageDashboard(),
+                                webPage:        MainMainPage(),
+                                jobListingPage: JobListingMainPage(),
+                              ),
                               SizedBox(height: 25.h),
                               AdminSubNavBar(activeIndex: 4),
-                              SizedBox(height: 25.h),
                               SizedBox(
                                 width: 1000.w,
                                 child: isLoading
                                     ? const Center(
-                                  child: CircularProgressIndicator(
-                                    color: ColorPick.primary,
-                                  ),
+                                  child: CircleProgress(),
                                 )
                                     : _buildForm(),
                               ),
                             ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+),
                 if (_isSaving) _buildSavingOverlay(),
               ],
             ),

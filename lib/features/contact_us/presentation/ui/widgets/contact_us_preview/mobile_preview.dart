@@ -15,7 +15,7 @@ class _MobilePreview extends StatelessWidget {
           const SizedBox(height: 24),
 
           Text(
-            'Contact us',
+            'Contact Us', // BUG-107: same heading as the live page
             style: StyleText.fontSize45Weight600.copyWith(
               fontSize: 34,
               color: ColorPick.primary,

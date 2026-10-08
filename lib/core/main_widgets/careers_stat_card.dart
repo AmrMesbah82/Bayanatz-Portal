@@ -6,7 +6,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:web_app_admin/core/constant/color.dart';
 import 'package:web_app_admin/core/widget/navigator.dart';
+
+import 'admin_layout.dart';
 
 
 class CareersStatCardData {
@@ -28,12 +31,21 @@ class CareersStatCardsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // BUG-06: on a phone the KPI cards form a 2-column grid (they were six
+    // squeezed cards showing only their icons).
+    if (AdminLayout.isPhone(context)) {
+      return AdminCardsRow(
+        phoneColumns: 2,
+        gap: 10,
+        children: cards.map((c) => _StatCard(data: c)).toList(),
+      );
+    }
     return Row(
       children: cards.asMap().entries.map((entry) {
         final isLast = entry.key == cards.length - 1;
         return Expanded(
           child: Padding(
-            padding: EdgeInsets.only(right: isLast ? 0 : 12.w),
+            padding: EdgeInsets.only(right: isLast ? 0 : 10.w),
             child: _StatCard(data: entry.value),
           ),
         );
@@ -63,7 +75,7 @@ class _StatCard extends StatelessWidget {
             height: 36.sp,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFF008037).withValues(alpha: 0.1),
+              color:  ColorPick.primary.withOpacity(.2),
             ),
             child: Center(
               child: data.iconAsset != null && data.iconAsset!.isNotEmpty
@@ -72,7 +84,7 @@ class _StatCard extends StatelessWidget {
                 width: 18.sp,
                 height: 18.sp,
                 colorFilter: const ColorFilter.mode(
-                    Color(0xFF008037), BlendMode.srcIn),
+                    ColorPick.primary, BlendMode.srcIn),
               )
                   : Icon(
                 Icons.work_outline_rounded,

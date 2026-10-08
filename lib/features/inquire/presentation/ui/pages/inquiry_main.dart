@@ -9,16 +9,22 @@ import 'dart:math';
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/widget/auto_close_dialog.dart';
+import 'package:web_app_admin/core/widget/date_pic.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:web_app_admin/core/widget/custom_dropdwon.dart';
 import 'package:web_app_admin/core/widget/button.dart';
 import 'package:web_app_admin/core/widget/navigator.dart';
 import 'package:web_app_admin/core/widget/search.dart';
+import 'package:web_app_admin/core/custom_svg.dart';
 import 'package:web_app_admin/core/widget/textfield.dart';
 
 import '../../../../../core/constant/color.dart';
+import 'package:web_app_admin/core/main_widgets/admin_layout.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
+import '../../../../../core/main_widgets/csv_export_dialog.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
 import '../../../../careers/presentation/ui/pages/careers_main.dart';
@@ -29,6 +35,7 @@ import '../../controller/inquiry_cubit.dart';
 import '../../controller/inquiry_state.dart';
 import '../widgets/inquiry_status_colors.dart';
 import 'inquiry_details.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/inquiry_main/pie_chart_painter.dart';
 
@@ -90,98 +97,38 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
+  // BUG-32: shared export dialog — always downloads (header-only when empty),
+  // validates the file name inside the dialog, and confirms the download.
   void _showExportDialog(List<InquiryModel> inquiries) {
-    final fileNameCtrl = TextEditingController();
-    bool isExporting = false;
-
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          return Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
-            child: Container(
-              width: 400.w,
-              padding: EdgeInsets.all(20.sp),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 30.sp,
-                        height: 30.sp,
-                        decoration: const BoxDecoration(shape: BoxShape.circle, color: ColorPick.primary),
-                        child: Icon(Icons.file_download_outlined, size: 16.sp, color: Colors.white),
-                      ),
-                      SizedBox(width: 8.sp),
-                      Text('Export', style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600, color: AppColors.text)),
-                    ],
-                  ),
-                  SizedBox(height: 20.sp),
-                  CustomValidatedTextFieldMaster(
-                    label: 'File Name',
-                    hint: 'Enter file name',
-                    controller: fileNameCtrl,
-                    height: 36,
-                    submitted: false,
-                    primaryColor: ColorPick.primary,
-                    fillColor: const Color(0xFFF1F2ED),
-                  ),
-                  SizedBox(height: 20.sp),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: isExporting ? null : () => Navigator.of(ctx).pop(),
-                          child: Container(
-                            height: 38.h,
-                            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(8.r)),
-                            child: Center(child: Text('Discard', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w500, color: AppColors.text))),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 15.sp),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: isExporting
-                              ? null
-                              : () {
-                            final fileName = fileNameCtrl.text.trim();
-                            if (fileName.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a file name'), backgroundColor: Colors.orange));
-                              return;
-                            }
-                            if (inquiries.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No inquiries to export'), backgroundColor: Colors.orange));
-                              return;
-                            }
-                            setDialogState(() => isExporting = true);
-                            _performExport(inquiries, fileName);
-                            Navigator.of(ctx).pop();
-                            _showExportSuccessDialog(fileName);
-                          },
-                          child: Container(
-                            height: 38.h,
-                            decoration: BoxDecoration(color: isExporting ? Colors.grey : ColorPick.primary, borderRadius: BorderRadius.circular(8.r)),
-                            child: Center(
-                              child: isExporting
-                                  ? SizedBox(width: 16.sp, height: 16.sp, child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                  : Text('Download', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w500, color: Colors.white)),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+    showCsvExportDialog(
+      context,
+      defaultFileName: 'inquiries',
+      itemLabel: 'inquiries',
+      header: const ['No', 'Submission Date', 'Preferred Language', 'First Name',
+        'Last Name', 'Email', 'Country Code', 'Phone Number', 'Location',
+        'Entity Name', 'Entity Type', 'Entity Size', 'Subject', 'Message',
+        'Note', 'Status'],
+      rows: [
+        for (int i = 0; i < inquiries.length; i++)
+          [
+            '${i + 1}',
+            _formatDateForExport(inquiries[i].submissionDate),
+            inquiries[i].preferredLanguage,
+            inquiries[i].firstName,
+            inquiries[i].lastName,
+            inquiries[i].email,
+            inquiries[i].countryCode,
+            inquiries[i].phone,
+            inquiries[i].location,
+            inquiries[i].entityName,
+            inquiries[i].entityType,
+            inquiries[i].entitySize,
+            inquiries[i].subject,
+            inquiries[i].message,
+            inquiries[i].note,
+            inquiries[i].status.label,
+          ],
+      ],
     );
   }
 
@@ -206,10 +153,11 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
   }
 
   void _showExportSuccessDialog(String fileName) {
+    // Closes itself after 3 s (AutoCloseDialog) — no OK button.
     showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (ctx) => Dialog(
+      builder: (ctx) => AutoCloseDialog(child: Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
         child: Container(
           width: 320.w,
@@ -226,19 +174,11 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
               Text('Export Successful', textAlign: TextAlign.center, style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w700, color: AppColors.text)),
               SizedBox(height: 8.h),
               Text('$fileName\ndownloaded successfully', textAlign: TextAlign.center, style: TextStyle(fontSize: 13.sp, color: AppColors.secondaryText, height: 1.4)),
-              SizedBox(height: 20.h),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  style: ElevatedButton.styleFrom(backgroundColor: ColorPick.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)), padding: EdgeInsets.symmetric(vertical: 12.h)),
-                  child: Text('OK', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600, color: Colors.white)),
-                ),
-              ),
+              SizedBox(height: 8.h),
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 
@@ -255,7 +195,7 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
       child: BlocBuilder<InquiryCubit, InquiryState>(
         builder: (context, state) {
           if (state is InquiryInitial || state is InquiryLoading) {
-            return const Scaffold(backgroundColor: ColorPick.background, body: Center(child: CircularProgressIndicator(color: ColorPick.primary)));
+            return const Scaffold(backgroundColor: ColorPick.background, body: Center(child: CircleProgress()));
           }
 
           final cubit = context.read<InquiryCubit>();
@@ -295,68 +235,63 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
           }
           if (state is InquiryError && state.lastInquiries != null) inquiries = state.lastInquiries!;
 
-          final passedCount   = newCount;
-          final failedCount   = repliedCount;
-          final withdrewCount = closedCount;
-          final stageTotal    = passedCount + failedCount + withdrewCount;
-          final passedPct     = stageTotal > 0 ? (passedCount   / stageTotal * 100).round() : 0;
-          final failedPct     = stageTotal > 0 ? (failedCount   / stageTotal * 100).round() : 0;
-          final withdrewPct   = stageTotal > 0 ? (withdrewCount / stageTotal * 100).round() : 0;
-
           final statusItems     = uniqueStatuses.map((s)    => {'key': s, 'value': s}).toList();
           final entityTypeItems = uniqueEntityTypes.map((s) => {'key': s, 'value': s}).toList();
           final locationItems   = uniqueLocations.map((s)   => {'key': s, 'value': s}).toList();
-          final monthItems      = uniqueMonths.map((m)      => {'key': m.toString(), 'value': m >= 1 && m <= 12 ? _kMonthNames[m - 1] : m.toString()}).toList();
 
-          final bool hasActiveFilters = activeStatusFilter != null || activeEntityTypeFilter != null || activeLocationFilter != null || activeMonthFilter != null;
+          final DateTime? fromDate = cubit.fromDate;
+          final DateTime? toDate = cubit.toDate;
+          final bool hasActiveFilters = activeStatusFilter != null || activeEntityTypeFilter != null || activeLocationFilter != null || activeMonthFilter != null || fromDate != null || toDate != null;
 
           return Scaffold(
             backgroundColor: ColorPick.background,
-            body: SingleChildScrollView(
-              child: SizedBox(
-                width: double.infinity,
-                child: Column(
-                  children: [
+            body: AdminStickyBody(
+                reflowOnPhone: true, // BUG-16
+  children: [
                     AppAdminNavbar(
-                      activeLabel: 'Inquires',
+                      activeLabel: 'Inquiries',
                       homePage: CareersMainPageDashboard(),
                       webPage: MainMainPage(),
                       jobListingPage: JobListingMainPage(),
                     ),
-                    SizedBox(height: 20.h),
                     Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 20.h),
+                      padding: EdgeInsets.symmetric(
+                          horizontal: AdminLayout.sidePadding(context), vertical: 20.h),
                       child: SizedBox(
-                        width: 1000.w,
+                        width: AdminLayout.contentWidth(context), // BUG-16
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Inquires', style: StyleText.fontSize45Weight600.copyWith(color: ColorPick.primary, fontWeight: FontWeight.w700)),
+                            Text('Inquiries', style: StyleText.fontSize45Weight600.copyWith(color: ColorPick.primary, fontWeight: FontWeight.w700)),
                             SizedBox(height: 16.h),
                             Row(children: [AppSearchTextField(controller: _searchController, onChanged: (v) => cubit.setSearch(v), hintText: 'Search')]),
                             SizedBox(height: 16.h),
 
                             // ── Summary cards ──
-                            Row(children: [
-                              Expanded(child: _summaryCard('Total Submission', totalCount, Colors.grey)),
-                              SizedBox(width: 10.w),
-                              Expanded(child: _summaryCard('New', newCount, ColorPick.primary)),
-                              SizedBox(width: 10.w),
-                              Expanded(child: _summaryCard('Replied', repliedCount, const Color(0xFFFF9800))),
-                              SizedBox(width: 10.w),
-                              Expanded(child: _summaryCard('Closed', closedCount, const Color(0xFFE53935))),
+                            // BUG-16: 2 × 2 counters on a phone (labels were cut).
+                            AdminCardsRow(phoneColumns: 2, children: [
+                              // Figma: "Total Submission". BUG-152: New and
+                              // Closed were the same red → Figma colours
+                              // (Inquires, nodes 7126:65493/65498/65503):
+                              // New green, Replied orange, Closed red.
+                              _summaryCard('Total Submission', totalCount, Colors.grey),
+                              _summaryCard('New', newCount, InquiryStatus.newInquiry.color),
+                              _summaryCard('Replied', repliedCount, InquiryStatus.replied.color),
+                              _summaryCard('Closed', closedCount, InquiryStatus.closed.color),
                             ]),
                             SizedBox(height: 16.h),
 
-                            // ── Filters ──
-                            Row(children: [
+                            // ── Filters ── (BUG-16: wrap onto several lines on a phone)
+                            _filtersLayout(context, [
                               SizedBox(width: 130.w, child: CustomDropdownFormFieldInvMaster(selectedValue: activeStatusFilter, items: statusItems, widthIcon: 14, heightIcon: 14, height: 32, dropdownColor: ColorPick.white, primaryColor: ColorPick.primary, hint: Text('Status', style: TextStyle(fontSize: 11.sp, color: AppColors.secondaryText)), onChanged: (v) => cubit.setStatusFilter(v))),
                               SizedBox(width: 8.w),
                               SizedBox(width: 150.w, child: CustomDropdownFormFieldInvMaster(selectedValue: activeEntityTypeFilter, items: entityTypeItems, widthIcon: 14, heightIcon: 14, height: 32, dropdownColor: ColorPick.white, primaryColor: ColorPick.primary, hint: Text('Entity Type', style: TextStyle(fontSize: 11.sp, color: AppColors.secondaryText)), onChanged: (v) => cubit.setEntityTypeFilter(v))),
                               SizedBox(width: 8.w),
                               SizedBox(width: 140.w, child: CustomDropdownFormFieldInvMaster(selectedValue: activeLocationFilter, items: locationItems, widthIcon: 14, heightIcon: 14, height: 32, dropdownColor: ColorPick.white, primaryColor: ColorPick.primary, hint: Text('Location', style: TextStyle(fontSize: 11.sp, color: AppColors.secondaryText)), onChanged: (v) => cubit.setLocationFilter(v))),
                               SizedBox(width: 8.w),
-                              SizedBox(width: 120.w, child: CustomDropdownFormFieldInvMaster(selectedValue: activeMonthFilter?.toString(), items: monthItems, widthIcon: 14, heightIcon: 14, height: 32, dropdownColor: ColorPick.white, primaryColor: ColorPick.primary, hint: Text('Calendar', style: TextStyle(fontSize: 11.sp, color: AppColors.secondaryText)), onChanged: (v) { if (v != null) { cubit.setMonthFilter(int.tryParse(v)); } else { cubit.setMonthFilter(null); } })),
+                              // BUG-36: "Calendar" opens a real date-range picker
+                              // (it was a dropdown of months).
+                              _calendarButton(cubit, fromDate, toDate),
                               SizedBox(width: 8.w),
                               if (hasActiveFilters)
                                 GestureDetector(
@@ -367,9 +302,7 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
                                     child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.clear, size: 12.sp, color: AppColors.secondaryText), SizedBox(width: 4.w), Text('Clear', style: TextStyle(fontSize: 11.sp, color: AppColors.secondaryText))])),
                                   ),
                                 ),
-                              const Spacer(),
-                              customButtonWithImage(title: 'Export', function: () => _showExportDialog(inquiries), textStyle: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600, color: Colors.white), height: 32.h, space: 4.w, radius: 6, color: ColorPick.primary, image: 'assets/images/export.svg', widthImage: 14.sp, heightImage: 14.sp, colorBorder: ColorPick.primary, svgColor: Colors.white, padding: EdgeInsets.symmetric(horizontal: 10.w)),
-                            ]),
+                            ], customButtonWithImage(title: 'Export', function: () => _showExportDialog(inquiries), textStyle: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600, color: Colors.white), height: 32.h, space: 4.w, radius: 6, color: ColorPick.primary, image: 'assets/images/export.svg', widthImage: 14.sp, heightImage: 14.sp, colorBorder: ColorPick.primary, svgColor: Colors.white, padding: EdgeInsets.symmetric(horizontal: 10.w))),
                             SizedBox(height: 16.h),
 
                             // ── Table ──
@@ -381,36 +314,24 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
                             SizedBox(height: 16.h),
 
                             // Row 1 — Bar chart + Entity Types
-                            IntrinsicHeight(
-                              child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                                Expanded(child: _chartCard('Submission Received', 'Total: $totalCount', _buildBarChart(monthlySubmissions))),
-                                SizedBox(width: 16.w),
-                                Expanded(child: _chartCard('Entity Types', '', _buildEntityTypeChart(entityTypeCounts))),
-                              ]),
-                            ),
+                            AdminCardsRow(stretch: true, gap: 16.w, children: [ // BUG-16
+                              _chartCard('Submission Received', 'Total: $totalCount', _buildBarChart(monthlySubmissions)),
+                              _chartCard('Entity Types', '', _buildEntityTypeChart(entityTypeCounts)),
+                            ]),
                             SizedBox(height: 16.h),
 
-                            // Row 2 — Entity Size + Interview Stage
-                            IntrinsicHeight(
-                              child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                                Expanded(child: _chartCard('Entity Size Distribution', '', _buildSizeStackedBar(entitySizeCounts))),
-                                SizedBox(width: 16.w),
-                                Expanded(child: _chartCard('Interview Stage', '', _buildInterviewStageChart(passedPct: passedPct, failedPct: failedPct, withdrewPct: withdrewPct))),
-                              ]),
-                            ),
-                            SizedBox(height: 16.h),
-
-                            // Row 3 — Location
-                            _chartCard('Location Distribution', '', _buildLocationChart(locationCounts)),
+                            // Row 2 — Entity Size + Location
+                            AdminCardsRow(stretch: true, gap: 16.w, children: [ // BUG-16
+                              _chartCard('Entity Size Distribution', '', _buildSizeStackedBar(entitySizeCounts)),
+                              _chartCard('Location Distribution', '', _buildLocationChart(locationCounts)),
+                            ]),
                             SizedBox(height: 40.h),
                           ],
                         ),
                       ),
                     ),
                   ],
-                ),
-              ),
-            ),
+),
           );
         },
       ),
@@ -418,8 +339,82 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  //  CALENDAR (date range) — BUG-36
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  Widget _calendarButton(InquiryCubit cubit, DateTime? from, DateTime? to) {
+    String f(DateTime d) => '${d.day}/${d.month}/${d.year}';
+    final bool active = from != null || to != null;
+    return GestureDetector(
+      onTap: () async {
+        // BUG-153: same dialog-size picker and rules as Applications.
+        final picked = await showAdminDateRangePicker(
+          context,
+          initial: (from != null && to != null)
+              ? DateTimeRange(start: from, end: to)
+              : null,
+        );
+        if (picked != null) cubit.setDateRange(picked.start, picked.end);
+      },
+      child: Container(
+        // Same height as the Status / Entity Type / Location dropdowns next
+        // to it: their box is 12.h padding top + bottom around the 20.sp
+        // arrow icon.
+        height: 24.h + 20.sp,
+        padding: EdgeInsets.symmetric(horizontal: 12.w),
+        decoration: BoxDecoration(
+          color: ColorPick.white,
+          borderRadius: BorderRadius.circular(4.r),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              active
+                  ? '${from != null ? f(from) : '…'} – ${to != null ? f(to) : '…'}'
+                  : 'Calendar',
+              style: TextStyle(
+                  fontSize: 11.sp,
+                  color: active ? AppColors.text : AppColors.secondaryText),
+            ),
+            SizedBox(width: 12.w),
+            // App calendar icon (same SVG as Applicant Details / filters).
+            CustomSvg(
+              assetPath: 'assets/images/calender.svg',
+              width: 16.w,
+              height: 16.h,
+              fit: BoxFit.contain,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   //  SUMMARY CARD
   // ═══════════════════════════════════════════════════════════════════════════
+
+  /// BUG-16: the filter bar is one row on desktop; on a phone the dropdowns
+  /// wrap onto several lines and Export sits on its own line.
+  Widget _filtersLayout(BuildContext context, List<Widget> filters, Widget export) {
+    if (!AdminLayout.isPhone(context)) {
+      return Row(children: [...filters, const Spacer(), export]);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: filters.where((w) => !(w is SizedBox && w.child == null)).toList(),
+        ),
+        const SizedBox(height: 10),
+        Align(alignment: AlignmentDirectional.centerEnd, child: export),
+      ],
+    );
+  }
 
   Widget _summaryCard(String title, int count, Color topColor) {
     return Container(
@@ -430,7 +425,7 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
           padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
           child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text(title, style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w500, color: AppColors.text)),
-            Text('$count', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w700, color: AppColors.text)),
+            Text('$count', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w400, color: const Color(0xFF3C3C43))), // Figma
           ]),
         ),
       ]),
@@ -447,28 +442,64 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
     'Entity Type', 'Entity Size', 'Subject', 'Message', 'Note', 'Status',
   ];
 
-  final _columnWidths = <int, TableColumnWidth>{
-    0: FixedColumnWidth(50), 1: FixedColumnWidth(120), 2: FixedColumnWidth(130),
-    3: FixedColumnWidth(120), 4: FixedColumnWidth(120), 5: FixedColumnWidth(180),
-    6: FixedColumnWidth(100), 7: FixedColumnWidth(120), 8: FixedColumnWidth(120),
-    9: FixedColumnWidth(140), 10: FixedColumnWidth(120), 11: FixedColumnWidth(100),
-    12: FixedColumnWidth(150), 13: FixedColumnWidth(180), 14: FixedColumnWidth(150),
-    15: FixedColumnWidth(100),
-  };
+  // BUG-24: flexible widths — each column fits its content (header or
+  // values) between a minimum and a cap, instead of fixed widths that left a
+  // big gap after short columns such as "Email".
+  // [min, cap] per column, in logical pixels (scaled with .sp below).
+  static const List<List<double>> _columnBounds = [
+    [40, 60],   [100, 130], [110, 150], [80, 160],  [80, 160],  [120, 240],
+    [80, 110],  [100, 150], [80, 160],  [100, 200], [90, 180],  [80, 120],
+    [100, 220], [120, 260], [100, 220], [70, 110],
+  ];
+
+  Map<int, TableColumnWidth> get _flexColumnWidths => {
+        for (int i = 0; i < _columnBounds.length; i++)
+          i: MaxColumnWidth(
+            FixedColumnWidth(_columnBounds[i][0].sp),
+            MinColumnWidth(
+              const IntrinsicColumnWidth(),
+              FixedColumnWidth(_columnBounds[i][1].sp),
+            ),
+          ),
+      };
 
   TextStyle get _cellStyle => TextStyle(fontSize: 11.sp, color: AppColors.text);
   Widget _cell(Widget child) => Container(padding: EdgeInsets.symmetric(horizontal: 10.sp, vertical: 8.sp), child: DefaultTextStyle.merge(style: _cellStyle, child: child));
   Widget _textCell(String text, {int maxLines = 2}) => _cell(Text(text.isEmpty ? '-' : text, maxLines: maxLines, overflow: TextOverflow.ellipsis));
 
   Widget _buildTable(List<InquiryModel> inquiries) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildTableGrid(inquiries),
+        // BUG-24: an empty table used to be just a header row.
+        if (inquiries.isEmpty)
+          Container(
+            padding: EdgeInsets.symmetric(vertical: 24.h),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(4.r),
+                bottomRight: Radius.circular(4.r),
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Text('No inquiries yet',
+                style: TextStyle(fontSize: 12.sp, color: AppColors.secondaryText)),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildTableGrid(List<InquiryModel> inquiries) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(10.sp),
+        borderRadius: BorderRadius.circular(4.r),
         child: Table(
           border: TableBorder.all(color: Colors.transparent),
           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-          columnWidths: _columnWidths.map((k, v) => MapEntry(k, FixedColumnWidth((v as FixedColumnWidth).value.sp))),
+          columnWidths: _flexColumnWidths,
           children: [
             TableRow(
               decoration: const BoxDecoration(color: ColorPick.primary),
@@ -524,6 +555,8 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _buildBarChart(Map<int, int> monthly) {
+    // BUG-151: bare axes with no inquiries → the shared empty state.
+    if (monthly.values.every((v) => v <= 0)) return _emptyChart();
     final maxVal = monthly.values.fold(1, (a, b) => a > b ? a : b);
     const maxBarH = 130.0;
     const labelH  = 16.0; // reserved height above every bar for the label
@@ -588,6 +621,8 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
 
   Widget _buildEntityTypeChart(Map<String, int> counts) {
     final total = counts.values.fold(0, (a, b) => a + b);
+    // BUG-24: empty state instead of a blank white card.
+    if (total == 0) return _emptyChart();
     final entries = counts.entries.toList();
     final half = (entries.length / 2).ceil();
     final left  = entries.take(half).toList();
@@ -680,6 +715,7 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
     final keys   = allCounts.keys.toList();
     final colors = _sizeColors(keys.length);
     final total  = allCounts.values.fold(0, (a, b) => a + b);
+    final bool noData = total == 0;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -711,7 +747,20 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
           }),
         ),
         SizedBox(height: 16.h),
-        // Stacked horizontal bar
+        // Stacked horizontal bar — an empty grey track when there is no data
+        // (it used to draw five equal coloured parts).
+        if (noData)
+          Container(
+            height: 24.h,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F0F0),
+              borderRadius: BorderRadius.circular(4.r),
+            ),
+            alignment: Alignment.center,
+            child: Text('No data yet',
+                style: TextStyle(fontSize: 10.sp, color: AppColors.secondaryText)),
+          )
+        else
         ClipRRect(
           borderRadius: BorderRadius.circular(4.r),
           child: SizedBox(
@@ -735,79 +784,14 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
   }
 
   List<Color> _sizeColors(int count) {
-    const palette = [
-      Color(0xFF1B5E20),
-      Color(0xFF388E3C),
-      Color(0xFF66BB6A),
-      Color(0xFFB2DFDB),
-      Color(0xFFDCEDC8),
+    final palette = [
+      ColorPick.primary,
+      ColorPick.primary.withValues(alpha: 0.8),
+      ColorPick.primary.withValues(alpha: 0.6),
+      ColorPick.primary.withValues(alpha: 0.4),
+      ColorPick.primary.withValues(alpha: 0.2),
     ];
     return List.generate(count, (i) => palette[i % palette.length]);
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  INTERVIEW STAGE — stat rows (dot + bold% + label below) + pie chart
-  //  Matches Figma exactly: percentage is large & bold, label smaller below it
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  Widget _buildInterviewStageChart({
-    required int passedPct,
-    required int failedPct,
-    required int withdrewPct,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // left — stat rows
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _interviewStatRow(ColorPick.primary,      '$passedPct%',   'Passed'),
-              SizedBox(height: 10.h),
-              _interviewStatRow(ColorPick.primary, '$failedPct%',   'Failed'),
-              SizedBox(height: 10.h),
-              _interviewStatRow(const Color(0xFFB2DFCC), '$withdrewPct%', 'Candidate Withdrew'),
-            ],
-          ),
-        ),
-        SizedBox(width: 16.w),
-        // right — pie chart
-        SizedBox(
-          width: 110.w,
-          height: 110.w,
-          child: CustomPaint(
-            painter: _PieChartPainter(
-              values: [passedPct.toDouble(), failedPct.toDouble(), withdrewPct.toDouble()],
-              colors: [ColorPick.primary, ColorPick.primary, const Color(0xFFDCEDC8)],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _interviewStatRow(Color dotColor, String pct, String label) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
-      decoration: BoxDecoration(color: ColorPick.white, borderRadius: BorderRadius.circular(6.r)),
-      child: Row(
-        children: [
-          Container(
-            width: 10.sp, height: 10.sp,
-            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
-          ),
-          SizedBox(width: 8.w),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(pct,   style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w700, color: AppColors.text)),
-              Text(label, style: TextStyle(fontSize: 9.sp,  fontWeight: FontWeight.w400, color: AppColors.secondaryText)),
-            ],
-          ),
-        ],
-      ),
-    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -815,8 +799,34 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
   //  Full-height light bg, dark green fills from bottom proportionally
   // ═══════════════════════════════════════════════════════════════════════════
 
+  Widget _emptyChart() => SizedBox(
+        height: 160.h,
+        width: double.infinity,
+        child: Center(
+          child: Text(
+            'No inquiries yet', // BUG-151: same wording as the table
+            style: StyleText.fontSize12Weight400
+                .copyWith(color: AppColors.secondaryText),
+          ),
+        ),
+      );
+
   Widget _buildLocationChart(Map<String, int> counts) {
-    if (counts.isEmpty) return const SizedBox();
+    if (counts.isEmpty) {
+      // Keep the same footprint as the populated chart so the card
+      // doesn't collapse when there's no data.
+      return SizedBox(
+        height: 160.h,
+        width: double.infinity,
+        child: Center(
+          child: Text(
+            'No data',
+            style: StyleText.fontSize12Weight400
+                .copyWith(color: AppColors.secondaryText),
+          ),
+        ),
+      );
+    }
     final total    = counts.values.fold(0, (a, b) => a + b);
     const barH     = 120.0; // total bar height in logical pixels
 

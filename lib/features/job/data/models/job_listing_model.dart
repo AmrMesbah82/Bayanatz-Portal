@@ -121,7 +121,7 @@ extension ExperienceLevelExt on ExperienceLevel {
   }
 }
 
-enum EmploymentDuration { open, month, week }
+enum EmploymentDuration { open, month, week, year }
 
 extension EmploymentDurationExt on EmploymentDuration {
   String get label {
@@ -129,6 +129,7 @@ extension EmploymentDurationExt on EmploymentDuration {
       case EmploymentDuration.open:  return 'Open';
       case EmploymentDuration.month: return 'Month';
       case EmploymentDuration.week:  return 'Week';
+      case EmploymentDuration.year:  return 'Year'; // BUG-47
     }
   }
 
@@ -137,6 +138,7 @@ extension EmploymentDurationExt on EmploymentDuration {
       case 'open':  return EmploymentDuration.open;
       case 'month': return EmploymentDuration.month;
       case 'week':  return EmploymentDuration.week;
+      case 'year':  return EmploymentDuration.year;
       default:      return EmploymentDuration.open;
     }
   }
@@ -211,19 +213,25 @@ class BenefitItem {
 
 class RequiredDocument {
   final String id;
-  final String name;
+  final String name;    // English document name
+  final String nameAr;  // Arabic document name
   final DocType docType;
+  final bool isRequired; // true = required, false = optional
 
   const RequiredDocument({
     required this.id,
     required this.name,
+    this.nameAr = '',
     required this.docType,
+    this.isRequired = true,
   });
 
   factory RequiredDocument.empty({String name = 'Resume'}) => RequiredDocument(
     id: DateTime.now().millisecondsSinceEpoch.toString(),
     name: name,
+    nameAr: '',
     docType: DocType.pdf,
+    isRequired: true,
   );
 
   factory RequiredDocument.fromMap(Map<String, dynamic> map) =>
@@ -231,20 +239,33 @@ class RequiredDocument {
         id: map['id'] as String? ??
             DateTime.now().millisecondsSinceEpoch.toString(),
         name: map['name'] as String? ?? '',
+        nameAr: map['nameAr'] as String? ?? '',
         docType: DocTypeExt.fromString(map['docType'] as String? ?? 'pdf'),
+        // Older docs without the flag default to required.
+        isRequired: map['isRequired'] as bool? ?? true,
       );
 
   Map<String, dynamic> toMap() => {
     'id': id,
     'name': name,
+    'nameAr': nameAr,
     'docType': docType.label,
+    'isRequired': isRequired,
   };
 
-  RequiredDocument copyWith({String? id, String? name, DocType? docType}) =>
+  RequiredDocument copyWith({
+    String? id,
+    String? name,
+    String? nameAr,
+    DocType? docType,
+    bool? isRequired,
+  }) =>
       RequiredDocument(
         id: id ?? this.id,
         name: name ?? this.name,
+        nameAr: nameAr ?? this.nameAr,
         docType: docType ?? this.docType,
+        isRequired: isRequired ?? this.isRequired,
       );
 }
 
@@ -336,6 +357,10 @@ class JobPostModel {
   // Job Information
   final BilingualTextJob title;
   final String department;
+
+  /// Office location (from Contact Us office locations).
+  /// Only meaningful when [workType] is onSite or hybrid.
+  final String location;
   final WorkType workType;
   final EmploymentType employmentType;
   final String employmentDurationText; // e.g. "3 Weeks"
@@ -368,10 +393,64 @@ class JobPostModel {
   final int totalApplications;
   final String publishStatus; // 'published', 'draft'
 
+  /// BUG-10: dropdown fields the admin never picked (a draft saved early).
+  /// The enums below always hold SOME value, so without this list a blank
+  /// draft looked like "On Site / Junior / Full Time". Keys used:
+  /// 'workType', 'employmentType', 'employmentDurationType', 'experienceLevel'.
+  final List<String> unsetFields;
+
+  bool isUnset(String field) => unsetFields.contains(field);
+
+  /// Title for display: never a raw id, never empty (BUG-19).
+  String get displayTitle =>
+      title.en.trim().isNotEmpty
+          ? title.en.trim()
+          : (title.ar.trim().isNotEmpty ? title.ar.trim() : 'Untitled job');
+
+  // ── BUG-11: status derived from the hiring window ─────────────────────────
+  /// A published job whose hiring start date is still in the future is
+  /// SCHEDULED; one whose end date has passed is ENDED. The stored status was
+  /// never updated by anything, so both used to show as "Active" forever.
+  /// Only the "live" statuses are derived — inactive / drafted / removed are
+  /// explicit admin choices and are left alone.
+  static JobStatus deriveStatus(
+    JobStatus stored,
+    DateTime? start,
+    DateTime? end, {
+    DateTime? now,
+  }) {
+    if (stored != JobStatus.active &&
+        stored != JobStatus.scheduled &&
+        stored != JobStatus.ended) {
+      return stored;
+    }
+    final n = now ?? DateTime.now();
+    if (end != null) {
+      final endOfDay = DateTime(end.year, end.month, end.day, 23, 59, 59);
+      if (n.isAfter(endOfDay)) return JobStatus.ended;
+    }
+    if (start != null) {
+      final startOfDay = DateTime(start.year, start.month, start.day);
+      if (n.isBefore(startOfDay)) return JobStatus.scheduled;
+    }
+    return JobStatus.active;
+  }
+
+  /// This job with [status] re-derived from its hiring dates.
+  JobPostModel withDerivedStatus() {
+    final s = deriveStatus(status, hiringStartDate, hiringEndDate);
+    if (s == status) return this;
+    return copyWith(
+      status: s,
+      endedDate: s == JobStatus.ended ? (endedDate ?? hiringEndDate) : endedDate,
+    );
+  }
+
   const JobPostModel({
     required this.id,
     required this.title,
     this.department = '',
+    this.location = '',
     this.workType = WorkType.onSite,
     this.employmentType = EmploymentType.fullTime,
     this.employmentDurationText = '',
@@ -395,6 +474,7 @@ class JobPostModel {
     this.endedDate,
     this.totalApplications = 0,
     this.publishStatus = 'draft',
+    this.unsetFields = const [],
   });
 
   factory JobPostModel.empty() => JobPostModel(
@@ -412,6 +492,7 @@ class JobPostModel {
       title: BilingualTextJob.fromMap(
           (map[TITLE] as Map<String, dynamic>?) ?? {}),
       department: map[DEPARTMENT] as String? ?? '',
+      location: map['location'] as String? ?? '',
       workType:
       WorkTypeExt.fromString(map[WORK_TYPE] as String? ?? 'On Site'),
       employmentType: EmploymentTypeExt.fromString(
@@ -422,8 +503,8 @@ class JobPostModel {
           map[EMPLOYMENT_DURATION_TYPE] as String? ?? 'open'),
       experienceLevel: ExperienceLevelExt.fromString(
           map[EXPERIENCE_LEVEL] as String? ?? 'junior'),
-      salaryMin: (map[SALARY_MIN] as num?)?.toDouble() ?? 0,
-      salaryMax: (map[SALARY_MAX] as num?)?.toDouble() ?? 0,
+      salaryMin: _asDouble(map[SALARY_MIN]), // BUG-13/28: blank-safe
+      salaryMax: _asDouble(map[SALARY_MAX]),
       salaryCurrency: map[SALARY_CURRENCY] as String? ?? 'SAR',
       requiredQualification: BilingualTextJob.fromMap(
           (map[REQUIRED_QUALIFICATION] as Map<String, dynamic>?) ?? {}),
@@ -442,12 +523,13 @@ class JobPostModel {
           .map((b) => BenefitItem.fromMap(b))
           .toList(),
       hiringStartDate: map[HIRING_START_DATE] != null
-          ? DateTime.tryParse(map[HIRING_START_DATE] as String)
+          ? _asDate(map[HIRING_START_DATE])
           : null,
       hiringEndDate: map[HIRING_END_DATE] != null
-          ? DateTime.tryParse(map[HIRING_END_DATE] as String)
+          ? _asDate(map[HIRING_END_DATE])
           : null,
-      maxApplications: map[MAX_APPLICATIONS] as int? ?? 0,
+      // BUG-34: tolerate num/String — a strict `as int?` could lose the value.
+      maxApplications: _asInt(map[MAX_APPLICATIONS]),
       requiredDocuments:
       ((map[REQUIRED_DOCUMENTS] as List<dynamic>?) ?? [])
           .whereType<Map<String, dynamic>>()
@@ -456,19 +538,49 @@ class JobPostModel {
       status: JobStatusExt.fromString(
           map[STATUS] as String? ?? 'drafted'),
       postedDate: map[POSTED_DATE] != null
-          ? DateTime.tryParse(map[POSTED_DATE] as String)
+          ? _asDate(map[POSTED_DATE])
           : null,
       endedDate: map[ENDED_DATE] != null
-          ? DateTime.tryParse(map[ENDED_DATE] as String)
+          ? _asDate(map[ENDED_DATE])
           : null,
-      totalApplications: map[TOTAL_APPLICATIONS] as int? ?? 0,
+      totalApplications: _asInt(map[TOTAL_APPLICATIONS]),
       publishStatus: map[PUBLISH_STATUS] as String? ?? 'draft',
-    );
+      unsetFields: ((map['unsetFields'] as String?) ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList(),
+    ).withDerivedStatus(); // BUG-11
+  }
+
+  static int _asInt(dynamic v) {
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v.trim()) ?? 0;
+    return 0;
+  }
+
+  static double _asDouble(dynamic v) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v.trim()) ?? 0;
+    return 0;
+  }
+
+  static DateTime? _asDate(dynamic v) {
+    if (v == null) return null;
+    if (v is DateTime) return v;
+    if (v is String) return v.trim().isEmpty ? null : DateTime.tryParse(v);
+    if (v is num) return DateTime.fromMillisecondsSinceEpoch(v.toInt());
+    try {
+      return (v as dynamic).toDate() as DateTime; // Firestore Timestamp
+    } catch (_) {
+      return null;
+    }
   }
 
   Map<String, dynamic> toMap() => {
     TITLE: title.toMap(),
     DEPARTMENT: department,
+    'location': location,
     WORK_TYPE: workType.label,
     EMPLOYMENT_TYPE: employmentType.label,
     EMPLOYMENT_DURATION_TEXT: employmentDurationText,
@@ -493,12 +605,14 @@ class JobPostModel {
     ENDED_DATE: endedDate?.toIso8601String(),
     TOTAL_APPLICATIONS: totalApplications,
     PUBLISH_STATUS: publishStatus,
+    'unsetFields': unsetFields.join(','),
   };
 
   /// Nested template for [FlatCodec.decode] (one populated sample per list).
   static Map<String, dynamic> get flatTemplate => {
         'title': {'en': '', 'ar': ''},
         'department': '',
+        'location': '',
         'workType': '',
         'employmentType': '',
         'employmentDurationText': '',
@@ -528,19 +642,21 @@ class JobPostModel {
         'hiringEndDate': '',
         'maxApplications': 0,
         'requiredDocuments': [
-          {'id': '', 'name': '', 'docType': ''}
+          {'id': '', 'name': '', 'nameAr': '', 'docType': '', 'isRequired': true}
         ],
         'status': '',
         'postedDate': '',
         'endedDate': '',
         'totalApplications': 0,
         'publishStatus': '',
+        'unsetFields': '',
       };
 
   JobPostModel copyWith({
     String? id,
     BilingualTextJob? title,
     String? department,
+    String? location,
     WorkType? workType,
     EmploymentType? employmentType,
     String? employmentDurationText,
@@ -564,11 +680,13 @@ class JobPostModel {
     DateTime? endedDate,
     int? totalApplications,
     String? publishStatus,
+    List<String>? unsetFields,
   }) =>
       JobPostModel(
         id: id ?? this.id,
         title: title ?? this.title,
         department: department ?? this.department,
+        location: location ?? this.location,
         workType: workType ?? this.workType,
         employmentType: employmentType ?? this.employmentType,
         employmentDurationText:
@@ -595,6 +713,7 @@ class JobPostModel {
         endedDate: endedDate ?? this.endedDate,
         totalApplications: totalApplications ?? this.totalApplications,
         publishStatus: publishStatus ?? this.publishStatus,
+        unsetFields: unsetFields ?? this.unsetFields,
       );
 
   /// Generate demo jobs matching the Figma grid

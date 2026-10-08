@@ -19,6 +19,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../constant/color.dart';
 import '../custom_svg.dart';
+import '../main_widgets/form_dirty_scope.dart';
+import '../main_widgets/validation_scope.dart';
 import '../theme/appcolors.dart';
 import '../theme/new_theme.dart';
 
@@ -109,10 +111,28 @@ Widget imageUploadCircleBare({
   required Uint8List? bytes,
   required String url,
   required VoidCallback onTap,
+  /// Set `isRequired: true` for an image the page cannot be published without.
+  /// When a blocked Publish reveals what is missing, an empty circle then
+  /// outlines itself in red — the same signal text fields and dropdowns give.
+  /// See core/main_widgets/validation_scope.dart.
+  bool isRequired = false,
+  /// Ignored — kept so any call site that already passes it still compiles.
+  BuildContext? context,
 }) {
   final hasImage = bytes != null || url.isNotEmpty;
+  // Builder gives every existing call site a BuildContext without adding an
+  // argument, so the red border and the dirty-mark both work as-is.
+  return Builder(builder: (ctx) {
+  final bool missing =
+      isRequired && !hasImage && ValidationScope.revealed(ctx);
   return GestureDetector(
-    onTap: onTap,
+    onTap: () {
+      // Tapping the circle opens the file picker. Marking dirty here can
+      // over-trigger if the user cancels, which is much better than a page
+      // whose only change was an image staying stuck on "nothing to publish".
+      FormDirtyScope.markDirty(ctx);
+      onTap();
+    },
     child: Stack(
       alignment: Alignment.bottomRight,
       clipBehavior: Clip.none,
@@ -120,9 +140,12 @@ Widget imageUploadCircleBare({
         Container(
           width: 64.w,
           height: 64.h,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.white,
+            border: missing
+                ? Border.all(color: AppColors.red, width: 1.5)
+                : null,
           ),
           child: hasImage
               ? ClipOval(child: _buildImageWidget(bytes, url))
@@ -159,6 +182,7 @@ Widget imageUploadCircleBare({
       ],
     ),
   );
+  });
 }
 
 /// Standard circular image-upload control used across every CMS edit page.
@@ -170,6 +194,7 @@ Widget imageUploadCircle({
   required Uint8List? bytes,
   required String url,
   required VoidCallback onTap,
+  bool isRequired = false,
 }) {
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -179,7 +204,12 @@ Widget imageUploadCircle({
         style: StyleText.fontSize14Weight400.copyWith(color: AppColors.text),
       ),
       SizedBox(height: 8.h),
-      imageUploadCircleBare(bytes: bytes, url: url, onTap: onTap),
+      imageUploadCircleBare(
+        bytes: bytes,
+        url: url,
+        onTap: onTap,
+        isRequired: isRequired,
+      ),
     ],
   );
 }

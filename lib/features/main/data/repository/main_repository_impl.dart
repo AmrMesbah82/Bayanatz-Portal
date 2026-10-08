@@ -162,6 +162,19 @@ class MainRepositoryImpl implements MainRepository {
     required Uint8List bytes,
     required String storagePath,
   }) async {
+    // BUG-68: images can now be PNG/JPG/WebP as well as SVG. Give the file
+    // the extension of what it really is, so the public site can tell an SVG
+    // from a bitmap by its URL.
+    final ext = switch (_detectMime(bytes)) {
+      'image/svg+xml' => 'svg',
+      'image/png'     => 'png',
+      'image/gif'     => 'gif',
+      'image/webp'    => 'webp',
+      _               => 'jpg',
+    };
+    storagePath = storagePath.contains('.')
+        ? storagePath.replaceFirst(RegExp(r'\.[A-Za-z0-9]+$'), '.$ext')
+        : '$storagePath.$ext';
     final ref  = _storage.ref().child(storagePath);
     final mime = _detectMime(bytes);
     final task = await ref.putData(bytes, SettableMetadata(contentType: mime));
@@ -171,12 +184,13 @@ class MainRepositoryImpl implements MainRepository {
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   /// Cleanup: HOME content does not belong in the main document — delete any
-  /// legacy Title_*, Short_Description_*, Nav_Buttons_*, Sections_* and
-  /// Header_Items_* keys that older versions of the app uploaded here.
+  /// legacy Title_*, Short_Description_*, Sections_* and Header_Items_* keys
+  /// that older versions of the app uploaded here.
+  /// NOTE: Nav_Buttons_* DO belong here now — the navbar labels edited on the
+  /// Main page are saved in mainPage/main and read by the website from here.
   static const List<String> _legacyHomePrefixes = [
     'Title_',
     'Short_Description_',
-    'Nav_Buttons_',
     'Sections_',
     'Header_Items',
   ];

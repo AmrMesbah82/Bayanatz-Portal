@@ -10,71 +10,48 @@ extension _HomeEditSections1 on _MainEditPageState {
 
   // ─── Bottom buttons ────────────────────────────────────────────────────────
   Widget _bottomActions(MainCmsCubit cubit) {
-    final bool canPublish = _isFormValid;
+    // Two conditions, not one: every required field is filled AND something
+    // has actually changed since the page loaded. A complete but untouched
+    // form has nothing to publish.
+    final bool canPublish = _isFormValid && _isDirty;
 
-    return Row(
-      children: [
-        Expanded(
-          child: GestureDetector(
-            onTap: () => navigateTo(context, MainPreviewPage()),
-            child: Container(
-              height: 44.h,
-              decoration: BoxDecoration(
-                color: const Color(0xFF608570),
-                borderRadius: BorderRadius.circular(6.r),
-              ),
-              child: Center(
-                child: Text('Preview',
-                    style: StyleText.fontSize14Weight600
-                        .copyWith(color: Colors.white)),
-              ),
-            ),
-          ),
-        ),
-        SizedBox(width: 400.w),
-        Expanded(
-          child: AbsorbPointer(
-            absorbing: !canPublish,
-            child: Opacity(
-              opacity: canPublish ? 1.0 : 0.6,
-              child: GestureDetector(
-                onTap: () {
-                  if (!canPublish) {
-                    setState(() => _submitted = true);
-                    return;
-                  }
-                  showPublishConfirmDialog(
-                    title: 'EDITING HOMEPAGE DETAILS',
-                    subtitle:
-                        'Do you want to save the changes made to this HOMEPAGE?',
-                    context: context,
-                    onConfirm: () => _save(cubit, publishStatus: 'published'),
-                  );
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  height: 44.h,
-                  decoration: BoxDecoration(
-                    color: canPublish
-                        ? ColorPick.primary
-                        : ColorPick.primary.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(6.r),
-                  ),
-                  child: Center(
-                    child: Text(
-                      'Publish',
-                      style: StyleText.fontSize14Weight600.copyWith(
-                        color: Colors.white
-                            .withValues(alpha: canPublish ? 1.0 : 0.55),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
+    // Shared action buttons — style lives in core/main_widgets/edit_action_buttons.dart
+    return EditActionButtons(
+      publishEnabled: canPublish,
+      // BUG-76: this page has an exact change check (_isDirty — it includes
+      // the nav Status switches, colours and fonts). The shared text-only
+      // dirty flag never saw a switch, so "Careers: Status OFF" alone could
+      // not be published.
+      requireChanges: false,
+      // BUG-59: a blocked Publish now names the field that is missing.
+      onPublishBlocked: () {
+        final msg = _getValidationError() ??
+            (_isDirty ? null : 'Nothing to publish — no changes made yet');
+        if (msg == null) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(msg),
+          backgroundColor: ColorPick.primary,
+          behavior: SnackBarBehavior.floating,
+        ));
+      },
+      publishDisabledTooltip: _isFormValid
+          ? 'Nothing to publish — no changes made yet'
+          : 'Fill in all required fields to publish',
+      onPreview: () => navigateTo(context, MainPreviewPage()),
+      onPublish: () {
+        showPublishConfirmDialog(
+          // BUG-79: this is the Main (site frame) page, not the Homepage.
+          title: 'EDITING MAIN DETAILS',
+          subtitle: 'Do you want to save the changes made to the Main page (logo, colours, menu and footer)?',
+          context: context,
+          onConfirm: () => _save(cubit, publishStatus: 'published'),
+        );
+      },
+      onDiscard: () {
+        confirmDiscard(context, // BUG-75: Discard used to pop into whatever was underneath — often
+          // the Home dashboard. It now always returns to Web Page → Main.
+          onDiscard: _goToMainTab);
+      },
     );
   }
 
@@ -85,41 +62,13 @@ extension _HomeEditSections1 on _MainEditPageState {
     required List<Widget> children,
   }) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration:
-          BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() => _open[key] = !isOpen),
-            child: Container(
-              width: double.infinity,
-              padding:
-                  EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: BorderRadius.circular(6.r),
-              ),
-              child: Row(children: [
-                Expanded(
-                    child: Text(title,
-                        style: StyleText.fontSize14Weight600
-                            .copyWith(color: Colors.white))),
-                Icon(
-                    isOpen
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white,
-                    size: 25.sp),
-              ]),
-            ),
-          ),
-          if (isOpen)
-            Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: children),
-        ],
+        children: children,
       ),
     );
   }
@@ -136,7 +85,7 @@ extension _HomeEditSections1 on _MainEditPageState {
         placeholderAsset: 'assets/home_control/image.svg',
         pickIconAsset: 'assets/control/camera.svg',
         onPick: () async {
-          final p = await _pickImage();
+          final p = await _pickImage(allowRaster: true); // BUG-68
           if (p != null) setState(() => _logoPicked = p);
         },
       ),
@@ -144,7 +93,7 @@ extension _HomeEditSections1 on _MainEditPageState {
         Padding(
           padding: EdgeInsets.only(top: 4.h),
           child: Text(
-            'Logo SVG image is required',
+            'Logo image is required (SVG, PNG, JPG or WebP)',
             style:
                 StyleText.fontSize12Weight400.copyWith(color: ColorPick.red),
           ),
@@ -159,7 +108,7 @@ extension _HomeEditSections1 on _MainEditPageState {
         SizedBox(width: 16.w),
         Expanded(child: _ColorPickerField(
             controller: _secondaryColor,
-            label: 'Secondary',
+            label: 'Secondary', // Figma (Editing Main Details)
             hintText: '#D9D9D9',
             onColorChanged: () => setState(() {}))),
       ]),
@@ -203,8 +152,10 @@ extension _HomeEditSections1 on _MainEditPageState {
         Expanded(child: CustomDropdown<String>(
           label: 'Arabic Font',
           hint: 'Select font',
-          value: _arFont,
-          items: _kFonts
+          // BUG-78: Arabic-capable fonts only. A previously saved Latin font
+          // is not in this list, so the field asks for a new choice.
+          value: _kArabicFonts.any((m) => m['key'] == _arFont) ? _arFont : null,
+          items: _kArabicFonts
               .map((m) => DropdownItem<String>(
                   value: m['key']!, label: m['value']!))
               .toList(),
@@ -217,34 +168,11 @@ extension _HomeEditSections1 on _MainEditPageState {
   // ─── Navigation Items section ───────────────────────────────────────────────
   Widget _navSection() {
     final isOpen = _open['navBtn'] ?? true;
-    return Container(
-      decoration:
-          BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
+    return CustomAccordion(
+      title:    'Navigation Items',
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open['navBtn'] = !isOpen),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        GestureDetector(
-          onTap: () => setState(() => _open['navBtn'] = !isOpen),
-          child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-            decoration: BoxDecoration(
-              color: ColorPick.primary,
-              borderRadius: BorderRadius.circular(6.r),
-            ),
-            child: Row(children: [
-              Expanded(
-                  child: Text('Navigation Items',
-                      style: StyleText.fontSize14Weight600
-                          .copyWith(color: Colors.white))),
-              Icon(
-                  isOpen
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  color: Colors.white,
-                  size: 25.sp),
-            ]),
-          ),
-        ),
-        if (isOpen)
           ReorderableListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -272,6 +200,17 @@ extension _HomeEditSections1 on _MainEditPageState {
     final nameEnCtrl = _navBtns[index]['nameEn']!;
     final nameArCtrl = _navBtns[index]['nameAr']!;
 
+    // Fixed page identity (not editable) — shown as the field label so the
+    // admin always knows which page this item is, whatever they rename it to.
+    final String pageLabel = switch (_navRoutes[index]) {
+      '/'         => 'Home',
+      '/services' => 'Services',
+      '/about'    => 'About Us',
+      '/contact'  => 'Contact Us',
+      '/careers'  => 'Careers',
+      _           => 'Title',
+    };
+
     return Padding(
       key: key,
       padding: EdgeInsets.only(bottom: 10.h),
@@ -279,7 +218,7 @@ extension _HomeEditSections1 on _MainEditPageState {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(height: 15.h),
-          Row(
+            Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
@@ -295,7 +234,7 @@ extension _HomeEditSections1 on _MainEditPageState {
               ),
               Expanded(
                 child: CustomTextField(
-                  label: 'Title',
+                  label: pageLabel,
                   // Status switch pinned to the END of the first field so it
                   // always lines up regardless of screen width.
                   labelTrailing: Row(

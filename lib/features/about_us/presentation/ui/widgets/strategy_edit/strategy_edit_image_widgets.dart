@@ -291,7 +291,7 @@ class _StrategicHouseDisplayWidget extends StatelessWidget {
                         height: 220.h,
                         fit: BoxFit.contain,
                         placeholderBuilder: (context) => const Center(
-                          child: CircularProgressIndicator(),
+                          child: CircleProgress(),
                         ),
                       );
               }

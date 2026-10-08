@@ -195,13 +195,29 @@ class JobListingCubit extends Cubit<JobListingState> {
 
       final resolvedStatus = ps == 'draft' ? JobStatus.drafted : job.status;
 
+      final existing = _allJobs.where((j) => j.id == job.id).toList();
+      final JobPostModel? before = existing.isEmpty ? null : existing.first;
+      final bool wasLive = before != null &&
+          (before.status == JobStatus.active ||
+              before.status == JobStatus.scheduled ||
+              before.status == JobStatus.ended);
+
       final updated = job.copyWith(
         publishStatus: ps,
         status: resolvedStatus,
+        // Keep the original posting date when an already-live job is edited;
+        // only a job going live for the first time gets "now".
         postedDate: (ps == 'published' && resolvedStatus == JobStatus.active)
-            ? DateTime.now()
-            : job.postedDate,
-      );
+            ? (wasLive ? (before.postedDate ?? DateTime.now()) : DateTime.now())
+            : (before?.postedDate ?? job.postedDate),
+        // BUG-44: "Inactive Since" had no date — stamp it when deactivated.
+        endedDate: resolvedStatus == JobStatus.inactive
+            ? (before?.status == JobStatus.inactive
+                ? (before?.endedDate ?? DateTime.now())
+                : DateTime.now())
+            : (resolvedStatus == JobStatus.active ? null : job.endedDate),
+        totalApplications: before?.totalApplications ?? job.totalApplications,
+      ).withDerivedStatus(); // BUG-11: scheduled / ended from the dates
 
 
       final existIndex = _allJobs.indexWhere((j) => j.id == updated.id);

@@ -23,6 +23,18 @@ class InquiryCubit extends Cubit<InquiryState> {
   String? _entityTypeFilter;
   String? _locationFilter;
   int? _monthFilter;
+  // BUG-36: the "Calendar" filter is a real date range now.
+  DateTime? _fromDate;
+  DateTime? _toDate;
+
+  DateTime? get fromDate => _fromDate;
+  DateTime? get toDate => _toDate;
+
+  void setDateRange(DateTime? from, DateTime? to) {
+    _fromDate = from;
+    _toDate = to;
+    _emitLoaded();
+  }
 
   List<InquiryModel> get allInquiries => _allInquiries;
 
@@ -69,6 +81,8 @@ class InquiryCubit extends Cubit<InquiryState> {
     _entityTypeFilter = null;
     _locationFilter = null;
     _monthFilter = null;
+    _fromDate = null;
+    _toDate = null;
     _emitLoaded();
   }
 
@@ -134,6 +148,8 @@ class InquiryCubit extends Cubit<InquiryState> {
       entityTypeFilter: _entityTypeFilter,
       locationFilter: _locationFilter,
       monthFilter: _monthFilter,
+      fromDate: _fromDate,
+      toDate: _toDate,
     ));
   }
 }

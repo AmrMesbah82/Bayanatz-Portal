@@ -1,9 +1,9 @@
 part of '../../pages/job_listing_detail.dart';
 
 class _Ch {
-  static const Color green = Color(0xFF008037);
-  static const Color darkGreen = Color(0xFF1B5E20);
-  static const Color lightGreen = Color(0xFF81C784);
+  static const Color green = ColorPick.primary;
+  static const Color darkGreen = ColorPick.primary;
+  static final Color lightGreen = ColorPick.primary.withValues(alpha: 0.4);
   static const Color orange = Color(0xFFFF9800);
   static const Color red = Color(0xFFD32F2F);
   static const Color yellow = Color(0xFFFFD452);

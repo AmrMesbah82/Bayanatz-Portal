@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 
 
 import '../theme/appcolors.dart';
+import '../constant/color.dart'; // BUG-28/48: admin red, not the theme yellow
 import '../theme/text.dart';
 
 
@@ -15,7 +16,7 @@ class DatePicker {
       List<DateTime?> rangeDatePickerValueWithDefaultValue,
       DateTime? currentDate,
       CalendarDatePicker2Type? calendarType,
-      {DateTime? firstDate}) {
+      {DateTime? firstDate, DateTime? lastDate}) {
     bool isTablet = MediaQuery.of(context).size.shortestSide > 600;
     bool isPortrait =
         MediaQuery.of(context).orientation == Orientation.portrait;
@@ -26,13 +27,10 @@ class DatePicker {
         value: rangeDatePickerValueWithDefaultValue,
         config: CalendarDatePicker2WithActionButtonsConfig(
           firstDate: firstDate ?? DateTime(1900),
-          lastDate: DateTime(2100),
-          selectableDayPredicate: (day) {
-            final now = DateTime.now();
-            return !(day.year == now.year &&
-                day.month == now.month &&
-                day.day == now.day);
-          },
+          lastDate: lastDate ?? DateTime(2100),
+          // BUG-48: today used to be NOT selectable, while callers opened the
+          // picker with today pre-selected — an invalid initial value, so the
+          // dialog failed to open at all ("Calendar opens nothing").
           dayBuilder: ({
             required DateTime date,
             BoxDecoration? decoration,
@@ -48,13 +46,13 @@ class DatePicker {
                   decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(8.r),
                       color: isSelected == true
-                          ? AppColors.secondaryPrimary
+                          ? ColorPick.primary
                           : AppColors.field,
                       border: Border.all(
                         color: date.day == DateTime.now().day &&
                             date.month == DateTime.now().month &&
                             date.year == DateTime.now().year
-                            ? AppColors.secondaryPrimary
+                            ? ColorPick.primary
                             : Colors.transparent,
                       )),
                   child: Center(
@@ -62,7 +60,7 @@ class DatePicker {
                         date.day.toString(),
                         style: AppTextStyles.font14BlackCairoRegular.copyWith(
                           color: isSelected == true
-                              ? AppColors.textButton
+                              ? Colors.white
                               : AppColors.text,
                         ),
                       ))),
@@ -78,7 +76,7 @@ class DatePicker {
           customModePickerIcon: SvgPicture.asset(
             'assets/images/downArrow.svg',
             fit: BoxFit.fitHeight,
-            color: AppColors.secondaryPrimary,
+            color: ColorPick.primary,
             height: isTablet ? 16.sp : null,
           ),
 
@@ -93,14 +91,14 @@ class DatePicker {
                   decoration: BoxDecoration(
 
                     borderRadius: BorderRadius.circular(8.r),
-                    color: AppColors.secondaryPrimary,
+                    color: ColorPick.primary,
 
                   ),
                   child: Center(
                     child: Text(
                       'Set Date'.tr,
                       style: AppTextStyles.font14BlackCairoRegular
-                          .copyWith(color: AppColors.textButton),
+                          .copyWith(color: Colors.white),
                     ),
                   ),
                 ),
@@ -135,7 +133,7 @@ class DatePicker {
             child: SvgPicture.asset(
               'assets/icons/back_icon.svg',
               // ignore: deprecated_member_use
-              color: AppColors.secondaryPrimary,
+              color: ColorPick.primary,
             ),
           ),
           nextMonthIcon: Transform.rotate(
@@ -143,21 +141,21 @@ class DatePicker {
             child: SvgPicture.asset(
               'assets/icons/back_icon.svg',
               // ignore: deprecated_member_use
-              color: AppColors.secondaryPrimary,
+              color: ColorPick.primary,
             ),
           ),
           weekdayLabelTextStyle: AppTextStyles.font16BlackRegularCairo
-              .copyWith(color: AppColors.secondaryPrimary),
+              .copyWith(color: ColorPick.primary),
 
           controlsTextStyle: AppTextStyles.font14BlackCairoRegular
-              .copyWith(color: AppColors.secondaryPrimary),
+              .copyWith(color: ColorPick.primary),
           selectedYearTextStyle: AppTextStyles.font14BlackCairoRegular
-              .copyWith(color: AppColors.secondaryPrimary),
-          selectedDayHighlightColor: AppColors.secondaryPrimary,
+              .copyWith(color: ColorPick.primary),
+          selectedDayHighlightColor: ColorPick.primary,
           dayTextStyle: AppTextStyles.font14BlackCairoRegular
-              .copyWith(color: AppColors.textButton),
+              .copyWith(color: Colors.white),
           selectedDayTextStyle: AppTextStyles.font14BlackCairoRegular
-              .copyWith(color: AppColors.textButton),
+              .copyWith(color: Colors.white),
 
           yearTextStyle: AppTextStyles.font14BlackCairoRegular
               .copyWith(color: AppColors.text),
@@ -165,11 +163,38 @@ class DatePicker {
               .copyWith(color: AppColors.text),
           buttonPadding:
           EdgeInsets.symmetric(horizontal: isTablet ? 35.sp : 14.sp),
-          selectedRangeHighlightColor: AppColors.primary,
+          selectedRangeHighlightColor: ColorPick.primary.withValues(alpha: 0.25),
           calendarType: calendarType, //CalendarDatePicker2Type.range,
         ),
         dialogSize: isTablet ? Size(460.sp, 320.sp) : Size(320.w, 320.h),
         borderRadius: BorderRadius.circular(10),
         useSafeArea: true);
   }
+}
+
+/// BUG-153: Applications "Time Frame" and Inquiries "Calendar" opened the
+/// FULL-SCREEN Material range picker (admin menu hidden) and behaved
+/// differently (future days blocked in one, allowed in the other). Both now
+/// use this dialog-size picker with the same rule: any day from 5 years ago
+/// up to today (nothing is received in the future).
+Future<DateTimeRange?> showAdminDateRangePicker(
+  BuildContext context, {
+  DateTimeRange? initial,
+}) async {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final res = await DatePicker().showDatePicker(
+    context,
+    initial == null ? <DateTime?>[] : <DateTime?>[initial.start, initial.end],
+    today,
+    CalendarDatePicker2Type.range,
+    firstDate: DateTime(now.year - 5, 1, 1),
+    lastDate: today,
+  );
+  if (res == null || res.isEmpty || res.first == null) return null;
+  final start = res.first!;
+  final end = (res.length > 1 && res[1] != null) ? res[1]! : start;
+  return end.isBefore(start)
+      ? DateTimeRange(start: end, end: start)
+      : DateTimeRange(start: start, end: end);
 }

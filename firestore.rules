@@ -1,0 +1,109 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BUG-01: the database answered logged-out requests (a plain REST GET on
+// jobListings returned every record). Default is now DENY; admins are
+// Firebase Auth users whose token carries the custom claim  admin == true
+// (issued by the `adminLogin` Cloud Function — BUG-96).
+//
+// Public website: read-only access to the CMS content it renders, create-only
+// access to job applications. Contact submissions are written only by the
+// `submitContactForm` Cloud Function (Admin SDK bypasses these rules) after
+// the OTP check — BUG-51.
+// ═══════════════════════════════════════════════════════════════════════════
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // BUG-01 / BUG-96 (7/10/2026): admins sign in through the `adminLogin`
+    // Cloud Function, which checks the password on the server and returns a
+    // Firebase custom token carrying the claim  admin: true.  The rules can
+    // now tell an admin from a visitor.
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Jobs the public site may see. The admin app writes the scalar
+    // `Public_Listed` (true for Active / Scheduled jobs) on every save.
+    function jobIsPublic(job) {
+      return job.get('Public_Listed', false) == true;
+    }
+
+    // ── Admin accounts ───────────────────────────────────────────────────
+    // BUG-96: the password hash + salt were readable by anyone. Only the
+    // Cloud Functions (Admin SDK, rules don't apply) touch this collection.
+    match /admin_accounts/{email} {
+      allow read, write: if false;
+    }
+
+    // Old Firebase-Auth allow-list (uid-keyed), no longer used by the app.
+    match /admins/{uid} {
+      allow read, write: if false;
+    }
+
+    // ── Public website content (read by anyone, written by admins) ───────
+    match /mainPage/{doc=**}          { allow read: if true; allow write: if isAdmin(); }
+    match /homePage/{doc=**}          { allow read: if true; allow write: if isAdmin(); }
+    match /services/{doc=**}          { allow read: if true; allow write: if isAdmin(); }
+    match /blogPosts/{doc=**}         { allow read: if true; allow write: if isAdmin(); }
+    match /aboutUs/{doc=**}           { allow read: if true; allow write: if isAdmin(); }
+    match /ourStrategy/{doc=**}       { allow read: if true; allow write: if isAdmin(); }
+    match /termsOfService/{doc=**}    { allow read: if true; allow write: if isAdmin(); }
+    match /contactUs/{doc=**}         { allow read: if true; allow write: if isAdmin(); }
+    match /careersPage/{doc=**}       { allow read: if true; allow write: if isAdmin(); }
+    match /whyJoinOurTeam/{doc=**}    { allow read: if true; allow write: if isAdmin(); }
+    match /ourTeams/{doc=**}          { allow read: if true; allow write: if isAdmin(); }
+    match /interns/{doc=**}           { allow read: if true; allow write: if isAdmin(); }
+    match /aboutCompany/{doc=**}      { allow read: if true; allow write: if isAdmin(); }
+    match /departments/{doc=**}       { allow read: if true; allow write: if isAdmin(); }
+
+    // ── Jobs ─────────────────────────────────────────────────────────────
+    // BUG-01 / BUG-99: visitors only see published jobs (drafts, removed,
+    // ended and inactive jobs are admin-only — also by direct link).
+    match /jobListings/{jobId} {
+      allow get, list: if isAdmin() || jobIsPublic(resource.data);
+      allow create, delete: if isAdmin();
+      // Admins edit anything; the public Apply flow may only bump the counter
+      // of a public job, by exactly one.
+      allow update: if isAdmin() || (
+        jobIsPublic(resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['totalApplications']) &&
+        request.resource.data.totalApplications ==
+          resource.data.get('totalApplications', 0) + 1);
+
+      // Applicants can submit; only admins can read / change / delete.
+      // BUG-104: the document id is the applicant's normalised e-mail
+      // (`applicantKey`). A second application with the same e-mail is an
+      // UPDATE of an existing document, which visitors are not allowed to do.
+      match /applications/{appId} {
+        allow create: if
+          jobIsPublic(get(/databases/$(database)/documents/jobListings/$(jobId)).data) &&
+          request.resource.data.keys().hasAll(['firstName', 'lastName', 'email', 'applicantKey']) &&
+          request.resource.data.email is string &&
+          request.resource.data.email.matches('^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$') &&
+          request.resource.data.applicantKey == appId &&
+          request.resource.data.jobId == jobId;
+        allow read, update, delete: if isAdmin();
+      }
+    }
+
+    // ── Contact form (written by the Cloud Function only) ────────────────
+    match /contactSubmissions/{id} {
+      allow read, update, delete: if isAdmin();
+      allow create: if false;
+    }
+
+    // ── OTP tokens: Cloud Functions only ─────────────────────────────────
+    match /otpVerifications/{id} {
+      allow read, write: if false;
+    }
+
+    // ── Anything else: admins only ───────────────────────────────────────
+    // Rules are OR-ed, so the protected collections are excluded here —
+    // otherwise this catch-all would re-open them.
+    match /{collection}/{document=**} {
+      allow read, write: if isAdmin() && !(collection in
+        ['admin_accounts', 'admins', 'otpVerifications', 'contactSubmissions']);
+    }
+  }
+}

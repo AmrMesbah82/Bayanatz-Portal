@@ -1,7 +1,7 @@
 // ******************* FILE INFO *******************
 // Part of: job_listing_edit.dart
 // Contains: _applicationDetailsSection, _dateFieldCalendar, _docRow,
-//           _bottomButtons, _actionButton, _accordion,
+//           _bottomButtons (shared EditActionButtons), _accordion,
 //           _field, _fieldRtl, _addButton
 
 part of '../../pages/job_listing_edit.dart';
@@ -13,7 +13,7 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
 
   Widget _applicationDetailsSection() {
     return Padding(
-      padding: EdgeInsets.all(16.sp),
+      padding: EdgeInsets.symmetric(vertical: 16.sp),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -24,6 +24,10 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
                   label: 'Hiring Timeline (Start Date)',
                   date: _hiringStart,
                   onPicked: _setHiringStart,
+                  // BUG-28: no picking past days for a new start date.
+                  firstDate: _today,
+                  // Locked only once hiring has actually started (BUG-29).
+                  enabled: !_timelineLocked,
                 ),
               ),
               SizedBox(width: 16.w),
@@ -32,57 +36,71 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
                   label: 'Hiring Timeline (End Date)',
                   date: _hiringEnd,
                   onPicked: _setHiringEnd,
-                  firstDate: _hiringStart,
+                  // BUG-28/29: end date is always editable (extend / shorten a
+                  // deadline) but must be after the start and not in the past.
+                  firstDate: _latest(
+                    _today,
+                    _hiringStart?.add(const Duration(days: 1)),
+                  ),
                 ),
               ),
             ],
           ),
-          SizedBox(height: 14.h),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _hiringStart == null
+                    ? _requiredError(_submitted && _hiringStart == null)
+                    : _inlineError(_submitted ? _startDateError : null),
+              ),
+              SizedBox(width: 16.w),
+              Expanded(
+                child: _hiringEnd == null
+                    ? _requiredError(_submitted && _hiringEnd == null)
+                    : _inlineError(_endDateError),
+              ),
+            ],
+          ),
+          SizedBox(height: 10.sp),
           Row(
             children: [
               Expanded(
                 child: _field(
                   'Maximum Number of Applications for This Position',
-                  'Text Here',
+                  'Text Here', // Figma
                   _maxApps,
+                  onlyDigits: true, // numbers only
                 ),
               ),
               SizedBox(width: 16.w),
               const Expanded(child: SizedBox()),
             ],
           ),
-          SizedBox(height: 14.h),
+          _inlineError(_maxAppsError), // BUG-28
+          SizedBox(height: 10.sp),
           Text(
             'Required Documents',
-            style: TextStyle(
-              fontSize: 12.sp,
-              fontWeight: FontWeight.w500,
-              color: AppColors.text,
-            ),
+            style: _kFieldLabelStyle,
           ),
           SizedBox(height: 8.h),
-          ...List.generate((_requiredDocs.length / 2).ceil(), (rowIndex) {
-            final left = rowIndex * 2;
-            final right = left + 1;
-            return Padding(
+          // One document per row — each has an English name, an Arabic name,
+          // a type dropdown and a Required / Optional switch.
+          ...List.generate(
+            _requiredDocs.length,
+            (i) => Padding(
               padding: EdgeInsets.only(bottom: 8.h),
-              child: Row(
-                children: [
-                  Expanded(child: _docRow(left)),
-                  SizedBox(width: 16.w),
-                  right < _requiredDocs.length
-                      ? Expanded(child: _docRow(right))
-                      : const Expanded(child: SizedBox()),
-                ],
-              ),
-            );
-          }),
+              child: _docRow(i),
+            ),
+          ),
           SizedBox(height: 8.h),
           GestureDetector(
             onTap: () => setState(
               () => _requiredDocs.add({
                 'name': TextEditingController(),
+                'nameAr': TextEditingController(),
                 'type': 'PDF',
+                'required': true,
               }),
             ),
             child: _addButton('Required Document'),
@@ -92,67 +110,81 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
     );
   }
 
+  // Uses the shared CustomDropdownCalendar (core/custom/4-custom_dropdwon_calander.dart)
   Widget _dateFieldCalendar({
     required String label,
     required DateTime? date,
     required ValueChanged<DateTime> onPicked,
     DateTime? firstDate,
+    bool enabled = true,
   }) {
-    final displayValue =
-        date != null ? DateFormat('dd/MM/yyyy').format(date) : null;
-    final items = date != null
-        ? [{'key': displayValue!, 'value': displayValue}]
-        : <Map<String, String>>[];
-
-    return GestureDetector(
-      onTap: () => _pickDate(
-        currentDate: date,
-        onPicked: onPicked,
-        firstDate: firstDate,
-      ),
-      child: AbsorbPointer(
-        child: CustomDropdownFormFieldCalender(
-          label: label,
-          hint: Text(
-            'Select Date',
-            style: StyleText.fontSize12Weight400
-                .copyWith(color: AppColors.secondaryText),
-          ),
-          selectedValue: displayValue,
-          items: items,
-          widthIcon: 18,
-          heightIcon: 18,
-          height: 36,
-          dropdownColor: AppColors.background,
-          onChanged: (_) {},
-        ),
-      ),
+    return CustomDropdownCalendar(
+      label: label,
+      enabled: enabled,
+      hint: 'Select Date',
+      value: date,
+      height: 36,
+      firstDate: firstDate,
+      fillColor: AppColors.card,
+      borderRadius: BorderRadius.circular(4.r),
+      labelStyle: _kFieldLabelStyle,
+      hintStyle: StyleText.fontSize12Weight400
+          .copyWith(fontSize: 12.sp, color: AppColors.secondaryText),
+      valueStyle: StyleText.fontSize12Weight400
+          .copyWith(fontSize: 12.sp, color: AppColors.text),
+      dateFormatter: (d) => DateFormat('dd/MM/yyyy').format(d),
+      onChanged: (d) {
+        if (d != null) onPicked(d);
+      },
     );
   }
 
   Widget _docRow(int i) {
+    final bool isRequired = _requiredDocs[i]['required'] as bool? ?? true;
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        // ── Document name (English) ──────────────────────────────────────────
         Expanded(
           flex: 3,
           child: CustomTextField(
             controller: _requiredDocs[i]['name'] as TextEditingController,
+            // BUG-88: an empty row blocked Save with nothing highlighted.
+            submitted: _submitted,
             height: 36,
-            valueStyle: TextStyle(fontSize: 12.sp),
+            valueStyle: StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp),
             hint: 'Document Name',
             hintStyle:
-                TextStyle(fontSize: 12.sp, color: AppColors.secondaryText),
-            fillColor: AppColors.background,
+                StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp, color: AppColors.secondaryText),
             contentPadding:
                 EdgeInsets.symmetric(horizontal: 10.w, vertical: 10.h),
             borderRadius: BorderRadius.circular(4.r),
           ),
         ),
         SizedBox(width: 8.w),
+        // ── Document name (Arabic) ───────────────────────────────────────────
+        Expanded(
+          flex: 3,
+          child: CustomTextField(
+            controller: _requiredDocs[i]['nameAr'] as TextEditingController,
+            height: 36,
+            textDirection: ui.TextDirection.rtl,
+            textAlign: TextAlign.right,
+            valueStyle: StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp),
+            hint: 'اسم المستند',
+            hintStyle:
+                StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp, color: AppColors.secondaryText),
+            contentPadding:
+                EdgeInsets.symmetric(horizontal: 10.w, vertical: 10.h),
+            borderRadius: BorderRadius.circular(4.r),
+          ),
+        ),
+        SizedBox(width: 8.w),
+        // ── Type ─────────────────────────────────────────────────────────────
         SizedBox(
           width: 90.w,
           child: CustomDropdownFormFieldInvMaster(
-            dropdownColor: AppColors.background,
+            dropdownColor: AppColors.card,
             selectedValue: _requiredDocs[i]['type'] as String? ?? 'PDF',
             items: _kDocTypes,
             widthIcon: 16,
@@ -167,6 +199,58 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
             onChanged: (v) => setState(() => _requiredDocs[i]['type'] = v),
           ),
         ),
+        SizedBox(width: 12.w),
+        // ── Required / Optional switch ───────────────────────────────────────
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              isRequired ? 'Required' : 'Optional',
+              style: StyleText.fontSize11Weight400
+                  .copyWith(color: AppColors.text),
+            ),
+            SizedBox(height: 4.h),
+            Transform.scale(
+              scale: 0.8,
+              child: FlutterSwitch(
+                value: isRequired,
+                activeColor: ColorPick.primary,
+                activeToggleColor: Colors.white,
+                inactiveColor: Colors.grey.shade400,
+                inactiveToggleColor: Colors.white,
+                width: 46.0,
+                height: 27.0,
+                toggleSize: 21.0,
+                borderRadius: 13.5,
+                padding: 3.0,
+                onToggle: (val) =>
+                    setState(() => _requiredDocs[i]['required'] = val),
+              ),
+            ),
+          ],
+        ),
+        // ── BUG-88: remove this row (flowchart 1:9311 / 1:9668) ──────────────
+        SizedBox(width: 8.w),
+        if (_requiredDocs.length > 1)
+          Tooltip(
+            message: 'Remove document',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16.r),
+              onTap: () => setState(() {
+                final removed = _requiredDocs.removeAt(i);
+                (removed['name'] as TextEditingController).dispose();
+                (removed['nameAr'] as TextEditingController).dispose();
+              }),
+              child: Padding(
+                padding: EdgeInsets.all(4.sp),
+                child: Icon(Icons.remove_circle, // Figma zondicons:minus-solid 20×20
+                    size: 20.sp, color: ColorPick.red),
+              ),
+            ),
+          )
+        else
+          SizedBox(width: 20.sp + 8.sp),
       ],
     );
   }
@@ -176,72 +260,49 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _bottomButtons() {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _actionButton('Preview', Colors.grey.shade400, () {
-                navigateTo(
-                  context,
-                  JobListingPreviewPage(jobId: _editingJobId ?? 'new'),
-                );
-              }),
-            ),
-            SizedBox(width: 16.w),
-            Expanded(
-                child: _actionButton('Publish', ColorPick.primary, _publish)),
-          ],
-        ),
-        SizedBox(height: 10.h),
-        Row(
-          children: [
-            Expanded(
-              child: _actionButton(
-                'Discard',
-                Colors.grey.shade300,
-                () => context.pop(),
-                textColor: AppColors.text,
-              ),
-            ),
-            SizedBox(width: 16.w),
-            Expanded(
-              child: _actionButton(
-                'Save For Later',
-                Colors.grey.shade600,
-                _saveDraft,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
+    final bool isEdit = _editingJobId != null;
 
-  Widget _actionButton(
-    String label,
-    Color bg,
-    VoidCallback onTap, {
-    Color textColor = Colors.white,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 44.h,
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(6.r),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 14.sp,
-              fontWeight: FontWeight.w600,
-              color: textColor,
+    // Shared action buttons — style lives in core/main_widgets/edit_action_buttons.dart
+    //
+    // Editing an existing post:
+    //   • "Publish" becomes "Save" — the post already exists.
+    //   • "Save For Later" is gone — drafting only applies to a new post.
+    //   • Save stays disabled until something on the form actually changes.
+    // The AnimatedBuilder listens to every text controller so typing flips
+    // Save on without needing a listener on each field.
+    return AnimatedBuilder(
+      animation: Listenable.merge(_allControllers()),
+      builder: (context, _) => EditActionButtons(
+        onPreview: () => navigateTo(
+          context,
+          // BUG-09: preview what is on the form now, not a placeholder.
+          JobListingPreviewPage(
+            jobId: _editingJobId ?? 'new',
+            draft: _buildModel(
+              publishStatus: _editingJobId == null ? 'draft' : 'published',
             ),
+            onSave: _publish, // BUG-91: Save in the preview really saves
           ),
         ),
+        onPublish:      _publish,
+        publishLabel:   isEdit ? 'Save' : 'Publish',
+        publishEnabled: isEdit ? _hasChanges : true,
+        publishDisabledTooltip:
+            isEdit ? 'No changes to save' : 'Fill in all required fields to publish',
+        isSaving:       _isSaving,
+        // BUG-12: the app-wide "dirty" flag only notices text fields and
+        // dropdowns, so flipping the Job Status switch (or picking a date)
+        // never enabled Save. This page has its own exact change check
+        // (_hasChanges covers every field, the switch and the dates).
+        requireChanges: false,
+        // BUG-89: Discard threw the whole form away without asking.
+        onDiscard: () => confirmDiscard(
+          context,
+          hasChanges: _hasChanges,
+          onDiscard: () => Navigator.of(context).maybePop(),
+        ),
+        // BUG-90: "Save For Later" in edit mode too (→ back to Draft).
+        onSaveForLater: _saveDraft,
       ),
     );
   }
@@ -256,64 +317,13 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
     required List<Widget> children,
   }) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
+      child:    Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() => _open[key] = !isOpen),
-            child: Container(
-              width: double.infinity,
-              padding:
-                  EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: isOpen
-                    ? BorderRadius.only(
-                        topLeft: Radius.circular(6.r),
-                        topRight: Radius.circular(6.r),
-                      )
-                    : BorderRadius.circular(6.r),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 14.sp,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                  Icon(
-                    isOpen
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white,
-                    size: 20.sp,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (isOpen)
-            Container(
-              decoration: BoxDecoration(
-                color: ColorPick.white,
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(6.r),
-                  bottomRight: Radius.circular(6.r),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: children,
-              ),
-            ),
-        ],
+        children: children,
       ),
     );
   }
@@ -322,29 +332,34 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
   //  FIELD HELPERS
   // ═══════════════════════════════════════════════════════════════════════════
 
+  // The label is rendered by the shared CustomTextField via its own `label`
+  // parameter — never as a separate Text widget stacked on top.
   Widget _field(
     String label,
     String hint,
     TextEditingController ctrl, {
     int maxLines = 1,
     double height = 36,
+    bool required = true,
+    bool onlyDigits = false,
   }) {
-    return CustomValidatedTextFieldMaster(
+    final bool isMultiline = maxLines > 1;
+    return CustomTextField(
       label: label.isNotEmpty ? label : null,
+      labelStyle: _kFieldLabelStyle,
       hint: hint,
       controller: ctrl,
-      height: height,
+      height: isMultiline ? null : height,
       maxLines: maxLines,
+      // Multiline descriptions: no cap — supports long markdown content
+      maxLength: isMultiline ? null : 500,
+      submitted: _submitted && required, // inline "required" error after Post
+      // Numeric fields: blocks non-digit input + validates value
+      onlyDigits: onlyDigits,
       textDirection: ui.TextDirection.ltr,
       textAlign: TextAlign.start,
-      showCharCount: false,
-      maxLength: 500,
-      minLength: 0,
-      submitted: _submitted,
-      primaryColor: _cmsPrimary(context),
-      fillColor: AppColors.background,
-      textStyle: TextStyle(fontSize: 12.sp, color: AppColors.text),
-      hintStyle: TextStyle(fontSize: 12.sp, color: AppColors.secondaryText),
+      valueStyle: StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp, color: AppColors.text),
+      hintStyle: StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp, color: AppColors.secondaryText),
     );
   }
 
@@ -354,25 +369,57 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
     TextEditingController ctrl, {
     int maxLines = 1,
     double height = 36,
+    bool required = true,
   }) {
-    return CustomValidatedTextFieldMaster(
-      label: label.isNotEmpty ? label : null,
-      hint: hint,
-      controller: ctrl,
-      height: height,
-      maxLines: maxLines,
+    final bool isMultiline = maxLines > 1;
+    // Directionality wrapper: AR label + hint + text all start from the RIGHT.
+    return Directionality(
       textDirection: ui.TextDirection.rtl,
-      textAlign: TextAlign.start,
-      showCharCount: false,
-      maxLength: 500,
-      minLength: 0,
-      submitted: _submitted,
-      primaryColor: _cmsPrimary(context),
-      fillColor: AppColors.background,
-      textStyle: TextStyle(fontSize: 12.sp, color: AppColors.text),
-      hintStyle: TextStyle(fontSize: 12.sp, color: AppColors.secondaryText),
+      child: CustomTextField(
+        label: label.isNotEmpty ? label : null,
+        labelStyle: _kFieldLabelStyle,
+        hint: hint,
+        controller: ctrl,
+        height: isMultiline ? null : height,
+        maxLines: maxLines,
+        // Multiline descriptions: no cap — supports long markdown content
+        maxLength: isMultiline ? null : 500,
+        submitted: _submitted && required, // inline "required" error after Post
+        textDirection: ui.TextDirection.rtl,
+        textAlign: TextAlign.start,
+        valueStyle: StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp, color: AppColors.text),
+        hintStyle: StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp, color: AppColors.secondaryText),
+      ),
     );
   }
+
+  DateTime _latest(DateTime a, DateTime? b) =>
+      (b != null && b.isAfter(a)) ? b : a;
+
+  /// A cross-field validation message (BUG-28), shown as soon as it applies.
+  Widget _inlineError(String? message) => message == null
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: EdgeInsets.only(top: 4.h),
+          child: Text(
+            message,
+            style: StyleText.fontSize11Weight400
+                .copyWith(fontSize: 11.sp, color: ColorPick.red),
+          ),
+        );
+
+  /// Inline "required" message shown under dropdowns / date pickers,
+  /// which have no built-in error support.
+  Widget _requiredError(bool show) => show
+      ? Padding(
+          padding: EdgeInsets.only(top: 4.h),
+          child: Text(
+            'This field is required.',
+            style: StyleText.fontSize11Weight400
+                .copyWith(fontSize: 11.sp, color: ColorPick.red),
+          ),
+        )
+      : const SizedBox.shrink();
 
   Widget _addButton(String label) {
     return Container(
@@ -388,7 +435,7 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
           SizedBox(width: 4.w),
           Text(
             label,
-            style: TextStyle(
+            style: StyleText.fontSize12Weight500.copyWith(
               fontSize: 12.sp,
               fontWeight: FontWeight.w500,
               color: Colors.white,

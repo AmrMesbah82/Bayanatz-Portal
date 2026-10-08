@@ -1,17 +1,19 @@
 /// ******************* FILE INFO *******************
-/// File Name: home_main_page_master.dart
-/// Updated: AppNavbar now receives [onItemTap] so clicking a nav item in the
-///          admin shell never routes to the public site.
+/// File Name: home_main.dart
 /// Pages 1–3 — Read-only overview (Figma screens 1, 2, 3)
-/// Sub-navbar: Main(active) | Home | Services | About Us | Contact Us | Careers
-/// Status tabs: Published | Scheduled | Draft
-/// FIXED: Tabs now show real content filtered by publishStatus
-/// FIXED: Scheduled tab shows scheduled date info
-/// FIXED: Draft tab shows draft content with "last saved" info
-/// ADDED: Read-only "Headings" accordion (Title EN/AR + Short Desc EN/AR)
-/// ADDED: Read-only "Navigation Button" accordion (button list with name/route/status)
-/// FIXED: Handle HomeCmsDraftSaved / HomeCmsDraftDeleted states ✅
-/// FIXED: Re-load data on initState to get fresh state after navigation ✅
+/// Sub-navbar: Main | Home(active) | Services | About Us | Contact Us | Careers
+///
+/// UPDATED: Status tabs are now driven by what actually exists. "Published" is
+///          always there; "Scheduled" and "Draft" appear only once a scheduled
+///          release or a draft has been saved, and disappear again when they
+///          are removed or published.
+/// UPDATED: Each tab renders ITS OWN stored version — the three documents are
+///          loaded together, so switching tabs shows genuinely different data
+///          instead of the same model filtered by publishStatus.
+/// UPDATED: A "Remove" button sits top-right while a removable version is
+///          selected, behind a confirm dialog.
+/// UPDATED: TabController replaced by a plain slot selector — the tab count is
+///          no longer fixed at three.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -22,11 +24,11 @@ import 'package:go_router/go_router.dart';
 import 'package:web_app_admin/core/widget/navigator.dart';
 import 'package:web_app_admin/core/widget/network_image_view.dart';
 
-
-
 import '../../../../../core/constant/color.dart';
+import '../../../../../core/custom_dialog.dart';
 import '../../../../../core/widget/branding_helper.dart';
 import '../../../../../core/custom_svg.dart';
+import '../../../../../core/main_widgets/admin_page_scaffold.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
@@ -40,20 +42,11 @@ import '../../controller/home_cubit.dart';
 import '../../controller/home_state.dart';
 import 'home_edit.dart';
 import 'home_preview.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
+
 part '../widgets/home_main/home_main_builders.dart';
 part '../widgets/home_main/home_main_read_only.dart';
-
-
-// class _C {
-//   static const Color primary   = Color(0xFF008037);
-//   static const Color sectionBg = Color(0xFFF5F5F5);
-//   static const Color cardBg    = Color(0xFFFFFFFF);
-//   static const Color border    = Color(0xFFE0E0E0);
-//   static const Color labelText = Color(0xFF333333);
-//   static const Color hintText  = Color(0xFFAAAAAA);
-//   static const Color back      = Color(0xFFF1F2ED);
-//   static const Color scheduled = Color(0xFFFF8F00);
-// }
 
 /// Available route labels for display in the read-only view.
 /// Mirrors the "Navigate To" destinations (_kLabelDestinations) so saved
@@ -62,7 +55,7 @@ part '../widgets/home_main/home_main_read_only.dart';
 const Map<String, String> _kRouteLabelMap = {
   // Navigate To destinations
   '/about?tab=our-strategy':         'Our Strategy',
-  '/about?tab=terms-and-conditions': 'Terms & Conditions',
+  '/about?tab=terms-and-conditions': 'Terms and Conditions',
   '/about?tab=privacy-policy':       'Privacy Policy',
   '/about?tab=vision':               'Vision',
   '/about?tab=mission':              'Mission',
@@ -85,38 +78,24 @@ class HomeMainPageMaster extends StatefulWidget {
   State<HomeMainPageMaster> createState() => _HomeMainPageMasterState();
 }
 
-class _HomeMainPageMasterState extends State<HomeMainPageMaster>
-    with SingleTickerProviderStateMixin {
+class _HomeMainPageMasterState extends State<HomeMainPageMaster> {
   int _subNavIndex = 1; // "Home" tab is active
   final List<String> _subNavLabels = [
     'Main', 'Home', 'Services', 'About Us', 'Contact Us', 'Careers'
   ];
 
-  final List<String> _statusLabels = ['Published', 'Scheduled', 'Draft'];
-
-  late TabController _tabController;
+  /// Which stored version the overview is showing.
+  HomeVersionSlot _activeSlot = HomeVersionSlot.published;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) {
-        setState(() {}); // rebuild to update tab underline styles
-      }
-    });
 
-    // ✅ Re-load data when this page is created (e.g. after navigating back
-    //    from edit page). This ensures we always show the latest state.
+    // Re-load when this page is created (e.g. after navigating back from the
+    // editor) so the tabs always reflect what is actually stored.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<HomeCmsCubit>().load();
     });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   final Map<String, bool> _open = {
@@ -134,72 +113,73 @@ class _HomeMainPageMasterState extends State<HomeMainPageMaster>
     return ColorPick.primary;
   }
 
+  // ── Remove the selected version ─────────────────────────────────────────
+  void _confirmRemove(HomeCmsCubit cubit, HomeVersionSlot slot) {
+    final bool isDraft = slot == HomeVersionSlot.draft;
+    showConfirmDialog(
+      context: context,
+      title: isDraft ? 'REMOVE DRAFT' : 'REMOVE SCHEDULED VERSION',
+      subtitle: isDraft
+          ? 'This deletes the saved draft. The published page stays live and '
+              'unchanged. This cannot be undone.'
+          : 'This cancels the scheduled release. The published page stays live '
+              'and unchanged. This cannot be undone.',
+      confirmLabel: 'Remove',
+      cancelLabel: 'Cancel',
+      onConfirm: () {
+        if (isDraft) {
+          cubit.removeDraft();
+        } else {
+          cubit.removeScheduled();
+        }
+        setState(() => _activeSlot = HomeVersionSlot.published);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<HomeCmsCubit, HomeCmsState>(
+    return BlocConsumer<HomeCmsCubit, HomeCmsState>(
+      listener: (context, state) {
+        // A slot was removed — reload so the tabs drop it.
+        if (state is HomeCmsDraftDeleted || state is HomeCmsScheduledDeleted) {
+          context.read<HomeCmsCubit>().load();
+        }
+      },
       builder: (context, state) {
-        if (state is HomeCmsInitial || state is HomeCmsLoading) {
+        final cubit = context.read<HomeCmsCubit>();
+
+        if (state is HomeCmsInitial ||
+            state is HomeCmsLoading ||
+            state is HomeCmsDraftDeleted ||
+            state is HomeCmsScheduledDeleted) {
           return const Scaffold(
             backgroundColor: ColorPick.background,
-            body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+            body: Center(child: CircleProgress()),
           );
         }
 
-        // ✅ Extract data from ALL possible data-carrying states
-        HomePageModel? data;
-        if (state is HomeCmsLoaded)       data = state.data;
-        if (state is HomeCmsSaved)        data = state.data;
-        if (state is HomeCmsDraftSaved)   data = state.data;
-        if (state is HomeCmsSaving)       data = state.data;
+        // Which tabs exist right now.
+        final slots = <HomeVersionSlot>[
+          HomeVersionSlot.published,
+          if (cubit.hasScheduled) HomeVersionSlot.scheduled,
+          if (cubit.hasDraft)     HomeVersionSlot.draft,
+        ];
 
-        // ✅ For HomeCmsDraftDeleted, re-load to get the published data
-        if (state is HomeCmsDraftDeleted) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            context.read<HomeCmsCubit>().load();
-          });
-          return const Scaffold(
-            backgroundColor: ColorPick.background,
-            body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
-          );
+        // The selected tab may have just been removed or published away.
+        if (!slots.contains(_activeSlot)) {
+          _activeSlot = HomeVersionSlot.published;
         }
 
-        // ✅ For HomeCmsError, try to use lastData
-        if (state is HomeCmsError) {
-          data = state.lastData;
-        }
-
-        // ✅ Fallback: use cubit's current model
-        data ??= context.read<HomeCmsCubit>().current;
-
-        return Scaffold(
-          backgroundColor: ColorPick.background,
-          body: SingleChildScrollView(
-            child: Container(
-              width: double.infinity,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  AppAdminNavbar(
-                    activeLabel:    'Web Page',
-                    homePage:       CareersMainPageDashboard(),
-                    webPage:        MainMainPage(),
-                    jobListingPage: JobListingMainPage(),
-                  ),
-
-                  SizedBox(height: 20.h),
-                  AdminSubNavBar(
-                    activeIndex: 1,
-                    homeCubit: context.read<HomeCmsCubit>(),
-                  ),
-                  SizedBox(height: 20.h),
-                  Container(
-                    width: 1000.w,
-                    child: _body(data),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        // The two top bars stay pinned — only _body scrolls beneath them.
+        return AdminPageScaffold(
+          activeLabel:    'Web Page',
+          homePage:       CareersMainPageDashboard(),
+          webPage:        MainMainPage(),
+          jobListingPage: JobListingMainPage(),
+          subNavIndex:    1,
+          homeCubit:      cubit,
+          child: _body(cubit, slots),
         );
       },
     );

@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_switch/flutter_switch.dart';
 
 import 'package:web_app_admin/core/custom_dialog.dart';
 import 'package:web_app_admin/core/custom_svg.dart';
@@ -26,7 +27,10 @@ import 'package:web_app_admin/core/widget/custom_field.dart';
 
 import '../../../../../../core/constant/color.dart';
 import '../../../../../../core/custom/image_upload_circle.dart';
+import '../../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../../core/main_widgets/edit_action_buttons.dart';
+import '../../../../../../core/main_widgets/form_dirty_scope.dart';
 import '../../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../../core/theme/appcolors.dart';
 import '../../../../../../core/theme/new_theme.dart';
@@ -37,6 +41,9 @@ import '../../../../data/models/blog_model.dart';
 import '../../../controller/blog_cubit.dart';
 import '../services_main/services_main.dart';
 import 'blog_preview.dart';
+import '../../../../../../core/custom/3-custom_accordion.dart';
+import '../../../../../../core/custom/14-custom_delete_icon.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../../widgets/blog_edit/xhr_circle_image.dart';
 part '../../widgets/blog_edit/blog_edit_sections.dart';
@@ -45,6 +52,7 @@ class BlogCreateEditPage extends StatefulWidget {
   final BlogPostModel? existing;
   final bool isFromDraft;
 
+  
   const BlogCreateEditPage({super.key, this.existing, this.isFromDraft = false});
 
   @override
@@ -60,6 +68,7 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
 
   bool _submitted      = false;
   bool _isEditingDraft = false;
+  bool _isActive       = true; // switch: Active ↔ Inactive
 
   // Image
   Uint8List? _imageBytes;
@@ -80,6 +89,9 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
   final ScrollController           _scrollController = ScrollController();
 
   bool get _isEdit => widget.existing != null;
+
+  /// BUG-60 / BUG-61: controls the shared dirty-check can't see (switches).
+  void _markDirty() => FormDirtyScope.markDirty(context);
 
   // NOTE: No language validation - every field accepts Arabic AND English.
 
@@ -122,6 +134,7 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
     _isEditingDraft = widget.isFromDraft;
 
     final e = widget.existing;
+    _isActive = e?.status != 'inactive';
 
     _questionEnCtrl  = TextEditingController(text: e?.question.en ?? '');
     _questionArCtrl  = TextEditingController(text: e?.question.ar ?? '');
@@ -359,10 +372,38 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
     await showPublishConfirmDialog(
       context: context,
       title: 'PUBLISH POST',
-      subtitle: 'Do you want to publish this post? It will go live immediately.',
+      subtitle: _isActive
+          ? 'Do you want to publish this post? It will go live immediately.'
+          : 'This post is set to Inactive. It will be saved but not shown publicly.',
       confirmLabel: 'Publish',
       backLabel: 'Cancel',
-      onConfirm: () => _doSave(status: 'published'),
+      onConfirm: () => _doSave(status: _isActive ? 'published' : 'inactive'),
+    );
+  }
+
+  // ── Remove handler ─────────────────────────────────────────────────────────
+  Future<void> _confirmRemove() async {
+    if (!_isEdit) return; // nothing to remove for a new post
+    await showPublishConfirmDialog(
+      context: context,
+      title: 'REMOVE POST',
+      subtitle: 'Are you sure you want to remove this post?',
+      confirmLabel: 'Remove',
+      backLabel: 'Cancel',
+      onConfirm: () async {
+        final cubit = context.read<BlogCubit>();
+        await cubit.deletePost(widget.existing!.id);
+        await cubit.load();
+        if (mounted) {
+          Future.delayed(Duration.zero, () {
+            if (!mounted) return;
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const ServicesMainPageMaster()),
+                  (route) => false,
+            );
+          });
+        }
+      },
     );
   }
 
@@ -370,7 +411,7 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
   Future<void> _saveForLater() async {
     setState(() => _submitted = true);
     if (!_isDraftEnabled) {
-      showSuccessDialog(
+      showErrorDialog(
         context: context,
         title: 'Required Fields Missing',
         subtitle: 'Please fill in the question fields before saving as draft.',
@@ -419,7 +460,8 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
         },
       );
     } else {
-      Navigator.pop(context);
+      // BUG-105: Add New Read / edit dropped the typed text without asking.
+      confirmDiscard(context, onDiscard: () => Navigator.pop(context));
     }
   }
 
@@ -427,7 +469,7 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
   void _preview() {
     setState(() => _submitted = true);
     if (_questionEnCtrl.text.trim().isEmpty || _questionArCtrl.text.trim().isEmpty) {
-      showSuccessDialog(
+      showErrorDialog(
         context: context,
         title: 'Required Fields Missing',
         subtitle: 'Please fill in the question fields before previewing.',
@@ -454,14 +496,10 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: ColorPick.background,
-      body: SingleChildScrollView(
-        controller: _scrollController,
-        child: Center(
-          child: SizedBox(
-            width: 1000.w,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+      body: AdminStickyBody(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  contentWidth: 1000.w,
+  children: [
                 AppAdminNavbar(
                   activeLabel:     'Web Page',
                   homePage:       CareersMainPageDashboard(),
@@ -469,7 +507,8 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
                   jobListingPage: JobListingMainPage(),
                 ),
                 AdminSubNavBar(activeIndex: 2),
-                SizedBox(height: 15.h),
+                _removeAndStatusRow(),
+                SizedBox(height: 10.h),
 
                 // ── Title row with draft badge ─────────────────────────
                 Row(
@@ -517,10 +556,7 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
                 _actionButtons(),
                 SizedBox(height: 40.h),
               ],
-            ),
-          ),
-        ),
-      ),
+),
     );
   }
 

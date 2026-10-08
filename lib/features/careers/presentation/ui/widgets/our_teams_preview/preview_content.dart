@@ -95,7 +95,7 @@ class _PreviewContentState extends State<_PreviewContent> {
                             ),
                           ),
                           TextSpan(
-                            text: widget.isAr ? 'فرقنا' : 'Our Teams',
+                            text: widget.isAr ? 'فريقنا' : 'Our Team',
                             style: StyleText.fontSize28Weight600.copyWith(
                               fontSize:  _isDesktop ? 28 : (_isMob ? 18 : 22),
                               color:     _primary,

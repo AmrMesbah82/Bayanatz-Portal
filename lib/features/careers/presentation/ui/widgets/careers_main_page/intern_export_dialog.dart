@@ -158,8 +158,7 @@ class _InternExportDialogState extends State<_InternExportDialog> {
                       child: _saving
                           ? SizedBox(
                         width: 18.w, height: 18.h,
-                        child: const CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2),
+                        child: const CircleProgress(),
                       )
                           : Text('Download',
                           style: StyleText.fontSize14Weight600.copyWith(color: Colors.white)),

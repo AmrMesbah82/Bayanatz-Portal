@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 
 import '../../features/about_us/presentation/controller/about_us_cubit.dart';
+import '../../features/about_us/presentation/ui/pages/about_us_company_edit.dart';
+import '../../features/about_us/presentation/ui/pages/about_us_company_main.dart';
 import '../../features/about_us/presentation/ui/pages/about_us_main.dart';
 import '../../features/careers/presentation/controller/careers_cubit.dart';
 import '../../features/careers/presentation/ui/pages/careers_edit.dart';
@@ -20,6 +22,12 @@ import '../../features/job/data/repository/job_listing_repo_impl.dart';
 import '../../features/main/presentation/ui/pages/main_edit.dart';
 import '../../features/main/presentation/ui/pages/main_main.dart';
 import '../../features/main/presentation/ui/pages/main_preview.dart';
+import '../../features/job/presentation/ui/pages/job_listing_main.dart';
+import '../../features/job/presentation/ui/pages/job_listing_edit.dart';
+import '../../features/departments/presentation/ui/pages/department_main.dart';
+import '../../features/job/presentation/ui/pages/application_main.dart';
+import '../../features/inquire/presentation/ui/pages/inquiry_main.dart';
+import '../../features/services/presentation/ui/pages/services_main/services_main.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SLIDE + ANGLE + FADE PAGE TRANSITION
@@ -113,6 +121,51 @@ class AppRouter {
         builder: (context, state) => const CareersMainPageDashboard(),
       ),
 
+      // ── Top-level admin sections (BUG-05) ──────────────────────────────────
+      // Each section has its own URL so F5 keeps you on the same page, the
+      // browser Back button goes to the previous section, and sections can be
+      // bookmarked / shared.
+      GoRoute(
+        path: '/jobs',
+        name: 'jobs',
+        builder: (context, state) => const JobListingMainPage(),
+      ),
+      // BUG-119: "Our Departments" and "Create New Job Post" had no URL, so
+      // the browser Back button jumped to Home. Real routes now.
+      GoRoute(
+        path: '/jobs/new',
+        name: 'job-new',
+        pageBuilder: (context, state) => animatedPage(
+          key: state.pageKey,
+          child: const JobListingEditPage(),
+          slideDirection: SlideDirection.fromBottom,
+        ),
+      ),
+      GoRoute(
+        path: '/jobs/departments',
+        name: 'departments',
+        pageBuilder: (context, state) => animatedPage(
+          key: state.pageKey,
+          child: const DepartmentMainPage(),
+          slideDirection: SlideDirection.fromBottom,
+        ),
+      ),
+      GoRoute(
+        path: '/applications',
+        name: 'applications',
+        builder: (context, state) => const ApplicationMainPage(),
+      ),
+      GoRoute(
+        path: '/inquiries',
+        name: 'inquiries',
+        builder: (context, state) => const InquiryMainPage(),
+      ),
+      GoRoute(
+        path: '/admin/services',
+        name: 'services-cms',
+        builder: (context, state) => const ServicesMainPageMaster(),
+      ),
+
       // ── About Us CMS ───────────────────────────────────────────────────────
       // GoRoute(
       //   path: '/admin/about-edit',
@@ -135,6 +188,28 @@ class AppRouter {
                 .read<HomeCmsCubit>(), // ✅ reuse global cubit from main.dart
             child: const HomeMainPageMaster(),
           ),
+          slideDirection: SlideDirection.fromBottom,
+        ),
+      ),
+
+      // ── About Company (opened from Job Listing) ───────────────────────────
+      // Real routes, so the URL changes and the browser Back button works.
+      GoRoute(
+        path: '/admin/about-company',
+        name: 'about-company',
+        pageBuilder: (context, state) => animatedPage(
+          key: state.pageKey,
+          child: const AboutCompanyMainPage(),
+          slideDirection: SlideDirection.fromBottom,
+        ),
+      ),
+
+      GoRoute(
+        path: '/admin/about-company/edit',
+        name: 'about-company-edit',
+        pageBuilder: (context, state) => animatedPage(
+          key: state.pageKey,
+          child: const AboutCompanyEditPage(),
           slideDirection: SlideDirection.fromBottom,
         ),
       ),
@@ -173,12 +248,17 @@ class AppRouter {
         ),
       ),
 
+      // Despite the name, this route is the MAIN preview, and it is the one
+      // the "Preview Screen" button on the Main page opens. That entry is
+      // read-only — you are looking at what is already live, not reviewing
+      // unsaved edits — so Publish is hidden here. The edit flow pushes
+      // MainPreviewPage directly (see main_edit) and keeps its Publish button.
       GoRoute(
         path: '/admin/dashboard/preview',
         name: 'home_preview',
         pageBuilder: (context, state) => animatedPage(
           key: state.pageKey,
-          child: const MainPreviewPage(),
+          child: const MainPreviewPage(showPublish: false),
           slideDirection: SlideDirection.fromBottom,
         ),
       ),
@@ -236,17 +316,16 @@ class AppRouter {
         ),
       ),
 
+      // Reuses the app-wide CareersCmsCubit (created in main.dart) instead of
+      // building a fresh one and re-fetching: the data is already loaded, so the
+      // edit page opens directly with no blank loading screen in between.
       GoRoute(
         path: '/admin/careers-cms/edit',
         name: 'careers-cms-edit',
         pageBuilder: (context, state) => animatedPage(
           key: state.pageKey,
-          child: BlocProvider(
-            create: (_) => CareersCmsCubit(
-              jobRepo: JobListingRepoImp(),
-              appRepo:
-                  ApplicationRepoImp(), // your application repo implementation
-            )..load(),
+          child: BlocProvider<CareersCmsCubit>.value(
+            value: context.read<CareersCmsCubit>(),
             child: const CareersEditPage(),
           ),
           slideDirection: SlideDirection.fromBottom,

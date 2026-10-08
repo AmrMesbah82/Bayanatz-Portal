@@ -5,20 +5,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-
-import 'package:web_app_admin/core/widget/navigator.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../../core/constant/color.dart';
 import '../../../../../core/custom_svg.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
+import '../../../../../core/main_widgets/admin_back_link.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
 import '../../../../careers/presentation/ui/pages/careers_main.dart';
 import '../../../../job/presentation/ui/pages/job_listing_main.dart';
+import '../../../../main/presentation/ui/pages/main_main.dart';
 import '../../../data/models/about_us_company_model.dart';
 import '../../controller/about_us_company_cubit.dart';
 import '../../controller/about_us_company_state.dart';
-import 'about_us_company_edit.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 
 
@@ -58,7 +61,7 @@ class _AboutCompanyMainPageState extends State<AboutCompanyMainPage> {
           return const Scaffold(
             backgroundColor: ColorPick.background,
             body: Center(
-                child: CircularProgressIndicator(color: ColorPick.primary)),
+                child: CircleProgress()),
           );
         }
 
@@ -72,15 +75,15 @@ class _AboutCompanyMainPageState extends State<AboutCompanyMainPage> {
 
         return Scaffold(
           backgroundColor: ColorPick.background,
-          body: SingleChildScrollView(
-            child: SizedBox(
-              width: double.infinity,
-              child: Column(
-                children: [
+          body: AdminStickyBody(
+  children: [
                   AppAdminNavbar(
-                    activeLabel:    'Home',
+                    // BUG-26: About Company belongs to the Job Listing section.
+                    activeLabel:    'Job Listing',
                     homePage:       CareersMainPageDashboard(),
-                    webPage:        const AboutCompanyMainPage(),
+                    // Web Page tab must open the Web Page section — pointing
+                    // it at this page made the tab look dead.
+                    webPage:        const MainMainPage(),
                     jobListingPage: JobListingMainPage(),
                   ),
 
@@ -92,6 +95,11 @@ class _AboutCompanyMainPageState extends State<AboutCompanyMainPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // BUG-26: breadcrumb back to Job Listing.
+                          const AdminBackLink(
+                            parentLabel: 'Job Listing',
+                            parentRoute: '/jobs',
+                          ),
                           // ── Title Row ──────────────────────────────
                           Row(
                             children: [
@@ -107,10 +115,8 @@ class _AboutCompanyMainPageState extends State<AboutCompanyMainPage> {
 
                               // ── Edit button ────────────────────────
                               GestureDetector(
-                                onTap: () {
-                                  navigateTo(
-                                      context, const AboutCompanyEditPage());
-                                },
+                                onTap: () =>
+                                    context.pushNamed('about-company-edit'),
                                 child: Container(
                                   width: 130.w, height: 36.h,
                                   decoration: BoxDecoration(
@@ -121,7 +127,7 @@ class _AboutCompanyMainPageState extends State<AboutCompanyMainPage> {
                                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                                       Text('Edit Details',
                                           style: StyleText.fontSize14Weight500
-                                              .copyWith(color: ColorPick.primary)),
+                                              .copyWith(color: Colors.black)),
                                       SizedBox(width: 6.w),
                                       CustomSvg(assetPath: "assets/control/edit_icon_pick.svg",
                                           width: 20.w, height: 20.h,
@@ -149,9 +155,7 @@ class _AboutCompanyMainPageState extends State<AboutCompanyMainPage> {
                     ),
                   ),
                 ],
-              ),
-            ),
-          ),
+),
         );
       },
     );
@@ -164,49 +168,13 @@ class _AboutCompanyMainPageState extends State<AboutCompanyMainPage> {
     required List<Widget> children,
   }) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration:
-      BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
+      child:    Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() => _open[key] = !isOpen),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(
-                  horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: isOpen
-                    ? BorderRadius.only(
-                    topLeft: Radius.circular(6.r),
-                    topRight: Radius.circular(6.r))
-                    : BorderRadius.circular(6.r),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(title,
-                        style: StyleText.fontSize14Weight600
-                            .copyWith(color: Colors.white)),
-                  ),
-                  Icon(
-                    isOpen
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.white,
-                    size: 20.sp,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (isOpen)
-            Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: children),
-        ],
+        children: children,
       ),
     );
   }
@@ -226,12 +194,12 @@ class _AboutCompanyMainPageState extends State<AboutCompanyMainPage> {
         children: [
           SizedBox(height: 20.h),
           _readField(
-            'About This Position',
+            'About Company',
             data.aboutEn.isEmpty ? 'Text Here' : data.aboutEn,
           ),
           SizedBox(height: 16.h),
           _readFieldRtl(
-            'عن هذا المنصب',
+            'عن الشركة',
             data.aboutAr.isEmpty ? 'ادخل النص هنا' : data.aboutAr,
           ),
         ],

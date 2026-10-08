@@ -26,7 +26,9 @@ import '../../../../../core/constant/color.dart';
 import '../../../../../core/custom/image_upload_circle.dart';
 import '../../../../../core/custom_dialog.dart';
 import '../../../../../core/custom_svg.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../core/main_widgets/edit_action_buttons.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -38,6 +40,8 @@ import '../../controller/careers_cubit.dart';
 import '../../controller/careers_state.dart';
 import 'careers_main.dart'; // CareersMainPageDashboard
 import 'careers_main_page.dart'; // CareersMainPageMaster lives here
+import '../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/careers_edit/careers_edit_widgets.dart';
 
@@ -131,7 +135,23 @@ class _CareersEditPageState extends State<CareersEditPage> {
       _statIcons[s.id]    = null;
       _statIconUrls[s.id] = s.iconUrl;
     }
+    _originalStatsSig = _statsSignature;
   }
+
+  // BUG-62: statistics were invisible to the change check — adding, removing
+  // or editing a statistic never counted as a change, so Publish stayed
+  // disabled with a misleading message. Everything the statistics section
+  // owns is now part of the comparison.
+  String _originalStatsSig = '';
+
+  String get _statsSignature => _draft.statistics.map((s) {
+        final m = _statCtrls[s.id];
+        final t = m == null
+            ? ''
+            : '${m['titleEn']!.text}|${m['titleAr']!.text}|'
+                '${m['shortDescEn']!.text}|${m['shortDescAr']!.text}';
+        return '${s.id}#$t#${_statIconUrls[s.id] ?? ''}';
+      }).join('~');
 
   void _initStatCtrl(CareerStatItem s) {
     _statCtrls[s.id] = {
@@ -152,11 +172,14 @@ class _CareersEditPageState extends State<CareersEditPage> {
             _overviewDescArCtrl.text != _originalDescAr ||
             _overviewBtnEnCtrl.text  != _originalBtnEn  ||
             _overviewBtnArCtrl.text  != _originalBtnAr  ||
-            _statIcons.values.any((v) => v != null);
+            _statIcons.values.any((v) => v != null) ||
+            _statsSignature != _originalStatsSig; // BUG-62
 
-    if (hasChanges != _hasChanges) {
-      setState(() => _hasChanges = hasChanges);
-    }
+    // BUG-62: ALWAYS rebuild. Publish validity (_isFormValid) is computed in
+    // build(); with the old "only when _hasChanges flips" check, typing into a
+    // newly added Statistic never rebuilt the page, so Publish stayed grey
+    // ("Please fix validation errors…") although every field was filled.
+    if (mounted) setState(() => _hasChanges = hasChanges);
   }
 
   @override
@@ -320,6 +343,7 @@ class _CareersEditPageState extends State<CareersEditPage> {
       _statIcons[newStat.id]    = null;
       _statIconUrls[newStat.id] = '';
     });
+    _checkForChanges(); // BUG-62
   }
 
   void _removeStat(String id) {
@@ -336,6 +360,7 @@ class _CareersEditPageState extends State<CareersEditPage> {
       _statIcons.remove(id);
       _statIconUrls.remove(id);
     });
+    _checkForChanges(); // BUG-62
   }
 
   // ── Publish: save to Firestore → BlocConsumer navigates to main page ────────
@@ -407,27 +432,64 @@ class _CareersEditPageState extends State<CareersEditPage> {
 
   void _discard() {
     if (_hasChanges) {
-      showConfirmDialog(
-        context: context,
-        title: 'Discard Changes',
-        subtitle: 'Are you sure you want to discard all changes?',
-        confirmLabel: 'Discard',
-        cancelLabel: 'Cancel',
-        onConfirm: () => Navigator.pop(context),
-      );
+      confirmDiscard(context, onDiscard: () => Navigator.pop(context));
     } else {
       Navigator.pop(context);
     }
   }
 
+  // ── Loading shell ──────────────────────────────────────────────────────────
+  // Same layout as the real page (navbar, sub navbar, title) with a spinner in
+  // place of the form — avoids the blank grey screen between pages.
+  Widget _loadingScaffold() {
+    return Scaffold(
+      body: SizedBox(
+        width: double.infinity,
+        child: AdminStickyBody(
+          children: [
+            AppAdminNavbar(
+              activeLabel:    'Web Page',
+              homePage:       CareersMainPageDashboard(),
+              webPage:        MainMainPage(),
+              jobListingPage: JobListingMainPage(),
+            ),
+            SizedBox(height: 20.h),
+            AdminSubNavBar(activeIndex: 5),
+            Container(
+              width:   1000.w,
+              padding: EdgeInsets.symmetric(vertical: 20.h),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Editing Careers Details',
+                    style: StyleText.fontSize45Weight600.copyWith(
+                        color:      ColorPick.primary,
+                        fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(height: 20.h),
+                  SizedBox(
+                    height: 320.h,
+                    width:  double.infinity,
+                    child:  const Center(child: CircleProgress()),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    // The page chrome (navbar + sub navbar + title) is rendered right away so
+    // the edit screen opens directly; only the form area shows a spinner while
+    // the data is still being fetched.
     if (!_ready) {
-      return Scaffold(
-        backgroundColor: ColorPick.back,
-        body: const Center(child: CircularProgressIndicator(color: ColorPick.primary)),
-      );
+      return _loadingScaffold();
     }
 
     return BlocConsumer<CareersCmsCubit, CareersCmsState>(
@@ -466,10 +528,8 @@ class _CareersEditPageState extends State<CareersEditPage> {
         return Scaffold(
           body: SizedBox(
             width: double.infinity,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+            child: AdminStickyBody(
+  children: [
                   AppAdminNavbar(
                     activeLabel:    'Web Page',
                     homePage:       CareersMainPageDashboard(),
@@ -478,7 +538,6 @@ class _CareersEditPageState extends State<CareersEditPage> {
                   ),
                   SizedBox(height: 20.h),
                   AdminSubNavBar(activeIndex: 5),
-                  SizedBox(height: 20.h),
                   Container(
                     width:   1000.w,
                     padding: EdgeInsets.symmetric(vertical: 20.h),
@@ -578,14 +637,17 @@ class _CareersEditPageState extends State<CareersEditPage> {
                                     children: [
                                       Expanded(
                                         child: _enField(
-                                          label: 'Title', hint: 'Text Here',
+                                          // BUG-72: the title is free text
+                                          // (e.g. "25+" or "MENA"); nothing
+                                          // blocks Publish silently any more.
+                                          label: 'Title', hint: 'e.g. 25+',
                                           ctrl: m['titleEn']!,
                                         ),
                                       ),
                                       SizedBox(width: 16.w),
                                       Expanded(
                                         child: _arField(
-                                          label: 'العنوان', hint: 'أدخل النص',
+                                          label: 'العنوان', hint: 'مثال: +25',
                                           ctrl: m['titleAr']!,
                                         ),
                                       ),
@@ -637,8 +699,7 @@ class _CareersEditPageState extends State<CareersEditPage> {
                     ),
                   ),
                 ],
-              ),
-            ),
+),
           ),
         );
       },

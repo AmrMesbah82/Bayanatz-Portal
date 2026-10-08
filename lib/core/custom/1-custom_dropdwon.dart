@@ -7,10 +7,13 @@
 /// Module: core › custom
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../constant/color.dart';
+import '../main_widgets/form_dirty_scope.dart';
+import '../main_widgets/validation_scope.dart';
 import '../theme/appcolors.dart';
 import '../theme/new_theme.dart';
 
@@ -107,6 +110,17 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
 
   OverlayEntry? _overlayEntry;
   bool _isOpen = false;
+
+  // BUG-36 / BUG-48: only ONE dropdown may be open at a time — opening one
+  // closes the other. They used to stack on top of each other.
+  static _CustomDropdownState? _currentlyOpen;
+
+  // Set when an outside pointer-down closed the menu, so the tap that follows
+  // on this dropdown's own trigger doesn't immediately re-open it.
+  DateTime? _closedByOutsideAt;
+
+  // Drives the always-visible scrollbar of long option lists (BUG-48).
+  final ScrollController _listScroll = ScrollController();
   late AnimationController _animController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
@@ -139,16 +153,31 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
     // it is updating devices (mouse_tracker !_debugDuringDeviceUpdate).
     _overlayEntry?.remove();
     _overlayEntry = null;
+    if (identical(_currentlyOpen, this)) _currentlyOpen = null;
     _animController.dispose();
+    _listScroll.dispose();
     super.dispose();
   }
 
   void _toggleDropdown() {
     if (!widget.enabled) return;
+    final closedAt = _closedByOutsideAt;
+    if (!_isOpen &&
+        closedAt != null &&
+        DateTime.now().difference(closedAt) < const Duration(milliseconds: 300)) {
+      // This tap is the one that just closed us from "outside" — our trigger.
+      _closedByOutsideAt = null;
+      return;
+    }
     _isOpen ? _closeOverlay() : _openOverlay();
   }
 
   void _openOverlay() {
+    final other = _currentlyOpen;
+    if (other != null && !identical(other, this) && other.mounted) {
+      other._closeOverlay();
+    }
+    _currentlyOpen = this;
     final renderBox =
         _triggerKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null) return;
@@ -183,9 +212,16 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
         selectedValue: widget.value,
         onSelected: (item) {
           _closeOverlay();
+          // A pick is always a user action — seeding goes through `value`.
+          FormDirtyScope.markDirty(context);
           widget.onChanged?.call(item.value);
         },
         onDismiss: _closeOverlay,
+        onOutsidePointerDown: () {
+          _closedByOutsideAt = DateTime.now();
+          _closeOverlay();
+        },
+        scrollController: _listScroll,
       ),
     );
 
@@ -196,6 +232,7 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
   }
 
   void _closeOverlay() {
+    if (identical(_currentlyOpen, this)) _currentlyOpen = null;
     if (_overlayEntry == null) return;
     _animController.reverse().then((_) {
       _overlayEntry?.remove();
@@ -215,7 +252,14 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
 
   @override
   Widget build(BuildContext context) {
-    final hasError = widget.errorText != null && widget.errorText!.isNotEmpty;
+    // Red border when the caller set an error, OR when a blocked Publish asked
+    // the page to reveal what is missing and this required dropdown is empty.
+    final bool missingRequired = widget.required &&
+        _selectedItem == null &&
+        ValidationScope.revealed(context);
+    final hasError =
+        (widget.errorText != null && widget.errorText!.isNotEmpty) ||
+            missingRequired;
     final radius = widget.borderRadius ?? BorderRadius.circular(4.r);
 
     return Column(
@@ -228,7 +272,7 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
             text: TextSpan(
               text: widget.label,
               style: widget.labelStyle ??
-                  StyleText.fontSize14Weight500.copyWith(
+                  StyleText.label.copyWith(
                     color: hasError
                         ? AppColors.red
                         : widget.enabled
@@ -239,7 +283,7 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
                   ? [
                       TextSpan(
                         text: ' *',
-                        style: StyleText.fontSize14Weight500
+                        style: StyleText.label
                             .copyWith(color: AppColors.red),
                       )
                     ]
@@ -329,10 +373,7 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
                 ),
                 suffixIconConstraints: const BoxConstraints(),
                 hintText: _selectedItem == null ? (widget.hint ?? '') : null,
-                hintStyle: widget.hintStyle ??
-                    StyleText.fontSize14Weight400.copyWith(
-                      color: AppColors.text.withOpacity(0.4),
-                    ),
+                hintStyle: widget.hintStyle ?? StyleText.hint,
                 // Suppress built-in error text — we render our own below
                 errorText: null,
               ),
@@ -348,7 +389,7 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
                           child: Text(
                             _selectedItem!.label,
                             style: widget.valueStyle ??
-                                StyleText.fontSize12Weight400.copyWith(
+                                StyleText.value.copyWith(
                                   color: widget.enabled
                                       ? AppColors.text
                                       : AppColors.text.withOpacity(0.4),
@@ -366,19 +407,19 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
         ),
 
         // ── Error / Helper ─────────────────────────────────
-        if (hasError) ...[
+        if (hasError && widget.errorText != null) ...[
           SizedBox(height: 4.h),
           Text(
             widget.errorText!,
             style: widget.errorStyle ??
-                StyleText.fontSize12Weight400.copyWith(color: AppColors.red),
+                StyleText.subTitle.copyWith(color: AppColors.red),
           ),
         ] else if (widget.helperText != null) ...[
           SizedBox(height: 4.h),
           Text(
             widget.helperText!,
             style: widget.helperStyle ??
-                StyleText.fontSize12Weight400
+                StyleText.subTitle
                     .copyWith(color: AppColors.text.withOpacity(0.5)),
           ),
         ],
@@ -411,8 +452,12 @@ class _DropdownOverlay<T> extends StatelessWidget {
   final T? selectedValue;
   final ValueChanged<DropdownItem<T>> onSelected;
   final VoidCallback onDismiss;
+  final VoidCallback onOutsidePointerDown;
+  final ScrollController scrollController;
 
   const _DropdownOverlay({
+    required this.onOutsidePointerDown,
+    required this.scrollController,
     required this.layerLink,
     required this.triggerSize,
     required this.verticalOffset,
@@ -435,14 +480,27 @@ class _DropdownOverlay<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox.expand(
+    // BUG-36: Escape closes the menu.
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.escape) {
+          onDismiss();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: SizedBox.expand(
       child: Stack(
         children: [
-          // Full-screen dismiss layer
+          // Full-screen dismiss layer. BUG-36: a raw pointer-down (not a tap
+          // gesture competing in the arena) so ANY click outside closes the
+          // menu — including a click on another dropdown, which then opens.
           Positioned.fill(
-            child: GestureDetector(
+            child: Listener(
               behavior: HitTestBehavior.translucent,
-              onTap: onDismiss,
+              onPointerDown: (_) => onOutsidePointerDown(),
             ),
           ),
 
@@ -487,7 +545,7 @@ class _DropdownOverlay<T> extends StatelessWidget {
                                   Center(
                                     child: Text(
                                       'No options',
-                                      style: StyleText.fontSize13Weight400
+                                      style: StyleText.subTitle
                                           .copyWith(
                                         color:
                                             AppColors.text.withOpacity(0.4),
@@ -495,7 +553,13 @@ class _DropdownOverlay<T> extends StatelessWidget {
                                     ),
                                   ),
                             )
-                          : ListView.separated(
+                          : Scrollbar(
+                              // BUG-48: long lists (e.g. 10 statuses) now
+                              // show that they scroll.
+                              controller: scrollController,
+                              thumbVisibility: items.length * itemHeight > maxHeight,
+                              child: ListView.separated(
+                              controller: scrollController,
                               padding: EdgeInsets.zero,
                               shrinkWrap: true,
                               itemCount: items.length,
@@ -522,6 +586,7 @@ class _DropdownOverlay<T> extends StatelessWidget {
                                 );
                               },
                             ),
+                            ),
                     ),
                   ),
                 ),
@@ -529,6 +594,7 @@ class _DropdownOverlay<T> extends StatelessWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -591,8 +657,9 @@ class _DropdownItemTileState<T> extends State<_DropdownItemTile<T>> {
                   widget.item.label,
                   style: (widget.style ??
                           (widget.isSelected
-                              ? StyleText.fontSize14Weight500
-                              : StyleText.fontSize14Weight400))
+                              ? StyleText.value.copyWith(
+                                  fontWeight: FontWeight.w600)
+                              : StyleText.value))
                       .copyWith(
                     color: isDisabled
                         ? AppColors.text.withOpacity(0.3)

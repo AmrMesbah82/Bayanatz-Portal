@@ -32,8 +32,14 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
   }
 
   bool _isVisible(String key) => _columnVisibility[key] ?? true;
-  List<String> get _visibleColumnKeys =>
-      ColumnKey.all.where((k) => _isVisible(k)).toList();
+  // Applied Date is always shown first, before the other visible columns.
+  List<String> get _visibleColumnKeys {
+    final keys = ColumnKey.all.where((k) => _isVisible(k)).toList();
+    if (keys.remove(ColumnKey.appliedDate)) {
+      keys.insert(0, ColumnKey.appliedDate);
+    }
+    return keys;
+  }
 
   static final List<Map<String, String>> _stageItems = [
     {'key': 'Applied', 'value': 'Applied'},
@@ -107,7 +113,7 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
     final datePicker = DatePicker();
     final result = await datePicker.showDatePicker(
       context,
-      _selectedCalendarDate != null ? [_selectedCalendarDate] : [DateTime.now()],
+      _selectedCalendarDate != null ? [_selectedCalendarDate] : [],
       _selectedCalendarDate ?? DateTime.now(),
       CalendarDatePicker2Type.single,
     );
@@ -137,13 +143,13 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
   }
 
   // ── Styles ──
-  TextStyle get _headerStyle => TextStyle(
+  TextStyle get _headerStyle => StyleText.fontSize12Weight600.copyWith(
     fontSize: 12.sp,
     fontWeight: FontWeight.w600,
     color: Colors.white,
   );
   TextStyle get _cellStyle =>
-      TextStyle(fontSize: 12.sp, color: const Color(0xFF333333));
+      StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp, color: const Color(0xFF333333));
 
   Widget _cell(Widget child, {EdgeInsets? padding}) {
     return Container(
@@ -226,8 +232,8 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
           borderRadius: BorderRadius.circular(4.r),
         ),
         child: Text(
-          tag,
-          style: TextStyle(
+          FormatHelper.capitalize(tag),
+          style: StyleText.fontSize11Weight600.copyWith(
             fontSize: 11.sp,
             fontWeight: FontWeight.w600,
             color: fg,
@@ -239,7 +245,9 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
     );
   }
 
-  Widget _linkCell(String url) {
+  /// BUG-112: shows "View CV" / "View Cover Letter" instead of the raw
+  /// https://firebasestorage… address.
+  Widget _linkCell(String url, {String label = 'View file'}) {
     if (url.isEmpty) return _textCell('');
     return _cell(
       MouseRegion(
@@ -247,13 +255,10 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
         child: GestureDetector(
           onTap: () => html.window.open(url, '_blank'),
           child: Text(
-            url,
-            style: TextStyle(
-              fontSize: 12.sp,
-              color: const Color(0xFF1976D2),
-              decoration: TextDecoration.underline,
-              decorationColor: const Color(0xFF1976D2),
-            ),
+            label,
+            // Figma (Applicant Details table, 7126:76470): the Resume /
+            // Cover Letter cells are plain cell text, not blue links.
+            style: _cellStyle.copyWith(color: const Color(0xFF333333)),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -299,18 +304,20 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
   String _headerLabel(String key) => ColumnKey.labels[key] ?? key;
 
   Widget _cellForKey(String key, ApplicationModel a) {
-    final avgScore =
+    // Total of the five 1–5 degrees (max 25) shown as a percentage of 100.
+    final totalScore =
     (a.technicalSkills +
         a.communicationSkills +
         a.experienceBackground +
         a.cultureFit +
         a.leadershipPotential);
-    final scoreText = avgScore > 0 ? (avgScore / 5).toStringAsFixed(1) : '';
+    final scoreText =
+        totalScore > 0 ? '${(totalScore / 25 * 100).round()}%' : '';
     switch (key) {
       case ColumnKey.firstName:
-        return _textCell(a.firstName);
+        return _textCell(FormatHelper.capitalize(a.firstName));
       case ColumnKey.lastName:
-        return _textCell(a.lastName);
+        return _textCell(FormatHelper.capitalize(a.lastName));
       case ColumnKey.email:
         return _textCell(a.email);
       case ColumnKey.code:
@@ -318,17 +325,17 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
       case ColumnKey.phone:
         return _textCell(a.phone);
       case ColumnKey.source:
-        return _textCell(a.source);
+        return _textCell(FormatHelper.capitalize(a.source));
       case ColumnKey.location:
-        return _textCell(a.jobLocation);
+        return _textCell(FormatHelper.capitalize(a.jobLocation));
       case ColumnKey.resume:
-        return _linkCell(a.resumeUrl);
+        return _linkCell(a.resumeUrl, label: 'View CV');
       case ColumnKey.coverLetter:
-        return _linkCell(a.coverLetterUrl);
+        return _linkCell(a.coverLetterUrl, label: 'View Cover Letter');
       case ColumnKey.status:
-        return _statusBadgeCell(a.status.label);
+        return _statusBadgeCell(FormatHelper.capitalize(a.status.label));
       case ColumnKey.stage:
-        return _stageCell(a.status.stage);
+        return _stageCell(FormatHelper.capitalize(a.status.stage));
       case ColumnKey.score:
         return _textCell(scoreText);
       case ColumnKey.tags:
@@ -341,6 +348,8 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
         return _textCell(_fmtDate(a.lastUpdate));
       case ColumnKey.yearOfGraduation:
         return _textCell(a.yearOfGraduation);
+      case ColumnKey.comment:
+        return _textCell(a.comments, maxLines: 2);
       default:
         return _textCell('');
     }
@@ -382,6 +391,8 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
         return 120.sp;
       case ColumnKey.yearOfGraduation:
         return 130.sp;
+      case ColumnKey.comment:
+        return _calcWidth(rows, (a) => a.comments, minW: 140, maxW: 280);
       default:
         return 100.sp;
     }
@@ -393,7 +404,7 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
       return Center(
         child: Padding(
           padding: EdgeInsets.all(40.sp),
-          child: const CircularProgressIndicator(color: ColorPick.primary),
+          child: const CircleProgress(),
         ),
       );
 
@@ -406,6 +417,9 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
         _widthForKey(visibleKeys[i], rows),
       );
     }
+    // Total table width — used so the empty-state panel spans the full table.
+    final double tableWidth = 50.sp +
+        visibleKeys.fold<double>(0, (sum, k) => sum + _widthForKey(k, rows));
     final headerLabels = <String>[
       'No',
       ...visibleKeys.map((k) => _headerLabel(k)),
@@ -421,25 +435,6 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
             SizedBox(
               width: 160.w,
               child: CustomDropdownFormFieldInvMaster(
-                selectedValue: _stageFilter,
-                items: _stageItems,
-                widthIcon: 18,
-                heightIcon: 18,
-                dropdownColor: Colors.white,
-                height: 36,
-                hint: Text(
-                  'Stage',
-                  style: TextStyle(fontSize: 12.sp, color: AppColors.secondaryText),
-                ),
-                itemColors: _stageColors,
-                showColorDots: true,
-                onChanged: (v) => setState(() => _stageFilter = v),
-              ),
-            ),
-            SizedBox(width: 12.w),
-            SizedBox(
-              width: 160.w,
-              child: CustomDropdownFormFieldInvMaster(
                 selectedValue: _statusFilter,
                 items: _statusItems,
                 widthIcon: 18,
@@ -448,11 +443,30 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
                 height: 36,
                 hint: Text(
                   'Status',
-                  style: TextStyle(fontSize: 12.sp, color: AppColors.secondaryText),
+                  style: StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp, color: AppColors.secondaryText),
                 ),
                 itemColors: _statusColors,
                 showColorDots: true,
                 onChanged: (v) => setState(() => _statusFilter = v),
+              ),
+            ),
+            SizedBox(width: 12.w),
+            SizedBox(
+              width: 160.w,
+              child: CustomDropdownFormFieldInvMaster(
+                selectedValue: _stageFilter,
+                items: _stageItems,
+                widthIcon: 18,
+                heightIcon: 18,
+                dropdownColor: Colors.white,
+                height: 36,
+                hint: Text(
+                  'Stage',
+                  style: StyleText.fontSize12Weight400.copyWith(fontSize: 12.sp, color: AppColors.secondaryText),
+                ),
+                itemColors: _stageColors,
+                showColorDots: true,
+                onChanged: (v) => setState(() => _stageFilter = v),
               ),
             ),
             const Spacer(),
@@ -476,7 +490,7 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
                       Expanded(
                         child: Text(
                           _calendarDisplayText,
-                          style: TextStyle(
+                          style: StyleText.fontSize12Weight400.copyWith(
                             fontSize: 12.sp,
                             color: _selectedCalendarDate != null
                                 ? AppColors.text
@@ -522,7 +536,7 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
                   child: Center(
                     child: Text(
                       'Table Setting',
-                      style: TextStyle(
+                      style: StyleText.fontSize12Weight600.copyWith(
                         fontSize: 12.sp,
                         fontWeight: FontWeight.w600,
                         color: Colors.white,
@@ -545,7 +559,7 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
               job: widget.job,
               applications: _filtered,
             ),
-            textStyle: TextStyle(
+            textStyle: StyleText.fontSize12Weight600.copyWith(
               fontSize: 12.sp,
               fontWeight: FontWeight.w600,
               color: Colors.white,
@@ -565,20 +579,27 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
         ),
         SizedBox(height: 16.h),
 
-        // ── TABLE — no horizontal scrollbar ──
+        // ── TABLE — BUG-112: columns after "Resume" were cut off and the
+        // scrollbar was hidden; it is now always visible.
         Directionality(
           textDirection: ui.TextDirection.ltr,
-          child: ScrollConfiguration(
-            behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: Scrollbar(
+            controller: _horizontalScrollController,
+            thumbVisibility: true,
+            trackVisibility: true,
             child: SingleChildScrollView(
               controller: _horizontalScrollController,
               scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(bottom: 14),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(10.sp),
-                child: Table(
+                borderRadius: BorderRadius.circular(4.r),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Table(
                   border: TableBorder.all(
                     color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(10.sp),
+                    borderRadius: BorderRadius.circular(4.r),
                   ),
                   defaultVerticalAlignment: TableCellVerticalAlignment.middle,
                   columnWidths: columnWidths,
@@ -600,29 +621,6 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
                           .toList(),
                     ),
 
-                    if (rows.isEmpty)
-                      TableRow(
-                        decoration: const BoxDecoration(color: Colors.white),
-                        children: [
-                          _cell(
-                            Padding(
-                              padding: EdgeInsets.symmetric(vertical: 30.sp),
-                              child: Text(
-                                'No applicants match the selected filters.',
-                                style: TextStyle(
-                                  fontSize: 13.sp,
-                                  color: AppColors.secondaryText,
-                                ),
-                              ),
-                            ),
-                          ),
-                          ...List.generate(
-                            headerLabels.length - 1,
-                                (_) => const SizedBox(),
-                          ),
-                        ],
-                      ),
-
                     ...List.generate(rows.length, (index) {
                       final a = rows[index];
                       final rowColor = index.isEven
@@ -643,6 +641,24 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
                             .toList(),
                       );
                     }),
+                  ],
+                ),
+
+                    // ── Empty state — full-width panel under the header ──
+                    if (rows.isEmpty)
+                      Container(
+                        width: tableWidth,
+                        color: Colors.white,
+                        padding: EdgeInsets.symmetric(vertical: 30.sp),
+                        alignment: Alignment.center,
+                        child: Text(
+                          'No applicants match the selected filters.',
+                          style: StyleText.fontSize13Weight400.copyWith(
+                            fontSize: 13.sp,
+                            color: AppColors.secondaryText,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),

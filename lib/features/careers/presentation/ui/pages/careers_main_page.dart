@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/widget/date_pic.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -21,14 +22,18 @@ import 'package:web_app_admin/features/careers/presentation/ui/pages/why_join_ed
 import 'package:web_app_admin/features/careers/presentation/ui/pages/why_join_preview.dart';
 
 import '../../../../../core/constant/color.dart';
+import 'careers_preview.dart';
 import '../../../../../core/custom/2-custom_textfield.dart';
 import '../../../../../core/custom_svg.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
 import '../../../../../core/widget/button.dart';
 import '../../../../main/presentation/ui/pages/main_main.dart';
+import '../../../../main/presentation/controller/main_cubit.dart';
+import '../../../../main/presentation/controller/main_state.dart';
 import '../../../data/models/careers_model.dart';
 import '../../../data/models/careers_section_model.dart';
 import '../../../data/models/intern_model.dart';
@@ -41,6 +46,8 @@ import '../../controller/intern_state.dart';
 import '../../controller/our_teams_cubit.dart';
 import 'add_intern.dart';
 import 'our_teams_main.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/careers_main_page/interns_tab_body.dart';
 part '../widgets/careers_main_page/grid_view.dart';
@@ -74,7 +81,7 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
 
   int _careersTab = 0;
   final List<String> _careersTabLabels = [
-    'Main', 'Why Join Our Team', 'Our Interns', 'Our Teams',
+    'Main', 'Why Join Our Team', 'Our Interns', 'Our Team', // BUG-143
   ];
 
   @override
@@ -92,7 +99,7 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
         if (state is CareersCmsInitial || state is CareersCmsLoading) {
           return const Scaffold(
             backgroundColor: ColorPick.white,
-            body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+            body: Center(child: CircleProgress()),
           );
         }
 
@@ -128,15 +135,9 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
 
         return Scaffold(
           backgroundColor: Color(0xFFF1F2ED),
-          body: SingleChildScrollView(
-            child: Container(
-              width: double.infinity,
-              child: Column(
-                children: [
-                  Container(
-                    width: 1000.w,
-                    child: Column(
-                      children: [
+          body: AdminStickyBody(
+  contentWidth: 1000.w,
+  children: [
 
                         AppAdminNavbar(
                           activeLabel: 'Web Page',
@@ -146,22 +147,49 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
                         ),
                         SizedBox(height: 20.h),
                         AdminSubNavBar(activeIndex: 5),
-                        SizedBox(height: 20.h),
-                        SizedBox(height: 20.h),
                         Container(
                           width: 1000.w,
                           child: _buildFullTabLayout(data),
                         ),
                         SizedBox(height: 40.h),
                       ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+),
         );
       },
+    );
+  }
+
+  // ── Preview button handler — respects the active tab ────────────────────────
+  //
+  // Every tab opens the REAL public Careers page on its matching tab, READ-ONLY
+  // (showSave: false): this button shows what is already live, so there is
+  // nothing here to publish. Save belongs to the edit screens.
+  void _onPreviewTap() {
+    final int? tab = switch (_careersTab) {
+      1 => SiteCareersTab.whyJoin,
+      2 => SiteCareersTab.interns,
+      3 => SiteCareersTab.ourTeam,
+      _ => null, // Main tab: the page opens at the top, above the tabs.
+    };
+    final String title = switch (_careersTab) {
+      1 => 'Preview Why Join Our Team',
+      2 => 'Preview Our Interns',
+      3 => 'Preview Our Teams',
+      _ => 'Preview Main Details',
+    };
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BlocProvider.value(
+          value: context.read<CareersCmsCubit>(),
+          child: CareersPreviewPage(
+            initialTab: tab,
+            showSave:   false,
+            title:      title,
+          ),
+        ),
+      ),
     );
   }
 
@@ -179,7 +207,7 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
                   color: ColorPick.primary, fontWeight: FontWeight.w700)),
           const Spacer(),
           GestureDetector(
-            onTap: () => context.pushNamed('careers-cms-preview'),
+            onTap: _onPreviewTap,
             child: Container(
               width: 130.w, height: 36.h,
               decoration: BoxDecoration(
@@ -201,13 +229,15 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
               final active = _careersTab == i;
               return GestureDetector(
                 onTap: () => setState(() => _careersTab = i),
+                // BUG-155: same height as the About Us / Services sub-tabs
+                // (text + 6.h + 2 px line; was 4.h top + 4.h bottom + 2.5).
                 child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 4.h),
+                  padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 6.h),
                   decoration: BoxDecoration(
                     border: Border(
                       bottom: BorderSide(
                         color: active ? ColorPick.primary : Colors.transparent,
-                        width: 2.5,
+                        width: 2,
                       ),
                     ),
                   ),
@@ -266,7 +296,7 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
       child: BlocBuilder<CareersSectionCubit, CareersSectionState>(
         builder: (context, state) {
           if (state is CareersSectionInitial || state is CareersSectionLoading) {
-            return const Center(child: CircularProgressIndicator(color: ColorPick.primary));
+            return const Center(child: CircleProgress());
           }
 
           CareersSectionModel? data;
@@ -274,7 +304,7 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
           if (state is CareersSectionSaved)  data = state.data;
 
           if (data == null) {
-            return const Center(child: CircularProgressIndicator(color: ColorPick.primary));
+            return const Center(child: CircleProgress());
           }
 
           final cubit = context.read<CareersSectionCubit>();
@@ -323,7 +353,7 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
                   ),
                 ],
               ),
-
+              SizedBox(height: 20.sp),
               _accordion(
                 key: 'section_$sectionKey',
                 title: sectionTitle,
@@ -363,10 +393,8 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
           ]),
           SizedBox(height: 14.h),
         ],
-        Text('SVG', style: StyleText.fontSize12Weight500.copyWith(color: AppColors.text)),
-        SizedBox(height: 6.h),
-        _imgCircle(item.svgUrl),
-        SizedBox(height: 14.h),
+        // BUG-63: the per-reason "SVG" was shown here although the edit form
+        // has no such field (it was removed there) — removed from view too.
         _readField('Sub description', item.description.en, height: 80),
         SizedBox(height: 8.h),
         _readFieldRtl('الوصف', item.description.ar, height: 80),
@@ -420,6 +448,9 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
           ),
         ]),
 
+
+        SizedBox(height: 15.sp),
+
         _accordion(
           key: 'overview',
           title: 'Careers Overview',
@@ -458,6 +489,9 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
           ],
         ),
 
+        // A collapsed accordion has no body, so its header would sit flush
+        // against the next one — add the gap only while Overview is closed.
+        SizedBox(height: (_open['overview'] ?? true) ? 0 : 10.sp),
 
         _accordion(
           key: 'statistics',
@@ -472,9 +506,9 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (i > 0) ...[
+
                       SizedBox(height: 12.h),
-                    ],
+
                     Text('${_ordLabel(i + 1)} Statistics',
                         style: StyleText.fontSize16Weight400.copyWith(color: AppColors.text)),
                     SizedBox(height: 8.h),
@@ -505,47 +539,16 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
     required List<Widget> children,
   }) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(height: 20.h),
-          GestureDetector(
-            onTap: () => setState(() => _open[key] = !isOpen),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                  color: ColorPick.primary, borderRadius: BorderRadius.circular(6.r)),
-              child: Row(children: [
-                Expanded(
-                  child: Text(title,
-                      style: StyleText.fontSize14Weight600.copyWith(color: Colors.white)),
-                ),
-                Icon(
-                  isOpen
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  color: Colors.white, size: 25.sp,
-                ),
-              ]),
-            ),
-          ),
-          if (isOpen)
-            Container(
-              padding: EdgeInsets.only(top: 16.h),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(6.r),
-                  bottomRight: Radius.circular(6.r),
-                ),
-              ),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: children),
-            ),
-        ],
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
+      child:    Padding(
+        padding: EdgeInsets.symmetric(vertical: 15.sp),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
+        ),
       ),
     );
   }

@@ -167,6 +167,71 @@ abstract class StyleText {
       AppTextStyles.font28BlackMediumCairo;
   static TextStyle get fontSize45Weight600 =>
       AppTextStyles.font28BlackMediumCairo;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  THE TYPE SCALE — use these, not the fontSizeNNWeightMM getters
+  // ══════════════════════════════════════════════════════════════════════════
+  //
+  // Four sizes, applied everywhere in the app including text fields and
+  // dropdowns. Reach for the name that matches what the text IS, and the size
+  // follows automatically — so a change here is a change everywhere, and no
+  // screen can drift by re-picking its own size.
+  //
+  //   heading  28.sp   page titles
+  //   title    14.sp   section titles, field labels, primary buttons
+  //   label    14.sp   the same size, lighter weight
+  //   subTitle 12.sp   supporting copy, helper and error text
+  //   hint     12.sp   placeholder text in fields and dropdowns
+  //   value    12.sp   the text the user typed or picked
+  //   micro    10.sp   switch captions, remove/delete buttons, small chips
+  //
+  // The raw fontSizeNNWeightMM getters above are kept only so existing call
+  // sites keep compiling; new code should use the names below.
+
+  /// 28.sp — the page heading. One per screen.
+  static TextStyle get heading =>
+      fontSize28Weight600.copyWith(color: AppColors.text);
+
+  /// 14.sp semi-bold — section titles and field labels.
+  static TextStyle get title =>
+      fontSize14Weight600.copyWith(color: AppColors.text);
+
+  /// 14.sp medium — labels sitting above an input.
+  static TextStyle get label =>
+      fontSize14Weight500.copyWith(color: AppColors.text);
+
+  /// 12.sp — supporting copy under a title, helper and error text.
+  static TextStyle get subTitle =>
+      fontSize12Weight400.copyWith(color: AppColors.secondaryText);
+
+  /// 12.sp — placeholder text inside a field or dropdown.
+  static TextStyle get hint =>
+      fontSize12Weight400.copyWith(color: AppColors.text.withOpacity(0.4));
+
+  /// 12.sp — the value a user typed or selected.
+  static TextStyle get value =>
+      fontSize12Weight400.copyWith(color: AppColors.text);
+
+  /// 10.sp — switch captions, remove/delete buttons, small chips.
+  static TextStyle get micro =>
+      fontSize10Weight500.copyWith(color: AppColors.text);
+
+  /// 10.sp — the caption beside a toggle.
+  static TextStyle get switchTitle => micro;
+
+  /// 10.sp — destructive text buttons (Remove, Delete, Discard).
+  static TextStyle get removeButton =>
+      fontSize10Weight500.copyWith(color: AppColors.red);
+
+  // ── Shared form typography ────────────────────────────────────────────────
+  // One definition for field titles, values and hints, so an EDIT screen and
+  // the READ-ONLY view of the same data render identically.
+  // These now point at the scale above — fieldLabel moved 12 → 14.
+  static TextStyle get fieldLabel => label;
+
+  static TextStyle get fieldValue => value;
+
+  static TextStyle get fieldHint => hint;
 }
 
 // ===== Legacy ThemeData Redirects =====

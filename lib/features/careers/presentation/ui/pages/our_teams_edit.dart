@@ -23,19 +23,25 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:web_app_admin/core/custom_svg.dart';
+import 'package:web_app_admin/core/main_widgets/app_admin_navbar.dart';
+import '../../../../../core/main_widgets/edit_action_buttons.dart';
 import 'package:web_app_admin/core/widget/network_image_view.dart';
 import 'package:web_app_admin/core/widget/textfield.dart';
 
 import '../../../../../core/constant/color.dart';
 import '../../../../../core/custom/image_upload_circle.dart';
 import '../../../../../core/custom_dialog.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
+import '../../../../main/presentation/ui/pages/main_main.dart';
 import '../../../data/models/our_teams_model.dart';
 import '../../controller/our_teams_cubit.dart';
 import '../../controller/our_teams_state.dart';
 import 'our_teams_preview.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
 
 part '../widgets/our_teams_edit/picked_image.dart';
 part '../widgets/our_teams_edit/deliverable_edit.dart';
@@ -117,25 +123,49 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
   }
 
   // ── Validation ──────────────────────────────────────────────────────────────
-  bool _validateAllFields() {
-    if (_items.isEmpty) return false;
+  bool _validateAllFields() => _firstValidationError() == null;
 
-    for (final item in _items) {
-      if (item.headingEn.text.trim().isEmpty) return false;
-      if (item.headingAr.text.trim().isEmpty) return false;
-      if (item.titleEn.text.trim().isEmpty) return false;
-      if (item.titleAr.text.trim().isEmpty) return false;
-      if (item.descEn.text.trim().isEmpty) return false;
-      if (item.descAr.text.trim().isEmpty) return false;
-      if (!item.icon.hasImage) return false;
+  /// BUG-64 — "Publish does nothing": every team required a *heading* EN/AR,
+  /// but the form has no heading fields (the section title above replaced
+  /// them), so validation always failed — and failed silently. The hidden
+  /// heading is no longer required, and a failed Publish now says what is
+  /// missing.
+  String? _firstValidationError() {
+    if (_headerTitleEnCtrl.text.trim().isEmpty ||
+        _headerTitleArCtrl.text.trim().isEmpty) {
+      return 'Please enter the section title (English and Arabic).';
+    }
+    if (_items.isEmpty) return 'Please add at least one team.';
 
-      for (final d in item.deliverables) {
-        if (d.enCtrl.text.trim().isEmpty) return false;
-        if (d.arCtrl.text.trim().isEmpty) return false;
+    for (var i = 0; i < _items.length; i++) {
+      final item = _items[i];
+      final n = i + 1;
+      if (!item.icon.hasImage) return 'Please upload an icon for team $n.';
+      if (item.titleEn.text.trim().isEmpty ||
+          item.titleAr.text.trim().isEmpty) {
+        return 'Please enter the title (English and Arabic) for team $n.';
+      }
+      if (item.descEn.text.trim().isEmpty ||
+          item.descAr.text.trim().isEmpty) {
+        return 'Please enter the description (English and Arabic) for team $n.';
+      }
+      for (var j = 0; j < item.deliverables.length; j++) {
+        final d = item.deliverables[j];
+        if (d.enCtrl.text.trim().isEmpty || d.arCtrl.text.trim().isEmpty) {
+          return 'Please fill deliverable ${j + 1} (English and Arabic) for team $n.';
+        }
       }
     }
+    return null;
+  }
 
-    return true;
+  void _showMessage(String text, {bool error = true}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(text),
+      backgroundColor: error ? Colors.red : ColorPick.primary,
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   // ── Pick SVG (SVG only) ─────────────────────────────────────────────────────
@@ -158,13 +188,7 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
           completed = true;
           completer.complete(null);
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content:         const Text('Only SVG files are allowed'),
-              backgroundColor: Colors.red,
-              behavior:        SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8.r)),
-            ));
+
           }
         }
         return;
@@ -195,12 +219,11 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
     return completer.future;
   }
 
-  // ── Perform Save ────────────────────────────────────────────────────────────
-  Future<void> _performSave(OurTeamsCubit cubit) async {
-    setState(() => _isSaving = true);
-
-    try {
-      // Sync item count in cubit
+  // ── Copy the form into the cubit (BUG-53) ──────────────────────────────────
+  // The preview reads the cubit, so without this it showed the SAVED teams,
+  // not the edits. Used by Preview and by Publish. Uploads are not done here.
+  void _syncToCubit(OurTeamsCubit cubit) {
+    _isDirty = true; // keep the form from being re-seeded by the emitted states
       while (cubit.current.items.length < _items.length) cubit.addItem();
       while (cubit.current.items.length > _items.length) {
         cubit.removeItem(cubit.current.items.last.id);
@@ -210,9 +233,13 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
         final local     = _items[i];
         final cubitItem = cubit.current.items[i];
 
-        cubit.updateHeading(cubitItem.id,
-            en: local.headingEn.text.trim(),
-            ar: local.headingAr.text.trim());
+        // Heading has no input any more (BUG-64); keep any existing value.
+        if (local.headingEn.text.trim().isNotEmpty ||
+            local.headingAr.text.trim().isNotEmpty) {
+          cubit.updateHeading(cubitItem.id,
+              en: local.headingEn.text.trim(),
+              ar: local.headingAr.text.trim());
+        }
         cubit.updateTitle(cubitItem.id,
             en: local.titleEn.text.trim(),
             ar: local.titleAr.text.trim());
@@ -233,6 +260,23 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
             BilingualText(en: d.enCtrl.text.trim(), ar: d.arCtrl.text.trim()),
           );
         }
+
+      }
+    cubit.updateHeader(
+        en: _headerTitleEnCtrl.text.trim(),
+        ar: _headerTitleArCtrl.text.trim());
+  }
+
+  // ── Perform Save ────────────────────────────────────────────────────────────
+  Future<void> _performSave(OurTeamsCubit cubit) async {
+    setState(() => _isSaving = true);
+
+    try {
+      _syncToCubit(cubit); // BUG-53: same copy as the preview uses
+
+      for (var i = 0; i < _items.length; i++) {
+        final local     = _items[i];
+        final cubitItem = cubit.current.items[i];
 
         // Upload icon if newly picked
         if (local.icon.bytes != null) {
@@ -256,29 +300,13 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
           _seededHash  = null;
           _isDirty     = false; // ← reset so fresh data re-seeds after save
         });
-
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Our Teams saved!',
-              style: StyleText.fontSize14Weight400
-                  .copyWith(color: Colors.white)),
-          backgroundColor: ColorPick.primary,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8.r)),
-        ));
-
+        _showMessage('Our Teams published.', error: false); // BUG-46 / BUG-64
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e',
-              style: StyleText.fontSize14Weight400
-                  .copyWith(color: Colors.white)),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ));
+        _showMessage('Could not publish Our Teams: $e'); // BUG-64
       }
     }
   }
@@ -287,18 +315,9 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
   Future<void> _handlePublish(OurTeamsCubit cubit) async {
     setState(() => _submitted = true);
 
-    if (!_validateAllFields()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Please fill all required fields and upload icons',
-              style: StyleText.fontSize14Weight400
-                  .copyWith(color: Colors.white)),
-          backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8.r)),
-        ),
-      );
+    final error = _firstValidationError();
+    if (error != null) {
+      _showMessage(error); // BUG-64: no more silent return
       return;
     }
 
@@ -326,13 +345,7 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
     return BlocConsumer<OurTeamsCubit, OurTeamsState>(
       listener: (context, state) {
         if (state is OurTeamsError) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error: ${state.message}',
-                style: StyleText.fontSize14Weight400
-                    .copyWith(color: Colors.white)),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ));
+
         }
       },
       builder: (context, state) {
@@ -342,7 +355,7 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
         if (state is OurTeamsInitial || state is OurTeamsLoading) {
           return const Scaffold(
             backgroundColor: ColorPick.white,
-            body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+            body: Center(child: CircleProgress()),
           );
         }
 
@@ -352,54 +365,28 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
           children: [
             Scaffold(
 
-              body: SingleChildScrollView(
-                child: SizedBox(
-                  width: double.infinity,
-                  child: Column(
-                    children: [
-                      SizedBox(height: 20.h),
+              body: AdminStickyBody(
+  children: [
+                      AppAdminNavbar(
+                        activeLabel: 'Web Page',
+                        homePage: MainMainPage(),
+                        webPage: MainMainPage(),
+                        jobListingPage: MainMainPage(),
+                      ),
+                      SizedBox(height: 4.h),
                       AdminSubNavBar(activeIndex: 5),
-                      SizedBox(height: 20.h),
-
                       SizedBox(
                         width: 1000.w,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // ── Page title + Add Team ───────────────────────
-                            Row(
-                              children: [
-                                Text(
-                                  'Editing Our Teams Details',
-                                  style: StyleText.fontSize45Weight600.copyWith(
-                                    color:      ColorPick.primary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const Spacer(),
-                                GestureDetector(
-                                  onTap: () {
-                                    final newId = const Uuid().v4();
-                                    setState(() {
-                                      _isDirty = true; // ← mark dirty
-                                      _items.add(_TeamItemEdit(id: newId));
-                                    });
-                                  },
-                                  child: Container(
-                                    padding: EdgeInsets.symmetric(
-                                        horizontal: 20.w, vertical: 10.h),
-                                    decoration: BoxDecoration(
-                                      color:        ColorPick.primary,
-                                      borderRadius: BorderRadius.circular(6.r),
-                                    ),
-                                    child: Text(
-                                      'Add Team',
-                                      style: StyleText.fontSize14Weight500
-                                          .copyWith(color: Colors.white),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                            // ── Page title ──────────────────────────────────
+                            Text(
+                              'Editing Our Teams Details',
+                              style: StyleText.fontSize45Weight600.copyWith(
+                                color:      ColorPick.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                             SizedBox(height: 20.h),
 
@@ -412,6 +399,38 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
                                 ),
                               ],
                             ),
+                            SizedBox(height: 16.h),
+
+                            // ── Add Team ────────────────────────────────────
+                            // Was up beside the page title, far from the list it
+                            // adds to — you had to look at the top of the page to
+                            // append a row at the bottom. It now sits directly
+                            // under the last team, where the new one appears.
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: GestureDetector(
+                                onTap: () {
+                                  final newId = const Uuid().v4();
+                                  setState(() {
+                                    _isDirty = true; // ← mark dirty
+                                    _items.add(_TeamItemEdit(id: newId));
+                                  });
+                                },
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: 20.w, vertical: 10.h),
+                                  decoration: BoxDecoration(
+                                    color:        ColorPick.primary,
+                                    borderRadius: BorderRadius.circular(4.r),
+                                  ),
+                                  child: Text(
+                                    'Add Team',
+                                    style: StyleText.label
+                                        .copyWith(color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ),
                             SizedBox(height: 20.h),
 
                             // ── Bottom buttons ──────────────────────────────
@@ -421,9 +440,7 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
                         ),
                       ),
                     ],
-                  ),
-                ),
-              ),
+),
             ),
 
             // ── Saving overlay ──────────────────────────────────────────────
@@ -446,7 +463,7 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const CircularProgressIndicator(color: ColorPick.primary),
+                        const CircleProgress(),
                         SizedBox(height: 20.h),
                         Text('Saving...',
                             style: StyleText.fontSize14Weight600

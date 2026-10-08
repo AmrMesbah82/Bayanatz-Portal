@@ -7,13 +7,17 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/widget/auto_close_dialog.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import 'package:web_app_admin/core/widget/button.dart';
+import 'package:web_app_admin/core/widget/date_pic.dart';
+import 'package:web_app_admin/core/widget/format.dart';
 import 'package:web_app_admin/core/widget/navigator.dart';
 import 'package:web_app_admin/core/widget/network_image_view.dart';
 import 'package:web_app_admin/core/widget/search.dart';
@@ -21,8 +25,11 @@ import 'package:web_app_admin/features/main/presentation/controller/main_cubit.d
 import 'package:web_app_admin/features/main/presentation/controller/main_state.dart';
 
 import '../../../../../core/constant/color.dart';
+import 'package:web_app_admin/core/main_widgets/admin_layout.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/main_widgets/application_filter_dialog.dart';
+import '../../../../../core/main_widgets/csv_export_dialog.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
 import '../../../../careers/presentation/ui/pages/careers_main.dart';
@@ -30,10 +37,13 @@ import '../../../../home/presentation/controller/home_cubit.dart';
 import '../../../../home/presentation/controller/home_state.dart';
 import '../../../../main/presentation/ui/pages/main_main.dart';
 import '../../../data/models/application_model.dart';
+import '../../../data/models/job_listing_model.dart';
 import '../../controller/application_cubit.dart';
 import '../../controller/application_state.dart';
+import '../../controller/job_listing_cubit.dart';
 import 'application_detail.dart';
 import 'job_listing_main.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/application_main/app_card.dart';
 part '../widgets/application_main/app_table.dart';
@@ -59,10 +69,57 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
   bool _isGridView = true;
   ApplicationFilterData? _activeFilter;
 
+  /// BUG-35: the "Time Frame" button did nothing — it now filters by the
+  /// application date range picked here.
+  DateTimeRange? _timeFrame;
+
+  Future<void> _pickTimeFrame() async {
+    // BUG-153: shared dialog-size picker (was the full-screen one).
+    final picked = await showAdminDateRangePicker(context, initial: _timeFrame);
+    if (picked != null) setState(() => _timeFrame = picked);
+  }
+
+  // BUG-145: one date format ("4 Oct 2026") across the admin.
+  String _fmtShort(DateTime d) => DateFormat('d MMM yyyy').format(d);
+
+  // BUG-32: Export used to do nothing.
+  void _exportApplications(List<ApplicationModel> apps) {
+    String d(DateTime? dt) => dt == null ? '' : _fmtShort(dt);
+    showCsvExportDialog(
+      context,
+      defaultFileName: 'applications',
+      itemLabel: 'applications',
+      header: const ['No', 'Name', 'Email', 'Phone', 'Job Title', 'Department',
+        'Application Date', 'Status', 'Stage', 'Tag', 'Experience Level',
+        'Employment Type'],
+      rows: [
+        for (int i = 0; i < apps.length; i++)
+          [
+            '${i + 1}',
+            apps[i].fullName,
+            apps[i].email,
+            '${apps[i].countryCode} ${apps[i].phone}'.trim(),
+            apps[i].jobTitle,
+            apps[i].department,
+            d(apps[i].applicationDate),
+            apps[i].status.label,
+            apps[i].status.stage,
+            apps[i].tag,
+            apps[i].experienceLevel,
+            apps[i].employmentType,
+          ],
+      ],
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     context.read<ApplicationCubit>().loadApplications();
+    // Jobs are needed so the filter tabs show ALL jobs — even those
+    // without any applications yet.
+    final jobCubit = context.read<JobListingCubit>();
+    if (jobCubit.allJobs.isEmpty) jobCubit.loadJobs();
   }
 
   @override
@@ -254,10 +311,11 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
 
   // ── Success Dialog ──
   void _showDownloadSuccessDialog(String name) {
+    // Closes itself after 3 s (AutoCloseDialog) — no OK button.
     showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (ctx) => Dialog(
+      builder: (ctx) => AutoCloseDialog(child: Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
         child: Container(
           width: 320.w,
@@ -278,30 +336,18 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
               Text(
                 '$name\ndownload file success',
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: StyleText.fontSize15Weight600.copyWith(
                   fontSize: 15.sp,
                   fontWeight: FontWeight.w600,
                   color: AppColors.text,
                   height: 1.4,
                 ),
               ),
-              SizedBox(height: 20.h),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: ColorPick.primary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
-                    padding: EdgeInsets.symmetric(vertical: 12.h),
-                  ),
-                  child: Text('OK', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600, color: Colors.white)),
-                ),
-              ),
+              SizedBox(height: 8.h),
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 
@@ -322,7 +368,7 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
           if (state is ApplicationInitial || state is ApplicationLoading) {
             return const Scaffold(
               backgroundColor: ColorPick.background,
-              body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+              body: Center(child: CircleProgress()),
             );
           }
 
@@ -356,49 +402,94 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
             apps = state.lastApps!;
           }
 
+          // BUG-35: Time Frame filter (inclusive of both days).
+          if (_timeFrame != null) {
+            final from = DateTime(_timeFrame!.start.year,
+                _timeFrame!.start.month, _timeFrame!.start.day);
+            final to = DateTime(_timeFrame!.end.year, _timeFrame!.end.month,
+                _timeFrame!.end.day, 23, 59, 59);
+            apps = apps.where((a) {
+              final d = a.applicationDate;
+              return d != null && !d.isBefore(from) && !d.isAfter(to);
+            }).toList();
+            totalCount = apps.length;
+          }
+
           return Scaffold(
             backgroundColor: ColorPick.background,
-            body: SingleChildScrollView(
-              child: SizedBox(
-                width: double.infinity,
-                child: Column(
-                  children: [
+            body: AdminStickyBody(
+                reflowOnPhone: true, // BUG-16
+  children: [
                     AppAdminNavbar(
                       activeLabel: 'Applications',
                       homePage: CareersMainPageDashboard(),
                       webPage: MainMainPage(),
                       jobListingPage: JobListingMainPage(),
                     ),
-                    SizedBox(height: 20.h),
+
 
                     Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 20.h),
+                      padding: EdgeInsets.symmetric(
+                          horizontal: AdminLayout.sidePadding(context), vertical: 20.h),
                       child: SizedBox(
-                        width: 1000.w,
+                        width: AdminLayout.contentWidth(context), // BUG-16
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             // ── Title ──
                             Text(
                               'Applications',
-                              style: StyleText.fontSize45Weight600.copyWith(
+                              style: StyleText.fontSize28Weight600.copyWith(
                                 color: ColorPick.primary,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                             SizedBox(height: 16.h),
 
-                            // ── Job Title filter tabs (was Department) ──
-                            SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: [
-                                  _filterTab('All', apps.length, activeJobTitle == 'All', () => cubit.setJobTitleFilter('All')),
-                                  ...jobTitleCounts.entries.map((e) =>
-                                      _filterTab(e.key, e.value, activeJobTitle == e.key, () => cubit.setJobTitleFilter(e.key))),
-                                ],
-                              ),
-                            ),
+                            // ── Job Title filter tabs — shows ALL jobs,
+                            //    including ones with no applications yet ──
+                            Builder(builder: (context) {
+                              final allJobs =
+                                  context.watch<JobListingCubit>().allJobs;
+                              // BUG-35: removed (and draft) jobs are not
+                              // job tabs any more.
+                              final hiddenTitles = allJobs
+                                  .where((j) =>
+                                      j.status == JobStatus.removed ||
+                                      j.status == JobStatus.drafted)
+                                  .map((j) => j.title.en.trim().toLowerCase())
+                                  .toSet();
+                              final liveTitles = allJobs
+                                  .where((j) =>
+                                      j.status != JobStatus.removed &&
+                                      j.status != JobStatus.drafted)
+                                  .map((j) => j.title.en.trim().toLowerCase())
+                                  .toSet();
+                              final tabCounts = Map<String, int>.from(jobTitleCounts)
+                                ..removeWhere((t, _) {
+                                  final k = t.trim().toLowerCase();
+                                  return hiddenTitles.contains(k) &&
+                                      !liveTitles.contains(k);
+                                });
+                              for (final j in allJobs) {
+                                if (j.status == JobStatus.removed ||
+                                    j.status == JobStatus.drafted) continue;
+                                final t = j.title.en.trim();
+                                if (t.isNotEmpty) {
+                                  tabCounts.putIfAbsent(t, () => 0);
+                                }
+                              }
+                              return SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    _filterTab('All', apps.length, activeJobTitle == 'All', () => cubit.setJobTitleFilter('All')),
+                                    ...tabCounts.entries.map((e) =>
+                                        _filterTab(e.key, e.value, activeJobTitle == e.key, () => cubit.setJobTitleFilter(e.key))),
+                                  ],
+                                ),
+                              );
+                            }),
                             SizedBox(height: 16.h),
 
                             // ── Search + buttons row ──
@@ -411,15 +502,23 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                                 ),
                                 SizedBox(width: 12.w),
                                 customButton(
-                                  title: 'Time Frame',
-                                  function: () {},
-                                  width: 110.w,
+                                  title: _timeFrame == null
+                                      ? 'Time Frame'
+                                      : '${_fmtShort(_timeFrame!.start)} – ${_fmtShort(_timeFrame!.end)}',
+                                  function: _pickTimeFrame,
+                                  width: _timeFrame == null ? 110.w : 170.w,
                                   height: 36.h,
                                   radius: 6,
                                   color: ColorPick.primary,
                                   textColor: Colors.white,
                                   textStyle: StyleText.fontSize13Weight600.copyWith(color: Colors.white),
                                 ),
+                                if (_timeFrame != null)
+                                  IconButton(
+                                    tooltip: 'Clear time frame',
+                                    icon: Icon(Icons.close, size: 16.sp, color: ColorPick.primary),
+                                    onPressed: () => setState(() => _timeFrame = null),
+                                  ),
                                 SizedBox(width: 8.w),
                                 customButton(
                                   title: 'Filter',
@@ -456,8 +555,8 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                                     borderRadius: BorderRadius.circular(6.r),
                                   ),
                                   child: Text(
-                                    'Total Application:  $totalCount',
-                                    style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w500, color: AppColors.text),
+                                    'Total Applications: $totalCount' /* BUG-41 */,
+                                    style: StyleText.fontSize12Weight500.copyWith(fontSize: 12.sp, fontWeight: FontWeight.w500, color: AppColors.text),
                                   ),
                                 ),
                                 const Spacer(),
@@ -465,8 +564,9 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                                 // ── Export button ──
                                 customButtonWithImage(
                                   title: 'Export',
-                                  function: () {},
-                                  textStyle: TextStyle(
+                                  // BUG-32: Export did nothing.
+                                  function: () => _exportApplications(apps),
+                                  textStyle: StyleText.fontSize12Weight600.copyWith(
                                     fontSize: 12.sp,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.white,
@@ -488,7 +588,7 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                                 customButtonWithImage(
                                   title: '',
                                   function: () => setState(() => _isGridView = true),
-                                  textStyle: const TextStyle(),
+                                  textStyle: StyleText.fontSize14Weight400.copyWith(),
                                   height: 32.sp,
                                   width: 32.sp,
                                   space: 0,
@@ -506,7 +606,7 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                                 customButtonWithImage(
                                   title: '',
                                   function: () => setState(() => _isGridView = false),
-                                  textStyle: const TextStyle(),
+                                  textStyle: StyleText.fontSize14Weight400.copyWith(),
                                   height: 32.sp,
                                   width: 32.sp,
                                   space: 0,
@@ -523,31 +623,31 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                             SizedBox(height: 16.h),
 
                             // ── Summary cards with SVG icons ──
-                            Row(
+                            // BUG-16: stage cards become a 1-column list on a
+                            // phone (they wrapped one letter per line).
+                            AdminCardsRow(
+                              phoneColumns: 1,
                               children: [
-                                Expanded(child: _summaryCard(
+                                _summaryCard(
                                   'Applied',
                                   'Qualified: $appliedQualified  Unqualified: $appliedUnqualified',
                                   'assets/images/job_list/applied.svg',
-                                )),
-                                SizedBox(width: 10.w),
-                                Expanded(child: _summaryCard(
+                                ),
+                                _summaryCard(
                                   'Interview',
                                   'Passed: $interviewPassed  Withdrew: $interviewWithdrew  Failed: $interviewFailed',
                                   'assets/images/job_list/interview.svg',
-                                )),
-                                SizedBox(width: 10.w),
-                                Expanded(child: _summaryCard(
+                                ),
+                                _summaryCard(
                                   'Offer',
                                   'Approved: $offerApproved  Pending: $offerPending  Rejected: $offerRejected',
                                   'assets/images/job_list/offer.svg',
-                                )),
-                                SizedBox(width: 10.w),
-                                Expanded(child: _summaryCard(
+                                ),
+                                _summaryCard(
                                   'Hired',
                                   'Completed: $hiredCompleted',
                                   'assets/images/job_list/hired.svg',
-                                )),
+                                ),
                               ],
                             ),
                             SizedBox(height: 20.h),
@@ -557,7 +657,7 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                               Center(
                                 child: Padding(
                                   padding: EdgeInsets.all(40.sp),
-                                  child: Text('No applications found', style: TextStyle(fontSize: 14.sp, color: AppColors.secondaryText)),
+                                  child: Text('No applications found', style: StyleText.fontSize14Weight400.copyWith(fontSize: 14.sp, color: AppColors.secondaryText)),
                                 ),
                               )
                             else
@@ -569,9 +669,7 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                       ),
                     ),
                   ],
-                ),
-              ),
-            ),
+),
           );
         },
       ),
@@ -585,10 +683,10 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 5.h),
           decoration: BoxDecoration(
             color: isActive ? ColorPick.primary : ColorPick.white,
-            borderRadius: BorderRadius.circular(8.r),
+            borderRadius: BorderRadius.circular(4.r),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -600,13 +698,13 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                     color: isActive ? Colors.white.withValues(alpha: 0.3) : ColorPick.primary,
                     borderRadius: BorderRadius.circular(12.r),
                   ),
-                  child: Text('$count', style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.w600, color: isActive ? Colors.white : Colors.white)),
+                  child: Text('$count', style: StyleText.fontSize11Weight600.copyWith(fontSize: 11.sp, fontWeight: FontWeight.w600, color: isActive ? Colors.white : Colors.white)),
                 ),
                 SizedBox(width: 6.w),
               ],
               Text(
                 label,
-                style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w500, color: isActive ? Colors.white : AppColors.text),
+                style: StyleText.fontSize13Weight500.copyWith(fontSize: 13.sp, fontWeight: FontWeight.w500, color: isActive ? Colors.white : AppColors.text),
               ),
             ],
           ),
@@ -637,6 +735,7 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                 svgPath,
                 width: 16.sp,
                 height: 16.sp,
+                color: ColorPick.primary,
               ),
             ),
           ),
@@ -645,9 +744,9 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w700, color: AppColors.text)),
+                Text(title, style: StyleText.fontSize13Weight600.copyWith(fontSize: 13.sp, fontWeight: FontWeight.w700, color: AppColors.text)),
                 SizedBox(height: 4.h),
-                Text(details, style: TextStyle(fontSize: 10.sp, color: AppColors.secondaryText)),
+                Text(details, style: StyleText.fontSize10Weight400.copyWith(fontSize: 10.sp, color: AppColors.secondaryText)),
               ],
             ),
           ),

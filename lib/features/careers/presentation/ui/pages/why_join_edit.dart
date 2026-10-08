@@ -23,7 +23,9 @@ import 'package:web_app_admin/core/widget/textfield.dart';
 import 'package:web_app_admin/features/careers/presentation/ui/pages/why_join_preview.dart';
 
 import '../../../../../core/custom_dialog.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../core/main_widgets/edit_action_buttons.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -31,6 +33,8 @@ import '../../../../main/presentation/ui/pages/main_main.dart';
 import '../../../data/models/careers_section_model.dart';
 import '../../controller/careers_section_cubit.dart';
 import '../../controller/careers_section_state.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/why_join_edit/picked_image.dart';
 part '../widgets/why_join_edit/item_edit.dart';
@@ -71,12 +75,15 @@ class _CareersSectionEditPageState extends State<CareersSectionEditPage> {
   int? _seededHash;
 
   // ── Seed from model ─────────────────────────────────────────────────────────
+  int _hashOf(CareersSectionModel data) => Object.hashAll([
+        data.items.length,
+        ...data.items.map((i) =>
+            '${i.id}${i.iconUrl}${i.svgUrl}${i.title.en}${i.title.ar}'
+            '${i.description.en}${i.description.ar}'),
+      ]);
+
   void _seedFromModel(CareersSectionModel data) {
-    final hash = Object.hashAll([
-      data.items.length,
-      ...data.items.map((i) =>
-      '${i.id}${i.iconUrl}${i.svgUrl}${i.title.en}${i.description.en}'),
-    ]);
+    final hash = _hashOf(data);
     if (_seededHash == hash) return;
     _seededHash = hash;
 
@@ -123,7 +130,10 @@ class _CareersSectionEditPageState extends State<CareersSectionEditPage> {
 
       if (item.descEn.text.trim().isEmpty) return false;
       if (item.descAr.text.trim().isEmpty) return false;
-      if (!item.svg.hasImage) return false;
+      // The per-reason SVG picker was removed from the form — the section icon
+      // above is the only image. An existing svgUrl is still carried through on
+      // save, so nothing already published is lost; it just can't block
+      // Publish any more.
     }
 
     return true;
@@ -194,28 +204,53 @@ class _CareersSectionEditPageState extends State<CareersSectionEditPage> {
     return completer.future;
   }
 
+  // ── Copy the form into the cubit (BUG-63) ───────────────────────────────────
+  //
+  // BUG-63 — extra "Reason" paragraphs were saved EMPTY. Save used to add the
+  // missing items to the cubit (each addItem() emits a state), then walk the
+  // form while awaiting icon uploads. The emitted state rebuilt the page, the
+  // builder re-seeded the form from the cubit — whose new items were still
+  // blank — and the loop went on reading those blank controllers. Only the
+  // first reason survived.
+  //
+  // Now every value is snapshotted FIRST, the cubit is updated in one
+  // synchronous pass, the seed hash is moved to the result, and the builder
+  // does not re-seed while a save is running.
+  void _syncToCubit(CareersSectionCubit cubit) {
+    final snapshot = [
+      for (final it in _items)
+        (
+          titleEn: it.titleEn.text.trim(),
+          titleAr: it.titleAr.text.trim(),
+          descEn:  it.descEn.text.trim(),
+          descAr:  it.descAr.text.trim(),
+        ),
+    ];
+
+    while (cubit.current.items.length < snapshot.length) cubit.addItem();
+    while (cubit.current.items.length > snapshot.length) {
+      cubit.removeItem(cubit.current.items.last.id);
+    }
+    for (var i = 0; i < snapshot.length; i++) {
+      final id = cubit.current.items[i].id;
+      cubit.updateTitle(id, en: snapshot[i].titleEn, ar: snapshot[i].titleAr);
+      cubit.updateDescription(id,
+          en: snapshot[i].descEn, ar: snapshot[i].descAr);
+    }
+    _seededHash = _hashOf(cubit.current);
+  }
+
   // ── Perform Save ────────────────────────────────────────────────────────────
   Future<void> _performSave(CareersSectionCubit cubit) async {
     setState(() => _isSaving = true);
 
     try {
-      // Sync items count
-      while (cubit.current.items.length < _items.length) cubit.addItem();
-      while (cubit.current.items.length > _items.length) {
-        cubit.removeItem(cubit.current.items.last.id);
-      }
+      _syncToCubit(cubit); // BUG-63
 
-      // Update fields + upload images
+      // Upload images (the form is not re-seeded while _isSaving is true)
       for (var i = 0; i < _items.length; i++) {
         final localItem = _items[i];
         final cubitItem = cubit.current.items[i];
-
-        cubit.updateTitle(cubitItem.id,
-            en: localItem.titleEn.text.trim(),
-            ar: localItem.titleAr.text.trim());
-        cubit.updateDescription(cubitItem.id,
-            en: localItem.descEn.text.trim(),
-            ar: localItem.descAr.text.trim());
 
         if (localItem.icon.bytes != null) {
           await cubit.uploadIcon(cubitItem.id, localItem.icon.bytes!);
@@ -315,28 +350,28 @@ class _CareersSectionEditPageState extends State<CareersSectionEditPage> {
         }
       },
       builder: (context, state) {
-        if (state is CareersSectionLoaded)  _seedFromModel(state.data);
-        if (state is CareersSectionSaved)   _seedFromModel(state.data);
-
         final cubit = context.read<CareersSectionCubit>();
+
+        // BUG-63: seed from the cubit's CURRENT model (an emitted state can be
+        // older than the model), and never while a save is uploading.
+        if (!_isSaving &&
+            (state is CareersSectionLoaded || state is CareersSectionSaved)) {
+          _seedFromModel(cubit.current);
+        }
 
         if (state is CareersSectionInitial || state is CareersSectionLoading) {
           return const Scaffold(
             backgroundColor: ColorPick.white,
             body: Center(
-                child: CircularProgressIndicator(color: ColorPick.primary)),
+                child: CircleProgress()),
           );
         }
 
         return Stack(
           children: [
             Scaffold(
-              body: SingleChildScrollView(
-                child: Container(
-                  width: double.infinity,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
+              body: AdminStickyBody(
+  children: [
                       AppAdminNavbar(
                         activeLabel: 'Web Page',
                         homePage: MainMainPage(),
@@ -344,8 +379,6 @@ class _CareersSectionEditPageState extends State<CareersSectionEditPage> {
                         jobListingPage: MainMainPage(),
                       ),
                       AdminSubNavBar(activeIndex: 5),
-                      SizedBox(height: 20.h),
-
                       Container(
                         width: 1000.w,
                         child: Column(
@@ -414,9 +447,7 @@ class _CareersSectionEditPageState extends State<CareersSectionEditPage> {
                         ),
                       ),
                     ],
-                  ),
-                ),
-              ),
+),
             ),
 
             // ── Saving overlay ───────────────────────────────────────────────
@@ -439,7 +470,7 @@ class _CareersSectionEditPageState extends State<CareersSectionEditPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const CircularProgressIndicator(color: ColorPick.primary),
+                        const CircleProgress(),
                         SizedBox(height: 20.h),
                         Text('Saving...',
                             style: StyleText.fontSize14Weight600

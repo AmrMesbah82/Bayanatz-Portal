@@ -226,11 +226,7 @@ class CustomTextField extends StatelessWidget {
                   style: resolvedLabelStyle,
                   children: isRequiredResolved
                       ? [
-                          TextSpan(
-                            text: ' *',
-                            style: StyleText.fontSize12Weight500
-                                .copyWith(color: AppColors.red),
-                          )
+
                         ]
                       : [],
                 ),

@@ -1,44 +1,16 @@
 part of '../../pages/main_preview.dart';
 
-class _PreviewContent extends StatelessWidget {
-  final double fakeWidth;
-  final double fakeHeight;
-  final bool   isRtl;
-
-  const _PreviewContent({
-    required this.fakeWidth,
-    required this.fakeHeight,
-    required this.isRtl,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return MediaQuery(
-      data: MediaQuery.of(context).copyWith(
-        size: Size(fakeWidth, fakeHeight),
-      ),
-      child: Directionality(
-        textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-        child: SizedBox(
-          width:  fakeWidth,
-          height: fakeHeight,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppNavbar(currentRoute: '/'),
-              const Expanded(
-                child: ColoredBox(
-                  color: Colors.transparent,
-                  child: SizedBox.expand(),
-                ),
-              ),
-              const AppFooter(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Mobile phone shell ────────────────────────────────────────────────────────
+// The fake browser viewport used to live here as `_PreviewContent`.
+//
+// It now lives in core/site_preview/site_shell_preview.dart as the public
+// `SiteShellPreview`, for two reasons:
+//
+//   1. The `package:website_app/...` imports it needs can only live in a real
+//      library, not in a `part` file. While they sat in main_preview.dart and
+//      were referenced only from here, "Optimize Imports" deleted them as
+//      unused on every save and broke the build.
+//   2. Every other admin preview page (about_us, careers, services, …) needs
+//      the same site shell, so it belongs in core/ rather than under main/.
+//
+// This file is intentionally left empty. Delete it once you are happy the
+// preview works — the `part` directive in main_preview.dart goes with it.

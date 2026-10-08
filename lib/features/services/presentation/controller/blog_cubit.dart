@@ -99,7 +99,11 @@ class BlogCubit extends Cubit<BlogState> {
 
       switch (post.status) {
       // ── PUBLISH: update the published doc, delete any draft ──────────
+      // BUG-61: 'inactive' is a status of the LIVE post too. It used to fall
+      // through to the draft branch, which wrote a hidden "<id>_draft" copy
+      // and left the original Posted and public.
         case 'published':
+        case 'inactive':
           await _repo.updatePost(postWithImage);
           // Clean up any existing draft for this post
           await _repo.deleteDraft(post.id);

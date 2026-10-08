@@ -22,7 +22,6 @@ class CustomSvg extends StatelessWidget {
   Widget build(BuildContext context) {
     return SvgPicture.asset(
       assetPath,
-
       width: width ?? 12.sp,
       height: height ?? 12.sp,
       fit: fit,

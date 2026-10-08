@@ -7,11 +7,13 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:web_app_admin/features/about_us/presentation/controller/about_us_company_cubit.dart';
 import 'package:web_app_admin/features/about_us/presentation/controller/about_us_cubit.dart';
 
+import 'core/auth/admin_auth.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 
@@ -45,8 +47,18 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   usePathUrlStrategy(); // ← removes the # from URLs
+  // BUG-05: make context.push()/pushNamed() update the address bar too, so
+  // sub-pages opened with push (About Company, etc.) survive a reload.
+  GoRouter.optionURLReflectsImperativeAPIs = true;
   AppTheme.setCurrentThemeColors();
-  runApp(const BayanatzApp());
+  // BUG-96: the "[one-time setup]" that created admin@bayanatz.com with a
+  // password written in the app code is gone (use
+  // website_app/functions/scripts/set_admin_password.js instead).
+  // Login is checked on the server (adminLogin Cloud Function) and the
+  // Firebase Auth session survives a page refresh.
+  await AdminAuth.restoreSession();
+  // BayanatzApp — with all its cubits — is only built after sign-in.
+  runApp(AdminAuthGate(builder: (_) => const BayanatzApp()));
 }
 
 Size _getDesignSize({

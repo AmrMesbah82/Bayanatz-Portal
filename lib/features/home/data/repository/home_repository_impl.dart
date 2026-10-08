@@ -26,14 +26,16 @@ class HomeRepositoryImpl implements HomeRepository {
   HomeRepositoryImpl({
     FirebaseFirestore? firestore,
     FirebaseStorage? storage,
-    String collection   = 'homePage',
-    String publishedDoc = 'home_page',
-    String draftDoc     = 'home_page_draft',
+    String collection    = 'homePage',
+    String publishedDoc  = 'home_page',
+    String draftDoc      = 'home_page_draft',
+    String scheduledDoc  = 'home_page_scheduled',
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _storage = storage ?? FirebaseStorage.instance,
         _collection = collection,
         _publishedDoc = publishedDoc,
-        _draftDoc = draftDoc;
+        _draftDoc = draftDoc,
+        _scheduledDoc = scheduledDoc;
 
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
@@ -41,12 +43,16 @@ class HomeRepositoryImpl implements HomeRepository {
   final String _collection;
   final String _publishedDoc;
   final String _draftDoc;
+  final String _scheduledDoc;
 
   DocumentReference<Map<String, dynamic>> get _publishedRef =>
       _firestore.collection(_collection).doc(_publishedDoc);
 
   DocumentReference<Map<String, dynamic>> get _draftRef =>
       _firestore.collection(_collection).doc(_draftDoc);
+
+  DocumentReference<Map<String, dynamic>> get _scheduledRef =>
+      _firestore.collection(_collection).doc(_scheduledDoc);
 
   // ═════════════════════════════════════════════════════════════════════════
   //  PUBLISHED DOCUMENT
@@ -226,6 +232,72 @@ class HomeRepositoryImpl implements HomeRepository {
   }
 
   // ═════════════════════════════════════════════════════════════════════════
+  //  SCHEDULED DOCUMENT
+  // ═════════════════════════════════════════════════════════════════════════
+  //
+  // A scheduled release lives in its OWN document, not in the draft. That is
+  // what lets a queued release and a work-in-progress draft coexist, and what
+  // keeps the currently published page untouched until the date arrives.
+
+  @override
+  Future<HomePageModel?> fetchScheduled() async {
+    try {
+      final snapshot =
+          await _scheduledRef.get(const GetOptions(source: Source.server));
+      if (snapshot.exists && snapshot.data() != null) {
+        final data = _sanitize(snapshot.data()!);
+        return HomePageModel.fromMap(
+          FlatCodec.decode(data, HomePageModel.flatTemplate),
+        );
+      }
+      return null;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> saveScheduled(HomePageModel model) async {
+    try {
+      final nested = {
+        ...model.toMap(),
+        'scheduledPublishDate': model.scheduledPublishDate?.toIso8601String(),
+      };
+      await FlatCodec.writeVersioned(_scheduledRef, nested);
+      await _removeLegacyHeaderItemKeys(_scheduledRef);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> deleteScheduled() async {
+    try {
+      final snap = await _scheduledRef.get();
+      if (snap.exists) await _scheduledRef.delete();
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> promoteScheduled() async {
+    try {
+      final scheduled = await fetchScheduled();
+      if (scheduled == null) return;
+      final publishedModel = scheduled.copyWith(
+        publishStatus: 'published',
+        clearScheduledPublishDate: true,
+        lastUpdatedAt: DateTime.now(),
+      );
+      await saveHomePage(publishedModel);
+      await deleteScheduled();
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
   //  ASSETS
   // ═════════════════════════════════════════════════════════════════════════
 
@@ -235,6 +307,19 @@ class HomeRepositoryImpl implements HomeRepository {
     required String storagePath,
   }) async {
     try {
+      // BUG-68: images can now be PNG/JPG/WebP as well as SVG. Give the file
+      // the extension of what it really is, so the public site can tell an SVG
+      // from a bitmap by its URL.
+      final ext = switch (_detectMime(bytes)) {
+        'image/svg+xml' => 'svg',
+        'image/png'     => 'png',
+        'image/gif'     => 'gif',
+        'image/webp'    => 'webp',
+        _               => 'jpg',
+      };
+      storagePath = storagePath.contains('.')
+          ? storagePath.replaceFirst(RegExp(r'\.[A-Za-z0-9]+$'), '.$ext')
+          : '$storagePath.$ext';
       final ref  = _storage.ref().child(storagePath);
       final mime = _detectMime(bytes);
       final task = await ref.putData(bytes, SettableMetadata(contentType: mime));

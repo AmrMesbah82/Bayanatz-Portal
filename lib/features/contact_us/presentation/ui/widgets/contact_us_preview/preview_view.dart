@@ -1,7 +1,9 @@
 part of '../../pages/contact_us_preview.dart';
 
 class _PreviewView extends StatelessWidget {
-  const _PreviewView();
+  const _PreviewView({this.isDraft = false});
+
+  final bool isDraft;
 
   @override
   Widget build(BuildContext context) {
@@ -13,7 +15,7 @@ class _PreviewView extends StatelessWidget {
       body: BlocBuilder<ContactUsCmsCubit, ContactUsCmsState>(
         builder: (context, state) {
           if (state is ContactUsCmsLoading || state is ContactUsCmsInitial) {
-            return const Center(child: CircularProgressIndicator(color: ColorPick.primary));
+            return const Center(child: CircleProgress());
           }
 
           if (state is ContactUsCmsError) {
@@ -38,6 +40,19 @@ class _PreviewView extends StatelessWidget {
                 children: [
                   SizedBox(height: 20.h),
                   AdminSubNavBar(activeIndex: 4),
+                  // BUG-52: a real way back. Pops to the edit form (which
+                  // still holds the unsaved changes) or, after a reload,
+                  // goes to the Contact Us tab — never a blank page.
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 12.h),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: AdminBackLink(
+                        parentLabel: isDraft ? 'Back to editing' : 'Contact Us',
+                        parentRoute: '/admin/contact-cms',
+                      ),
+                    ),
+                  ),
                   if (isMobile)
                     _MobilePreview(data: state.data)
                   else

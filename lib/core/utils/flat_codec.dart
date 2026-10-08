@@ -99,11 +99,15 @@ class FlatCodec {
     DocumentReference<Map<String, dynamic>> ref,
     Map<String, dynamic> nested, {
     String? stampKey = 'Last_Updated_At',
+    Map<String, dynamic>? scalars,
   }) async {
     final snap = await ref.get();
     final existing = snap.data() ?? <String, dynamic>{};
     final data = encodeVersioned(nested, existing);
     if (stampKey != null) data[stampKey] = FieldValue.serverTimestamp();
+    // Plain (non-versioned) fields written as-is, e.g. jobListings'
+    // `Public_Listed` flag that the security rules read (BUG-01 / BUG-99).
+    if (scalars != null) data.addAll(scalars);
     await ref.set(data, SetOptions(merge: true));
   }
 

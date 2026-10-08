@@ -18,7 +18,9 @@ import 'package:web_app_admin/features/services/presentation/ui/pages/services_m
 
 import '../../../../../../core/constant/color.dart';
 import '../../../../../../core/custom_dialog.dart';
+import '../../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../../core/main_widgets/edit_action_buttons.dart';
 import '../../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../../core/theme/appcolors.dart';
 import '../../../../../../core/theme/new_theme.dart';
@@ -28,6 +30,8 @@ import '../../../../../main/presentation/ui/pages/main_main.dart';
 import '../../../../data/models/services_model.dart';
 import '../../../controller/services_cubit.dart';
 import '../../../controller/services_state.dart';
+import '../../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 
 
@@ -265,14 +269,7 @@ class _ServicesMainEditPageState extends State<ServicesMainEditPage> {
 
   void _onDiscard() {
     if (_hasChanges) {
-      showConfirmDialog(
-        context: context,
-        title: 'Discard Changes',
-        subtitle: 'Are you sure you want to discard all changes?',
-        confirmLabel: 'Discard',
-        cancelLabel: 'Cancel',
-        onConfirm: () => Navigator.pop(context),
-      );
+      confirmDiscard(context, onDiscard: () => Navigator.pop(context));
     } else {
       Navigator.pop(context);
     }
@@ -331,12 +328,8 @@ class _ServicesMainEditPageState extends State<ServicesMainEditPage> {
         builder: (context, state) {
           return Stack(
             children: [
-              SingleChildScrollView(
-                child: SizedBox(
-                  width: double.infinity,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
+              AdminStickyBody(
+  children: [
                       AppAdminNavbar(
                         activeLabel:     'Web Page',
                         homePage:        CareersMainPageDashboard(),
@@ -345,7 +338,6 @@ class _ServicesMainEditPageState extends State<ServicesMainEditPage> {
                       ),
                       SizedBox(height: 20.h),
                       AdminSubNavBar(activeIndex: 2),
-                      SizedBox(height: 20.h),
                       SizedBox(
                         width: 1000.w,
                         child: Column(
@@ -374,9 +366,7 @@ class _ServicesMainEditPageState extends State<ServicesMainEditPage> {
                         ),
                       ),
                     ],
-                  ),
-                ),
-              ),
+),
               if (_isSaving) _buildSavingOverlay(),
             ],
           );
@@ -387,39 +377,14 @@ class _ServicesMainEditPageState extends State<ServicesMainEditPage> {
 
   // ── Accordion ──────────────────────────────────────────────────────────────
   Widget _headingsAccordion() {
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
+    return CustomAccordion(
+      title:    'Headings',
+      isOpen:   _headingsOpen,
+      onToggle: () => setState(() => _headingsOpen = !_headingsOpen),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GestureDetector(
-            onTap: () => setState(() => _headingsOpen = !_headingsOpen),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-              decoration: BoxDecoration(
-                color: ColorPick.primary,
-                borderRadius: BorderRadius.circular(6.r),
-              ),
-              child: Row(children: [
-                Expanded(
-                  child: Text(
-                    'Headings',
-                    style: StyleText.fontSize14Weight600
-                        .copyWith(color: Colors.white),
-                  ),
-                ),
-                Icon(
-                  _headingsOpen
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  color: Colors.white, size: 20.sp,
-                ),
-              ]),
-            ),
-          ),
-          if (_headingsOpen)
-            Padding(
+          Padding(
               padding: EdgeInsets.symmetric(vertical: 16.h),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -510,76 +475,18 @@ class _ServicesMainEditPageState extends State<ServicesMainEditPage> {
   }
 
   Widget _actionButtons() {
+    // Shared action buttons — style lives in core/main_widgets/edit_action_buttons.dart
     return Column(
       children: [
-        // Preview — half width left
-        Row(children: [
-          Expanded(
-            child: SizedBox(
-              height: 44.h,
-              child: ElevatedButton(
-                onPressed: _onPreview,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF608570),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8.r)),
-                ),
-                child: Text('Preview',
-                    style: StyleText.fontSize14Weight600
-                        .copyWith(color: Colors.white)),
-              ),
-            ),
-          ),
-          SizedBox(width: 400.w),
-          Expanded(
-            child: Tooltip(
-              message: !_isPublishEnabled
-                  ? (_hasChanges
-                  ? (_isFormValid
-                  ? ''
-                  : 'Please fix validation errors before publishing')
-                  : 'No changes to publish')
-                  : '',
-              child: SizedBox(
-                height: 44.h,
-                child: ElevatedButton(
-                  onPressed: _isPublishEnabled
-                      ? _showPublishConfirmDialog
-                      : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor:         ColorPick.primary,
-                    disabledBackgroundColor: ColorPick.back,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8.r)),
-                  ),
-                  child: Text('Publish',
-                      style: StyleText.fontSize14Weight600
-                          .copyWith(color: Colors.white)),
-
-                ),
-              ),
-            ),
-          ),
-        ]),
-        SizedBox(height: 10.h),
-
-        // Discard | Publish
-        Row(children: [
-          Expanded(
-            child: customButton(
-              title:     'Discard',
-              function:  _onDiscard,
-              height:    44.h,
-              color:     const Color(0xFF797979),
-              textColor: Colors.white,
-              textStyle: StyleText.fontSize14Weight600
-                  .copyWith(color: Colors.white),
-              radius: 8.r,
-            ),
-          ),
-          SizedBox(width: 400.w),
-          Expanded(child: Container())
-        ]),
+        EditActionButtons(
+          publishEnabled: _isPublishEnabled,
+          onPreview: _onPreview,
+          onPublish: _showPublishConfirmDialog,
+          onDiscard: _onDiscard,
+          publishDisabledTooltip: _hasChanges
+              ? 'Please fix validation errors before publishing'
+              : 'No changes to publish',
+        ),
 
         // Validation summary message
         if (!_isFormValid && _hasChanges)
@@ -612,7 +519,7 @@ class _ServicesMainEditPageState extends State<ServicesMainEditPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const CircularProgressIndicator(color: ColorPick.primary),
+              const CircleProgress(),
               SizedBox(height: 12.h),
               Text(
                 'Saving...',

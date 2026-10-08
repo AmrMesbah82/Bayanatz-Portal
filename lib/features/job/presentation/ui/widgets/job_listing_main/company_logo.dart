@@ -6,12 +6,11 @@ class _CompanyLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double sz = 30.sp;
+    final double sz = 36.sp; // readable size (was 30)
     return Container(
       width: sz,
       height: sz,
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F0F0),
         borderRadius: BorderRadius.circular(8.r),
       ),
       child: ClipRRect(
@@ -29,12 +28,13 @@ class _CompanyLogo extends StatelessWidget {
     );
   }
 
+  // No department image → the admin header logo.
   Widget _fallbackIcon(double sz) {
-    return Container(
+    return Image.asset(
+      'assets/images/login/logo.png',
       width: sz,
       height: sz,
-      color: const Color(0xFFF0F0F0),
-      child: Icon(Icons.business_rounded, size: 20.sp, color: const Color(0xFFBBBBBB)),
+      fit: BoxFit.contain,
     );
   }
 }

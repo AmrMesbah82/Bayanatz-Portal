@@ -14,9 +14,10 @@ extension InquiryStatusColor on InquiryStatus {
       case InquiryStatus.newInquiry:
         return const Color(0xFF008037);
       case InquiryStatus.replied:
-        return const Color(0xFFFF9800);
+        return const Color(0xFFFF814A); // Figma 7126:65498
       case InquiryStatus.closed:
-        return const Color(0xFFE53935);
+        // BUG-152: Figma 7126:65503 — red; "New" is green, so they differ.
+        return const Color(0xFFD31426);
     }
   }
 }

@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_svg/svg.dart';
+import 'package:go_router/go_router.dart';
 import 'package:web_app_admin/core/constant/color.dart';
-import 'package:web_app_admin/core/widget/network_image_view.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-import '../../features/home/presentation/controller/home_cubit.dart';
-import '../../features/home/presentation/controller/home_state.dart';
 import '../../features/main/presentation/controller/main_cubit.dart';
 import '../../features/main/presentation/controller/main_state.dart';
 import '../../features/inquire/presentation/ui/pages/inquiry_main.dart';
 import '../../features/job/presentation/ui/pages/application_main.dart';
+import '../auth/admin_auth.dart';
 import '../theme/app_wight.dart';
 import '../theme/appcolors.dart';
 // StyleText resolves the admin-selected English/Arabic font at runtime,
@@ -20,15 +18,6 @@ import '../theme/new_theme.dart';
 class _BP {
   static const double mobile = 600;
   static const double tablet = 1024;
-}
-
-Color _primaryFromState(MainCmsState state) {
-  final String hex = switch (state) {
-    MainCmsLoaded(:final data) => data.branding.primaryColor,
-    MainCmsSaved(:final data)  => data.branding.primaryColor,
-    _                          => '',
-  };
-  return _hexColor(hex, const Color(0xFF2E7D32));
 }
 
 Color _navbarBgFromState(MainCmsState state) {
@@ -48,22 +37,34 @@ Color _hexColor(String hex, Color fallback) {
   return fallback;
 }
 
-void _pushPage(BuildContext context, Widget page) {
-  final cubit = context.read<HomeCmsCubit>();
-  Navigator.of(context).pushReplacement(
-    MaterialPageRoute(
-      builder: (_) => BlocProvider.value(
-        value: cubit,
-        child: page,
-      ),
-    ),
-  );
+// BUG-05: every top-level section now has its own URL. The navbar used to
+// swap the body with Navigator.pushReplacement(MaterialPageRoute), so the
+// address bar never changed, F5 always landed on Home and the browser Back
+// button left the app. Navigating with go_router paths fixes all three.
+class AdminRoutes {
+  static const String home         = '/';
+  static const String jobListing   = '/jobs';
+  static const String applications = '/applications';
+  static const String inquiries    = '/inquiries';
+  static const String webPage      = '/admin/dashboard';
+}
+
+void _goTo(BuildContext context, String location) {
+  // BUG-101: detail pages (Job Post Details, Applicant details …) are pushed
+  // on top of their section with Navigator.push. go('/jobs') while already
+  // on /jobs changed nothing, so "Job Listing" in the menu did nothing.
+  // Close every page that was pushed on top first, then go.
+  final router = GoRouter.of(context);
+  Navigator.of(context, rootNavigator: true)
+      .popUntil((route) => route.settings is Page);
+  router.go(location);
 }
 
 class _AdminNavItem {
   final String  label;
+  final String  route;
   final Widget? page;
-  const _AdminNavItem({required this.label, this.page});
+  const _AdminNavItem({required this.label, required this.route, this.page});
 }
 
 class AppAdminNavbar extends StatelessWidget {
@@ -83,17 +84,34 @@ class AppAdminNavbar extends StatelessWidget {
   });
 
   List<_AdminNavItem> get _navItems => [
-    _AdminNavItem(label: 'Home',         page: homePage),
-    _AdminNavItem(label: 'Job Listing',  page: jobListingPage),
-    _AdminNavItem(label: 'Applications', page: const ApplicationMainPage()),
-    _AdminNavItem(label: 'Inquires',     page: const InquiryMainPage()),
+    _AdminNavItem(label: 'Home',         route: AdminRoutes.home,         page: homePage),
+    _AdminNavItem(label: 'Job Listing',  route: AdminRoutes.jobListing,   page: jobListingPage),
+    _AdminNavItem(label: 'Applications', route: AdminRoutes.applications, page: const ApplicationMainPage()),
+    // BUG-40: "Inquires" is a verb — the section is "Inquiries".
+    _AdminNavItem(label: 'Inquiries',    route: AdminRoutes.inquiries,    page: const InquiryMainPage()),
   ];
+
+  // BUG-23 / BUG-40: some pages passed 'web page' (lower case) or the old
+  // 'Inquires' spelling, so nothing was highlighted. Normalise here.
+  String get _normalisedActive {
+    final l = activeLabel.trim().toLowerCase();
+    if (l == 'web page')                      return 'Web Page';
+    if (l == 'inquires' || l == 'inquiries')  return 'Inquiries';
+    if (l == 'job listing')                   return 'Job Listing';
+    if (l == 'applications')                  return 'Applications';
+    if (l == 'home')                          return 'Home';
+    return activeLabel;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final String activeLabel = _normalisedActive;
     return BlocBuilder<MainCmsCubit, MainCmsState>(
       builder: (context, cmsState) {
-        final Color  primary  = _primaryFromState(cmsState);
+        // BUG-50: the admin navbar always uses the ADMIN theme colour. It used
+        // to take the public site's CMS primary colour (green), which leaked
+        // into the tablet/mobile selected state.
+        final Color  primary  = ColorPick.primary;
         final Color  navbarBg = _navbarBgFromState(cmsState);
         final double w        = MediaQuery.of(context).size.width;
 
@@ -157,7 +175,7 @@ class _AdminNavbarDesktop extends StatelessWidget {
       child: Container(
         width:   1000.w,
         margin:  EdgeInsets.symmetric(vertical: 16.h),
-        padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 8.h),
+        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
         decoration: BoxDecoration(
           color:        ColorPick.white,
           borderRadius: BorderRadius.circular(4.r),
@@ -165,7 +183,7 @@ class _AdminNavbarDesktop extends StatelessWidget {
         child: Row(
           children: [
             _AdminLogo(
-              onTap: () => _pushPage(context, navItems.first.page!),
+              onTap: () => _goTo(context, AdminRoutes.home),
             ),
             SizedBox(width: 250.w),
             Row(
@@ -174,18 +192,21 @@ class _AdminNavbarDesktop extends StatelessWidget {
                 if (!showOnlyWebPage)
                   ...navItems.map((item) => _AdminNavLink(
                     label:       item.label,
-                    page:        item.page,
+                    route:       item.route,
                     activeLabel: activeLabel,
                     primary:     ColorPick.white,
                   )),
-                SizedBox(width: 12.w),
+                // BUG-150: no extra 12.w — "Web Page" sat 54 px from
+                // "Inquiries" while the other items are ~44 px apart.
                 _WebPageButton(
                   primary:  ColorPick.primary,
                   isActive: activeLabel == 'Web Page',
-                  onTap:    () => _pushPage(context, webPage),
+                  onTap:    () => _goTo(context, AdminRoutes.webPage),
                 ),
               ],
             ),
+            const Spacer(),
+            const _SignOutButton(), // BUG-01
           ],
         ),
       ),
@@ -227,35 +248,36 @@ class _AdminNavbarTablet extends StatelessWidget {
         child: Row(
           children: [
             _AdminLogo(
-              onTap: () => _pushPage(context, navItems.first.page!),
+              onTap: () => _goTo(context, AdminRoutes.home),
             ),
             SizedBox(width: 16.w),
-            if (!showOnlyWebPage)
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: navItems
-                        .map((item) => _AdminNavLink(
-                      label:       item.label,
-                      page:        item.page,
-                      activeLabel: activeLabel,
-                      primary:     primary,
-                      compact:     true,
-                    ))
-                        .toList(),
-                  ),
+            // BUG-150: at 820 px "Web Page" was pushed to the far right (324 px
+            // gap) next to Sign out. It now follows the other menu items.
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    if (!showOnlyWebPage)
+                      ...navItems.map((item) => _AdminNavLink(
+                        label:       item.label,
+                        route:       item.route,
+                        activeLabel: activeLabel,
+                        primary:     primary,
+                        compact:     true,
+                      )),
+                    _WebPageButton(
+                      primary:  primary,
+                      compact:  true,
+                      isActive: activeLabel == 'Web Page',
+                      onTap:    () => _goTo(context, AdminRoutes.webPage),
+                    ),
+                  ],
                 ),
-              )
-            else
-              const Spacer(),
-            SizedBox(width: 12.w),
-            _WebPageButton(
-              primary:  primary,
-              compact:  true,
-              isActive: activeLabel == 'Web Page',
-              onTap:    () => _pushPage(context, webPage),
+              ),
             ),
+            SizedBox(width: 12.w),
+            const _SignOutButton(compact: true), // BUG-01
           ],
         ),
       ),
@@ -298,7 +320,7 @@ class _AdminNavbarMobile extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             _AdminLogo(
-              onTap: () => _pushPage(context, navItems.first.page!),
+              onTap: () => _goTo(context, AdminRoutes.home),
             ),
             if (!showOnlyWebPage)
               GestureDetector(
@@ -318,7 +340,7 @@ class _AdminNavbarMobile extends StatelessWidget {
                 primary:  primary,
                 compact:  true,
                 isActive: activeLabel == 'Web Page',
-                onTap:    () => _pushPage(context, webPage),
+                onTap:    () => _goTo(context, AdminRoutes.webPage),
               ),
           ],
         ),
@@ -382,8 +404,9 @@ class _AdminMobileDrawer extends StatelessWidget {
                   _AdminLogo(
                     rawSize: true,
                     onTap: () {
+                      final router = GoRouter.of(context);
                       Navigator.of(context).pop();
-                      _pushPage(context, navItems.first.page!);
+                      router.go(AdminRoutes.home);
                     },
                   ),
                   GestureDetector(
@@ -408,16 +431,14 @@ class _AdminMobileDrawer extends StatelessWidget {
                 children: [
                   ...navItems.map((item) {
                     final bool isActive  = activeLabel == item.label;
-                    final bool isEnabled = item.page != null;
                     return GestureDetector(
-                      onTap: isEnabled
-                          ? () {
+                      onTap: () {
+                        final router = GoRouter.of(context);
                         Navigator.of(context).pop();
-                        _pushPage(context, item.page!);
-                      }
-                          : null,
+                        router.go(item.route);
+                      },
                       child: Opacity(
-                        opacity: isEnabled ? 1.0 : 0.45,
+                        opacity: 1.0,
                         child: Container(
                           width:   double.infinity,
                           margin:  EdgeInsets.only(bottom: 6.h),
@@ -444,8 +465,9 @@ class _AdminMobileDrawer extends StatelessWidget {
                   SizedBox(height: 12.h),
                   GestureDetector(
                     onTap: () {
+                      final router = GoRouter.of(context);
                       Navigator.of(context).pop();
-                      _pushPage(context, webPage);
+                      router.go(AdminRoutes.webPage);
                     },
                     child: Container(
                       width:   double.infinity,
@@ -473,6 +495,17 @@ class _AdminMobileDrawer extends StatelessWidget {
                       ),
                     ),
                   ),
+                  SizedBox(height: 12.h),
+                  // BUG-01: sign out
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      AdminAuth.signOut();
+                    },
+                    icon:  Icon(Icons.logout_rounded, color: primary, size: 18.sp),
+                    label: Text('Sign out',
+                        style: StyleText.fontSize14Weight500.copyWith(color: primary)),
+                  ),
                 ],
               ),
             ),
@@ -495,47 +528,22 @@ class _AdminLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double sz = rawSize ? 40.w : 36.w;
+    final double sz = rawSize ? 40.w : 40.w;
 
-    return BlocBuilder<MainCmsCubit, MainCmsState>(
-      builder: (context, state) {
-        final String logoUrl = switch (state) {
-          MainCmsLoaded(:final data) => data.branding.logoUrl,
-          MainCmsSaved(:final data)  => data.branding.logoUrl,
-          _                          => '',
-        };
-
-        final Widget logoWidget = logoUrl.isNotEmpty
-            ? NetworkImageView(
-          url:    logoUrl,
-          width:  sz,
+    // 29/9/2026 — the admin navbar always shows the new transparent logo
+    // (same as the login screen), not the website's CMS logo.
+    return GestureDetector(
+      onTap: onTap,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Image.asset(
+          'assets/images/login/logo.png',
+          width: sz,
           height: sz,
-          fit:    BoxFit.fill,
-          placeholder: Image(
-            image:  const AssetImage('assets/images/logo.jpg'),
-            width:  sz,
-            height: sz,
-            fit:    BoxFit.fill,
-          ),
-        )
-            : Image(
-          image:  const AssetImage('assets/images/logo.jpg'),
-          width:  sz,
-          height: sz,
-          fit:    BoxFit.fill,
-        );
-
-        return GestureDetector(
-          onTap: onTap,
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8.r),
-              child: logoWidget,
-            ),
-          ),
-        );
-      },
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+        ),
+      ),
     );
   }
 }
@@ -546,14 +554,14 @@ class _AdminLogo extends StatelessWidget {
 
 class _AdminNavLink extends StatefulWidget {
   final String  label;
-  final Widget? page;
+  final String  route;
   final String  activeLabel;
   final Color   primary;
   final bool    compact;
 
   const _AdminNavLink({
     required this.label,
-    required this.page,
+    required this.route,
     required this.activeLabel,
     required this.primary,
     this.compact = false,
@@ -567,20 +575,20 @@ class _AdminNavLinkState extends State<_AdminNavLink> {
   bool _hovered = false;
 
   bool get _isActive  => widget.activeLabel == widget.label;
-  bool get _isEnabled => widget.page != null;
+  bool get _isEnabled => true;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: _isEnabled ? () => _pushPage(context, widget.page!) : null,
+      onTap: () => _goTo(context, widget.route),
       child: Opacity(
         opacity: _isEnabled ? 1.0 : 0.45,
         child: Container(
           margin: EdgeInsets.symmetric(
               horizontal: widget.compact ? 2.w : 4.w),
           padding: EdgeInsets.symmetric(
-            horizontal: widget.compact ? 8.w  : 14.w,
-            vertical:   widget.compact ? 6.h  : 7.h,
+            horizontal: widget.compact ? 8.w  : 16.w,
+            vertical:   widget.compact ? 6.h  : 5.h,
           ),
           decoration: BoxDecoration(
             color: _isActive
@@ -592,14 +600,12 @@ class _AdminNavLinkState extends State<_AdminNavLink> {
           ),
           child: Text(
             widget.label,
-            style: StyleText.fontSize14Weight400.copyWith(
-              fontSize:   widget.compact ? 11.sp : 13.sp,
-              fontWeight: _isActive
-                  ? AppFontWeights.semiBold
-                  : AppFontWeights.regular,
+            // Same style as AdminSubNavBar items
+            style: StyleText.fontSize14Weight500.copyWith(
+              fontSize: widget.compact ? 11.sp : null,
               color: _isActive
                   ? Colors.white
-                  : (_hovered ? widget.primary : AppColors.text),
+                  : (_hovered ? widget.primary : const Color(0xFF333333)),
             ),
           ),
         ),
@@ -639,8 +645,8 @@ class _WebPageButtonState extends State<_WebPageButton> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: EdgeInsets.symmetric(
-          horizontal: widget.compact ? 14.w : 20.w,
-          vertical:   widget.compact ? 7.h  : 9.h,
+          horizontal: widget.compact ? 14.w : 16.w,
+          vertical:   widget.compact ? 7.h  : 5.h,
         ),
         decoration: BoxDecoration(
           color: widget.isActive
@@ -652,16 +658,37 @@ class _WebPageButtonState extends State<_WebPageButton> {
         ),
         child: Text(
           'Web Page',
-          style: StyleText.fontSize14Weight400.copyWith(
-        fontSize:   widget.compact ? 11.sp : 13.sp,
-          fontWeight: widget.isActive
-              ? AppFontWeights.semiBold
-              : AppFontWeights.regular,
-          color: widget.isActive
-              ? Colors.white
-              : (_hovered ? widget.primary : AppColors.text),
+          // Same style as AdminSubNavBar items
+          style: StyleText.fontSize14Weight500.copyWith(
+            fontSize: widget.compact ? 11.sp : null,
+            color: widget.isActive
+                ? Colors.white
+                : (_hovered ? widget.primary : const Color(0xFF333333)),
+          ),
         ),
       ),
-    ));
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  SIGN OUT (BUG-01)
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _SignOutButton extends StatelessWidget {
+  final bool compact;
+  const _SignOutButton({this.compact = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip:   'Sign out',
+      onPressed: AdminAuth.signOut,
+      icon: Icon(
+        Icons.logout_rounded,
+        size:  compact ? 18.sp : 20.sp,
+        color: const Color(0xFF333333),
+      ),
+    );
   }
 }

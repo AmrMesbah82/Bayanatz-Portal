@@ -11,8 +11,11 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:web_app_admin/core/custom_svg.dart';
+import 'package:web_app_admin/core/widget/format.dart';
 
 import '../../../../../core/constant/color.dart';
+import '../../../../../core/custom/1-custom_dropdwon.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/main_widgets/careers_stat_card.dart';
 import '../../../../../core/main_widgets/funnel_chart_widget.dart';
@@ -24,6 +27,8 @@ import '../../../../main/presentation/ui/pages/main_main.dart';
 import '../../../data/models/careers_model.dart';
 import '../../controller/careers_cubit.dart';
 import '../../controller/careers_state.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
+import 'package:web_app_admin/core/main_widgets/admin_layout.dart';
 
 part '../widgets/careers_main/chart_colors.dart';
 part '../widgets/careers_main/legend_item.dart';
@@ -45,8 +50,11 @@ class _CareersMainPageDashboardState extends State<CareersMainPageDashboard> {
   @override
   void initState() {
     super.initState();
+    // BUG-31: the dashboard was computed ONCE at app start, so jobs added or
+    // edited afterwards never showed up until a full page reload. Recompute
+    // it every time Home is opened.
     final cubit = context.read<CareersCmsCubit>();
-    if (cubit.state is CareersCmsInitial) {
+    if (cubit.state is! CareersCmsLoading) {
       cubit.loadRealData();
     }
   }
@@ -59,7 +67,7 @@ class _CareersMainPageDashboardState extends State<CareersMainPageDashboard> {
           return const Scaffold(
             backgroundColor: ColorPick.white,
             body: Center(
-              child: CircularProgressIndicator(color: ColorPick.primary),
+              child: CircleProgress(),
             ),
           );
         }
@@ -72,7 +80,7 @@ class _CareersMainPageDashboardState extends State<CareersMainPageDashboard> {
           return const Scaffold(
             backgroundColor: ColorPick.white,
             body: Center(
-              child: CircularProgressIndicator(color: ColorPick.primary),
+              child: CircleProgress(),
             ),
           );
         }
@@ -81,23 +89,21 @@ class _CareersMainPageDashboardState extends State<CareersMainPageDashboard> {
 
         return Scaffold(
           backgroundColor: ColorPick.background,
-          body: SingleChildScrollView(
-            child: SizedBox(
-              width: double.infinity,
-              child: Column(
-                children: [
+          body: AdminStickyBody(
+                reflowOnPhone: true, // BUG-06: real phone layout
+  children: [
                   AppAdminNavbar(
                     activeLabel:    'Home',
                     homePage:       CareersMainPageDashboard(),
                     webPage:        MainMainPage(),
                     jobListingPage: JobListingMainPage(),
                   ),
-                  SizedBox(height: 20.h),
 
                   SingleChildScrollView(
-                    padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 20.h),
+                    padding: EdgeInsets.symmetric(
+                        horizontal: AdminLayout.sidePadding(context), vertical: 20.h),
                     child: SizedBox(
-                      width: 1000.w,
+                      width: AdminLayout.contentWidth(context), // BUG-06
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -108,7 +114,7 @@ class _CareersMainPageDashboardState extends State<CareersMainPageDashboard> {
                               Text(
                                 "Bayanatz Jobs",
                                 style: StyleText.fontSize14Weight500.copyWith(
-                                  fontSize: 44.sp,
+                                  fontSize: 28.sp,
                                   fontWeight: FontWeight.w700,
                                   color: ColorPick.primary,
                                 ),
@@ -126,16 +132,16 @@ class _CareersMainPageDashboardState extends State<CareersMainPageDashboard> {
                                     crossAxisAlignment: CrossAxisAlignment.stretch,
                                     children: [
                                       Text(
-                                        _heroImageVisible ? "Hide" : "Collapse",
-                                        style: StyleText.fontSize20Weight500.copyWith(
-                                          color: const Color(0xFF1877F2),
+                                        _heroImageVisible ? "Hide" : "Show", // BUG-58: was "Collapse"
+                                        style: StyleText.fontSize14Weight500.copyWith(
+                                          color: ColorPick.primary,
                                           decoration: TextDecoration.none,
                                         ),
                                       ),
                                       SizedBox(height: 2.h),
                                       Container(
                                         height: 1.5,
-                                        color: const Color(0xFF1877F2),
+                                        color: ColorPick.primary,
                                       ),
                                     ],
                                   ),
@@ -143,6 +149,37 @@ class _CareersMainPageDashboardState extends State<CareersMainPageDashboard> {
                               ),
                             ],
                           ),
+
+                          // ── BUG-02: tell the admin when data failed to load ──
+                          if (context.read<CareersCmsCubit>().dashboardLoadWarning != null)
+                            Container(
+                              width: double.infinity,
+                              margin: EdgeInsets.only(top: 12.h),
+                              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFEBEE),
+                                borderRadius: BorderRadius.circular(8.r),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.error_outline, color: ColorPick.primary, size: 18.sp),
+                                  SizedBox(width: 10.w),
+                                  Expanded(
+                                    child: Text(
+                                      context.read<CareersCmsCubit>().dashboardLoadWarning!,
+                                      style: StyleText.fontSize12Weight400
+                                          .copyWith(color: ColorPick.primary),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => context.read<CareersCmsCubit>().loadRealData(),
+                                    child: Text('Retry',
+                                        style: StyleText.fontSize12Weight600
+                                            .copyWith(color: ColorPick.primary)),
+                                  ),
+                                ],
+                              ),
+                            ),
 
                           // ── Hero SVG ──
                           if (_heroImageVisible) ...[
@@ -161,14 +198,43 @@ class _CareersMainPageDashboardState extends State<CareersMainPageDashboard> {
 
                           SizedBox(height: 20.h),
 
-                          // ── Dashboard Title ──
-                          Center(
-                            child: Text(
-                              'Dashboard',
-                              style: StyleText.fontSize18Weight500.copyWith(
-                                color: AppColors.text,
+                          // ── Dashboard Title + Filters (Time / Departments) ──
+                          // BUG-06 / BUG-07: on a phone the filters go under
+                          // the title instead of covering it.
+                          if (AdminLayout.isPhone(context))
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  'Dashboard',
+                                  textAlign: TextAlign.center,
+                                  style: StyleText.fontSize18Weight500.copyWith(
+                                    color: AppColors.text,
+                                    fontWeight: FontWeight.w700
+                                  ),
+                                ),
+                                SizedBox(height: 12.h),
+                                _dashboardFilters(context, compact: true),
+                              ],
+                            )
+                          else
+                          Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Center(
+                                child: Text(
+                                  'Dashboard',
+                                  style: StyleText.fontSize18Weight500.copyWith(
+                                    color: AppColors.text,
+                                    fontWeight: FontWeight.w700
+                                  ),
+                                ),
                               ),
-                            ),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: _dashboardFilters(context),
+                              ),
+                            ],
                           ),
                           SizedBox(height: 20.h),
 
@@ -216,10 +282,11 @@ class _CareersMainPageDashboardState extends State<CareersMainPageDashboard> {
                           ),
                           SizedBox(height: 16.h),
 
-                          // Row 5: Employment Types | Candidate Gender
+                          // Row 5: Employment Types (no Gender chart — it is
+                          // not in the Figma dashboard).
                           _chartRow(
                             left:  _buildEmploymentTypesChart(dash),
-                            right: _buildCandidateGenderChart(dash),
+                            right: const SizedBox(),
                           ),
                           SizedBox(height: 40.h),
                         ],
@@ -227,14 +294,85 @@ class _CareersMainPageDashboardState extends State<CareersMainPageDashboard> {
                     ),
                   ),
                 ],
-              ),
-            ),
-          ),
+),
         );
       },
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  //  DASHBOARD FILTERS — Time + Departments
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Widget _dashboardFilters(BuildContext context, {bool compact = false}) {
+    final cubit = context.read<CareersCmsCubit>();
+    final depts = cubit.availableDepartments;
+
+    // compact (phone): both dropdowns share the full width.
+    Widget sized(double w, Widget child) =>
+        compact ? Expanded(child: child) : SizedBox(width: w, child: child);
+
+    return Row(
+      mainAxisSize: compact ? MainAxisSize.max : MainAxisSize.min,
+      children: [
+        // ── Time ──
+        sized(
+          160.w,
+          CustomDropdown<DashboardTimeRange>(
+            hint: 'Time',
+            value: cubit.timeRange,
+            items: DashboardTimeRange.values
+                .map((r) => DropdownItem<DashboardTimeRange>(
+                      value: r,
+                      label: r.label,
+                    ))
+                .toList(),
+            onChanged: cubit.setDashboardTimeRange,
+            fillColor: ColorPick.white,
+            borderRadius: BorderRadius.circular(4.r),
+            itemHeight: 36.h,
+            maxOverlayHeight: 225.h,
+            valueStyle: StyleText.fontSize12Weight400
+                .copyWith(color: AppColors.text),
+            hintStyle: StyleText.fontSize12Weight400
+                .copyWith(color: AppColors.text.withOpacity(.8)),
+          ),
+        ),
+        SizedBox(width: 12.w),
+
+        // ── Departments ──
+        sized(
+          180.w,
+          CustomDropdown<String>(
+            hint: 'Departments',
+            value: cubit.department ?? _kAllDepartments,
+            items: [
+              const DropdownItem<String>(
+                value: _kAllDepartments,
+                label: 'All Departments',
+              ),
+              ...depts.map((d) => DropdownItem<String>(value: d, label: d)),
+            ],
+            onChanged: (d) => cubit.setDashboardDepartment(
+              d == _kAllDepartments ? null : d,
+            ),
+            fillColor: ColorPick.white,
+            borderRadius: BorderRadius.circular(4.r),
+            itemHeight: 36.h,
+            maxOverlayHeight: 225.h,
+            valueStyle: StyleText.fontSize12Weight400
+                .copyWith(color: AppColors.text),
+            hintStyle: StyleText.fontSize12Weight400
+                .copyWith(color: AppColors.text.withOpacity(.8)),
+          ),
+        ),
+      ],
+    );
+  }
 }
+
+/// Sentinel value for the "All Departments" entry (the dropdown needs a
+/// non-null value, while the cubit uses `null` to mean "no filter").
+const String _kAllDepartments = '__all__';
 
 // ── Internal helper classes ──────────────────────────────────────────────────

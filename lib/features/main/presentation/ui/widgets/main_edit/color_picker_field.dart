@@ -65,7 +65,7 @@ class _ColorPickerFieldState extends State<_ColorPickerField> {
       children: [
         if (widget.label != null) ...[
           Text(widget.label!,
-              style: StyleText.fontSize12Weight500.copyWith(color: AppColors.text)),
+              style: StyleText.fontSize14Weight500.copyWith(color: AppColors.text)),
           SizedBox(height: 5.h),
         ],
         CompositedTransformTarget(

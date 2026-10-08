@@ -20,20 +20,29 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:web_app_admin/core/widget/button.dart';
+import 'package:web_app_admin/core/custom_svg.dart';
 import 'package:web_app_admin/core/widget/network_image_view.dart';
 import 'package:web_app_admin/core/widget/textfield.dart';
 import 'package:web_app_admin/core/widget/custom_field.dart';
 
 import '../../../../../../core/constant/color.dart';
+import '../../../../../../core/custom/3-custom_accordion.dart';
 import '../../../../../../core/custom/image_upload_circle.dart';
 import '../../../../../../core/custom_dialog.dart';
+import '../../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../../core/main_widgets/edit_action_buttons.dart';
 import '../../../../../../core/theme/appcolors.dart';
 import '../../../../../../core/theme/new_theme.dart';
 import '../../../../data/models/services_model.dart';
 import '../../../controller/services_cubit.dart';
 import '../../../controller/services_state.dart';
 import 'services_digital_preview.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
+import 'package:web_app_admin/core/main_widgets/app_admin_navbar.dart';
+import 'package:web_app_admin/features/careers/presentation/ui/pages/careers_main.dart';
+import 'package:web_app_admin/features/main/presentation/ui/pages/main_main.dart';
+import 'package:web_app_admin/features/job/presentation/ui/pages/job_listing_main.dart';
 
 part '../../widgets/services_digital_main/item_controllers.dart';
 part '../../widgets/services_digital_main/original_item_data.dart';
@@ -126,9 +135,8 @@ class _ServicesDigitalJourneyEditPageState
   // ── Change detection ───────────────────────────────────────────────────────
   void _checkForChanges() {
     final hasChanges = _hasAnyChanges();
-    if (hasChanges != _hasChanges) {
-      setState(() => _hasChanges = hasChanges);
-    }
+    // Same fix as BUG-62: always rebuild so Publish follows the validity.
+    if (mounted) setState(() => _hasChanges = hasChanges);
   }
 
   bool _hasAnyChanges() {
@@ -488,14 +496,7 @@ class _ServicesDigitalJourneyEditPageState
 
   void _onDiscard() {
     if (_hasChanges) {
-      showConfirmDialog(
-        context: context,
-        title: 'Discard Changes',
-        subtitle: 'Are you sure you want to discard all changes?',
-        confirmLabel: 'Discard',
-        cancelLabel: 'Cancel',
-        onConfirm: () => Navigator.pop(context),
-      );
+      confirmDiscard(context, onDiscard: () => Navigator.pop(context));
     } else {
       Navigator.pop(context);
     }
@@ -529,21 +530,18 @@ class _ServicesDigitalJourneyEditPageState
         },
         child: Stack(
           children: [
-            SingleChildScrollView(
-              child: SizedBox(
-                width: double.infinity,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 1000.w,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+            AdminStickyBody(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  contentWidth: 1000.w,
+  children: [
+                          AppAdminNavbar(
+                            activeLabel:    'Web Page',
+                            homePage:       CareersMainPageDashboard(),
+                            webPage:        MainMainPage(),
+                            jobListingPage: JobListingMainPage(),
+                          ),
                           SizedBox(height: 20.h),
                           AdminSubNavBar(activeIndex: 2),
-                          SizedBox(height: 20.h),
-
                           Text(
                             'Editing Digital Journey Details',
                             style: StyleText.fontSize45Weight600.copyWith(
@@ -568,9 +566,9 @@ class _ServicesDigitalJourneyEditPageState
                                     mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text('Section Title *',
+                                      Text('Section Title',
                                           style: _labelStyle()),
-                                      Text('عنوان القسم *',
+                                      Text('عنوان القسم',
                                           style: _labelStyle()),
                                     ],
                                   ),
@@ -626,13 +624,21 @@ class _ServicesDigitalJourneyEditPageState
                                   horizontal: 14.w, vertical: 8.h),
                               decoration: BoxDecoration(
                                 color: const Color(0xFF797979),
-                                borderRadius: BorderRadius.circular(7.r),
+                                borderRadius: BorderRadius.circular(4.r),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.add,
-                                      color: Colors.white, size: 16.sp),
+                                  // The app's own add asset, not the Material
+                                  // glyph — same icon every other "add" control
+                                  // in the admin uses.
+                                  CustomSvg(
+                                    assetPath: 'assets/add.svg',
+                                    width:  14.w,
+                                    height: 14.w,
+                                    fit:    BoxFit.scaleDown,
+                                    color:  Colors.white,
+                                  ),
                                   SizedBox(width: 4.w),
                                   Text(
                                     'Digital Journey',
@@ -648,12 +654,7 @@ class _ServicesDigitalJourneyEditPageState
                           _actionButtons(),
                           SizedBox(height: 40.h),
                         ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+),
 
             // ── Loading overlay ──────────────────────────────────────────
             if (_isSaving)
@@ -676,7 +677,7 @@ class _ServicesDigitalJourneyEditPageState
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const CircularProgressIndicator(color: ColorPick.primary),
+                        const CircleProgress(),
                         SizedBox(height: 20.h),
                         Text(
                           'Saving...',

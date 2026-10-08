@@ -82,7 +82,7 @@ extension _AddInternWidgets on _AddInternPageState {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(children: [
-          Text('Photo', style: StyleText.fontSize12Weight500.copyWith(color: AppColors.text)),
+          Text('Photo', style: StyleText.fontSize12Weight600.copyWith(color: AppColors.text)),
         ]),
         SizedBox(height: 6.h),
         imageUploadCircleBare(
@@ -103,7 +103,6 @@ extension _AddInternWidgets on _AddInternPageState {
       children: [
         Row(children: [
           Text('Joined Date', style: StyleText.fontSize12Weight500.copyWith(color: AppColors.text)),
-          Text(' *', style: StyleText.fontSize12Weight600.copyWith(color: Colors.red)),
         ]),
         SizedBox(height: 6.h),
         GestureDetector(

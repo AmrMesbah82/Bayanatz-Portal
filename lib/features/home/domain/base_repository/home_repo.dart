@@ -1,12 +1,17 @@
 // ******************* FILE INFO *******************
 // File Name: home_repo.dart
 // Description: Abstract repository for Home CMS.
-//              Supports dual-document architecture:
-//              - Published doc  → `cms/home_page`
-//              - Draft doc      → `cms/home_page_draft`
+//              THREE-document architecture — each version is stored on its own
+//              so none of them can overwrite another:
+//              - Published doc  → `homePage/home_page`
+//              - Scheduled doc  → `homePage/home_page_scheduled`
+//              - Draft doc      → `homePage/home_page_draft`
+//
+//              A scheduled release and a draft can exist at the same time, and
+//              saving either one never touches the published version that is
+//              currently live.
 // Created by: Amr Mesbah
-// Last Update: 20/04/2026
-// UPDATED: Added draft lifecycle methods (fetch, save, delete, promote) ✅
+// UPDATED: Scheduled split out of the draft document into its own slot ✅
 
 import 'dart:typed_data';
 
@@ -38,6 +43,23 @@ abstract class HomeRepository {
   /// Promote draft → published: copies draft into the published doc,
   /// then deletes the draft.
   Future<void> promoteDraft();
+
+  // ── Scheduled document ───────────────────────────────────────────────────
+  /// Fetch the scheduled version. Returns null if nothing is scheduled.
+  Future<HomePageModel?> fetchScheduled();
+
+  /// Save form edits as a scheduled release, carrying its publish date.
+  /// Does NOT touch the published doc — the live page stays as it is until
+  /// the scheduled date arrives.
+  Future<void> saveScheduled(HomePageModel model);
+
+  /// Delete the scheduled document (cancel the scheduled release).
+  Future<void> deleteScheduled();
+
+  /// Promote scheduled → published: copies the scheduled version into the
+  /// published doc, then clears the scheduled slot. Called once its date has
+  /// passed.
+  Future<void> promoteScheduled();
 
   // ── Assets ───────────────────────────────────────────────────────────────
   Future<String> uploadImage({

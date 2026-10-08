@@ -16,6 +16,7 @@ extension _HomeMainReadOnly on _HomeMainPageMasterState {
             height: 80),
         SizedBox(height: 16.h),
         _readFieldRtl('وصف مختصر', data.shortDescription.ar, height: 80),
+
       ],
     );
   }
@@ -50,7 +51,7 @@ extension _HomeMainReadOnly on _HomeMainPageMasterState {
               ]),
               SizedBox(height: 10.h),
               Row(children: [
-                Expanded(child: _readField('Button Navigation', routeLabel.isNotEmpty ? routeLabel : 'Not set')),
+                Expanded(child: _readField('Navigate To', routeLabel.isNotEmpty ? routeLabel : 'Not set')),
                 SizedBox(width: 16.w),
                 const Expanded(child: SizedBox()),
               ]),
@@ -73,13 +74,13 @@ extension _HomeMainReadOnly on _HomeMainPageMasterState {
       children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Image', style: StyleText.fontSize12Weight500.copyWith(color: AppColors.text)),
+            Text('Image', style: StyleText.fontSize14Weight500.copyWith(color: AppColors.text)),
             SizedBox(height: 6.h),
             _imgCircle(sec?.imageUrl ?? ''),
           ]),
           SizedBox(width: 24.w),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Icon', style: StyleText.fontSize12Weight500.copyWith(color: AppColors.text)),
+            Text('Icon', style: StyleText.fontSize14Weight500.copyWith(color: AppColors.text)),
             SizedBox(height: 6.h),
             _imgCircle(sec?.iconUrl ?? '', isAdd: true),
           ]),
@@ -92,7 +93,7 @@ extension _HomeMainReadOnly on _HomeMainPageMasterState {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text('Visibility ',
-                      style: StyleText.fontSize11Weight400
+                      style: StyleText.fontSize14Weight500
                           .copyWith(color: AppColors.text)),
                   Container(
                     width: 32.w,
@@ -134,33 +135,21 @@ extension _HomeMainReadOnly on _HomeMainPageMasterState {
 
   Widget _accordion({required String key, required String title, required List<Widget> children}) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        GestureDetector(
-          onTap: () => setState(() => _open[key] = !isOpen),
-          child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-            decoration: BoxDecoration(color: ColorPick.primary, borderRadius: BorderRadius.circular(6.r)),
-            child: Row(children: [
-              Expanded(child: Text(title,
-                  style: StyleText.fontSize14Weight600.copyWith(color: Colors.white))),
-              Icon(isOpen ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                  color: Colors.white, size: 20.sp),
-            ]),
-          ),
-        ),
-        if (isOpen)
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
-      ]),
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
+      child:    Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
     );
   }
 
   Widget _readField(String label, String value, {double height = 36}) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(label, style: StyleText.fontSize12Weight500.copyWith(color: AppColors.text)),
+      Text(label, style: StyleText.fontSize14Weight500.copyWith(color: AppColors.text)),
       SizedBox(height: 4.h),
       Container(
         width: double.infinity, height: height.h,
@@ -179,7 +168,7 @@ extension _HomeMainReadOnly on _HomeMainPageMasterState {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: StyleText.fontSize12Weight500.copyWith(color: AppColors.text)),
+        Text(label, style: StyleText.fontSize14Weight500.copyWith(color: AppColors.text)),
         SizedBox(height: 4.h),
         Container(
           width: double.infinity, height: height.h,

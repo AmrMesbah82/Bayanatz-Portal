@@ -7,13 +7,27 @@
 
 part of '../../pages/main_edit.dart';
 
+// ── The 5 fixed navigation items (identity/routes NOT editable) ──────────────
+const List<Map<String, String>> _kCanonicalNavItems = [
+  {'route': '/',         'en': 'Home',       'ar': 'الرئيسية'},
+  {'route': '/services', 'en': 'Services',   'ar': 'الخدمات'},
+  {'route': '/about',    'en': 'About Us',   'ar': 'من نحن'},
+  {'route': '/contact',  'en': 'Contact Us', 'ar': 'اتصل بنا'},
+  {'route': '/careers',  'en': 'Careers',    'ar': 'الوظائف'},
+];
+
 extension _HomeEditSave on _MainEditPageState {
   // ─────────────────────────────────────────────────────────────────────────
   //  SEED FROM MODEL — main data (branding/footer/social) + home nav buttons
   // ─────────────────────────────────────────────────────────────────────────
   void _seedFromModel(MainPageModel d, HomePageModel h) {
+    // Main navbar items live ONLY in mainPage/main. They are a separate feature
+    // from the Home page nav cards (homePage/home_page) — never read the home
+    // doc here. (The [h] parameter is kept for signature compatibility.)
+    final List<NavButtonModel> savedNav = d.navButtons;
+
     final modelHash = Object.hashAll([
-      ...h.navButtons.map((b) => b.id + b.name.en + b.route),
+      ...savedNav.map((b) => b.id + b.name.en + b.route),
       ...d.socialLinks.map((s) => s.iconUrl),
       d.branding.logoUrl,
     ]);
@@ -38,15 +52,37 @@ extension _HomeEditSave on _MainEditPageState {
       link.text.removeListener(_onFieldChanged);
     }
 
-    // ── Nav buttons (HOME data) ─────────────────────────────────────────────
-    while (_navBtns.length > h.navButtons.length) {
+    // ── Nav buttons (HOME data) — FIXED 5 canonical items ───────────────────
+    // Home, Services, About Us, Contact Us, Careers. The item set and its
+    // routes are fixed; the admin can only edit the DISPLAY name (EN/AR),
+    // status and order. Saved buttons keep their saved names/order; any
+    // canonical item missing from the saved data (e.g. Home) is appended
+    // with its default labels.
+    final ordered = <NavButtonModel>[];
+    for (final b in savedNav) {
+      if (_kCanonicalNavItems.any((c) => c['route'] == b.route) &&
+          !ordered.any((o) => o.route == b.route)) {
+        ordered.add(b);
+      }
+    }
+    for (final c in _kCanonicalNavItems) {
+      if (!ordered.any((b) => b.route == c['route'])) {
+        ordered.add(NavButtonModel(
+          id:    '',
+          name:  BiText(en: c['en']!, ar: c['ar']!),
+          route: c['route']!,
+        ));
+      }
+    }
+
+    while (_navBtns.length > ordered.length) {
       final removed = _navBtns.removeLast();
       removed['nameEn']!.dispose();
       removed['nameAr']!.dispose();
       _navRoutes.removeLast();
       _navStatus.removeLast();
     }
-    while (_navBtns.length < h.navButtons.length) {
+    while (_navBtns.length < ordered.length) {
       _navBtns.add({
         'nameEn': TextEditingController(),
         'nameAr': TextEditingController(),
@@ -54,12 +90,11 @@ extension _HomeEditSave on _MainEditPageState {
       _navRoutes.add(null);
       _navStatus.add(true);
     }
-    for (var i = 0; i < h.navButtons.length; i++) {
-      _navBtns[i]['nameEn']!.text = h.navButtons[i].name.en;
-      _navBtns[i]['nameAr']!.text = h.navButtons[i].name.ar;
-      _navRoutes[i] =
-          h.navButtons[i].route.isEmpty ? null : h.navButtons[i].route;
-      _navStatus[i] = h.navButtons[i].status;
+    for (var i = 0; i < ordered.length; i++) {
+      _navBtns[i]['nameEn']!.text = ordered[i].name.en;
+      _navBtns[i]['nameAr']!.text = ordered[i].name.ar;
+      _navRoutes[i] = ordered[i].route;
+      _navStatus[i] = ordered[i].status;
     }
 
     // ── Footer columns (MAIN data) ──────────────────────────────────────────
@@ -90,9 +125,9 @@ extension _HomeEditSave on _MainEditPageState {
             d.footerColumns[i].labels[li].label.en;
         (labels[li]['ar'] as TextEditingController).text =
             d.footerColumns[i].labels[li].label.ar;
-        labels[li]['route'] = d.footerColumns[i].labels[li].route.isEmpty
-            ? null
-            : d.footerColumns[i].labels[li].route;
+        // BUG-59: '' is the "None" choice (label without a link) and is a
+        // valid saved value — keep it, don't turn it back into "unset".
+        labels[li]['route'] = d.footerColumns[i].labels[li].route;
       }
     }
 
@@ -120,7 +155,10 @@ extension _HomeEditSave on _MainEditPageState {
         ? d.branding.mainWidgetColor
         : '#D9D9D9';
     _engFont = d.branding.englishFont.isEmpty ? 'Cairo' : d.branding.englishFont;
-    _arFont = d.branding.arabicFont.isEmpty ? 'Cairo' : d.branding.arabicFont;
+    // BUG-78: a Latin-only font saved earlier falls back to Cairo.
+    _arFont = _kArabicFonts.any((m) => m['key'] == d.branding.arabicFont)
+        ? d.branding.arabicFont
+        : 'Cairo';
     _logoPicked = d.branding.logoUrl.isNotEmpty
         ? _PickedImage(url: d.branding.logoUrl)
         : const _PickedImage();
@@ -142,6 +180,13 @@ extension _HomeEditSave on _MainEditPageState {
       link.text.addListener(_onFieldChanged);
     }
 
+    _syncFooterTitlesFromNav(); // BUG-67
+
+    // Remember the form exactly as it was loaded. Publish stays disabled until
+    // the current signature differs from this one — see _isDirty in
+    // main_edit.dart.
+    _seedSignature = _formSignature;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() {});
     });
@@ -149,45 +194,19 @@ extension _HomeEditSave on _MainEditPageState {
 
   // ─────────────────────────────────────────────────────────────────────────
   //  SAVE / PUBLISH
-  //  Nav buttons → HomeCmsCubit (home doc). Everything else → MainCmsCubit.
+  //  Everything on this page — branding, footer, social AND the main navbar
+  //  items — is saved to the MAIN doc (mainPage/main) via MainCmsCubit only.
+  //  The Home page nav cards are a separate feature and are NOT touched here.
   // ─────────────────────────────────────────────────────────────────────────
   Future<void> _save(MainCmsCubit cubit,
       {String publishStatus = 'published'}) async {
     try {
-      // ── Nav buttons — belong to HOME ──────────────────────────────────────
-      final homeCubit = context.read<HomeCmsCubit>();
+      // NOTE: Main navbar items are persisted ONLY to mainPage/main below (via
+      // cubit.setNavButtons + cubit.save). This editor no longer touches the
+      // HOME doc — the Home page nav cards are an independent feature edited on
+      // the Home page and stored in homePage/home_page.
 
-      final snapshot = List<NavButtonModel>.from(homeCubit.current.navButtons);
-      final routeToId = {for (final b in snapshot) b.route: b.id};
-
-      for (var i = 0; i < _navBtns.length; i++) {
-        final localRoute = _navRoutes[i] ?? '';
-        if (localRoute.isEmpty) continue;
-        final currentIndex = homeCubit.current.navButtons
-            .indexWhere((b) => b.route == localRoute);
-        if (currentIndex != -1 && currentIndex != i) {
-          homeCubit.reorderNavButtonsSilent(currentIndex, i);
-        }
-      }
-
-      for (var i = 0; i < _navBtns.length; i++) {
-        final localRoute = _navRoutes[i] ?? '';
-        final id = routeToId[localRoute];
-        if (id == null) continue;
-
-        homeCubit.updateNavButtonName(id,
-            en: _navBtns[i]['nameEn']!.text,
-            ar: _navBtns[i]['nameAr']!.text);
-        homeCubit.updateNavButtonRoute(id, localRoute);
-
-        final modelStatus = homeCubit.current.navButtons
-            .firstWhere((b) => b.id == id,
-                orElse: () => NavButtonModel(id: id))
-            .status;
-        if (modelStatus != _navStatus[i]) {
-          homeCubit.toggleNavButtonStatus(id);
-        }
-      }
+      _syncFooterTitlesFromNav(); // BUG-67
 
       // ── Footer columns — MAIN ─────────────────────────────────────────────
       while (cubit.current.footerColumns.length < _footerColumns.length) {
@@ -238,6 +257,23 @@ extension _HomeEditSave on _MainEditPageState {
         }
       }
 
+      // ── Main navbar items — saved to MAIN (mainPage/main) ONLY ────────────
+      // The website navbar reads them from this doc. The Home page nav cards
+      // are separate (homePage/home_page) and are not written here.
+      cubit.setNavButtons([
+        for (var i = 0; i < _navBtns.length; i++)
+          if ((_navRoutes[i] ?? '').isNotEmpty)
+            NavButtonModel(
+              id:     'nb_${i + 1}',
+              name:   BiText(
+                en: _navBtns[i]['nameEn']!.text.trim(),
+                ar: _navBtns[i]['nameAr']!.text.trim(),
+              ),
+              route:  _navRoutes[i]!,
+              status: _navStatus[i],
+            ),
+      ]);
+
       // ── Branding / Logo — MAIN ────────────────────────────────────────────
       if (_logoPicked.bytes != null) {
         await cubit.uploadLogo(_logoPicked.bytes!);
@@ -250,15 +286,8 @@ extension _HomeEditSave on _MainEditPageState {
       cubit.updateEnglishFont(_engFont ?? 'Cairo');
       cubit.updateArabicFont(_arFont ?? 'Cairo');
 
-      // Save main data to the MAIN doc.
+      // Save main data (incl. main navbar items) to the MAIN doc ONLY.
       await cubit.save(publishStatus: publishStatus);
-
-      // Nav buttons live in the HOME doc, but publishing Main must NOT
-      // upload the rest of the home content. Only when Main is PUBLISHED,
-      // write the Nav_Buttons_* keys alone (partial merge write).
-      if (publishStatus == 'published') {
-        await homeCubit.saveNavButtonsOnly();
-      }
     } catch (e) {
       // Errors surface via MainCmsError state
     }

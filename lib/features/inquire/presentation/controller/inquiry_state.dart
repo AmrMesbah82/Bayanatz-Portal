@@ -5,6 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 
+import '../../../../core/constant/contact_form_constants.dart';
 import '../../data/models/inquiry_model.dart';
 
 abstract class InquiryState {}
@@ -20,6 +21,8 @@ class InquiryLoaded extends InquiryState {
   final String? entityTypeFilter;
   final String? locationFilter;
   final int? monthFilter;
+  final DateTime? fromDate;
+  final DateTime? toDate;
 
   InquiryLoaded({
     required this.inquiries,
@@ -28,6 +31,8 @@ class InquiryLoaded extends InquiryState {
     this.entityTypeFilter,
     this.locationFilter,
     this.monthFilter,
+    this.fromDate,
+    this.toDate,
   });
 
   List<InquiryModel> get filtered {
@@ -55,6 +60,22 @@ class InquiryLoaded extends InquiryState {
       ).toList();
     }
 
+    // ── Date range filter (BUG-36) ──
+    if (fromDate != null || toDate != null) {
+      final from = fromDate == null
+          ? null
+          : DateTime(fromDate!.year, fromDate!.month, fromDate!.day);
+      final to = toDate == null
+          ? null
+          : DateTime(toDate!.year, toDate!.month, toDate!.day, 23, 59, 59);
+      list = list.where((i) {
+        final d = i.submissionDate;
+        if (d == null) return false;
+        if (from != null && d.isBefore(from)) return false;
+        if (to != null && d.isAfter(to)) return false;
+        return true;
+      }).toList();
+    }
     // ── Search filter ──
     if (searchQuery.isNotEmpty) {
       final q = searchQuery.toLowerCase();
@@ -77,11 +98,19 @@ class InquiryLoaded extends InquiryState {
   int get closedCount  => filtered.where((i) => i.status == InquiryStatus.closed).length;
 
   // ── Unique values for dropdown items ──
+  // BUG-36: fixed lists come from the enums / form constants, not only from
+  // values already present in the data (an empty table meant "No options").
   List<String> get uniqueStatuses =>
-      inquiries.map((i) => i.status.label).toSet().toList()..sort();
-
-  List<String> get uniqueEntityTypes =>
-      inquiries.map((i) => i.entityType).where((e) => e.isNotEmpty).toSet().toList()..sort();
+      InquiryStatus.values.map((s) => s.label).toList();
+  List<String> get uniqueEntityTypes {
+    final list = List<String>.from(ContactFormConstants.entityTypesEn);
+    for (final i in inquiries) {
+      if (i.entityType.isNotEmpty && !list.contains(i.entityType)) {
+        list.add(i.entityType);
+      }
+    }
+    return list;
+  }
 
   List<String> get uniqueLocations =>
       inquiries.map((i) => i.location).where((e) => e.isNotEmpty).toSet().toList()..sort();

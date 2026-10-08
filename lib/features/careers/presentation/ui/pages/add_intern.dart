@@ -6,6 +6,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:html' as html;
+import 'dart:ui' as ui;
 
 import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +20,7 @@ import 'package:web_app_admin/core/widget/textfield.dart';
 import '../../../../../core/constant/color.dart';
 import '../../../../../core/custom/image_upload_circle.dart';
 import '../../../../../core/custom_dialog.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/main_widgets/delete_intern_dialog.dart';
@@ -28,6 +30,7 @@ import '../../../../main/presentation/ui/pages/main_main.dart';
 import '../../../data/models/intern_model.dart';
 import '../../controller/intern_cubit.dart';
 import '../../controller/intern_state.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 
 part '../widgets/add_intern/add_intern_widgets.dart';
@@ -68,6 +71,12 @@ class _AddInternPageState extends State<AddInternPage> {
   final _positionCtrl    = TextEditingController();
   final _degreesCtrl     = TextEditingController();
   final _whatLearnedCtrl = TextEditingController();
+  // BUG-74: Arabic fields
+  final _firstNameArCtrl   = TextEditingController();
+  final _lastNameArCtrl    = TextEditingController();
+  final _positionArCtrl    = TextEditingController();
+  final _degreesArCtrl     = TextEditingController();
+  final _whatLearnedArCtrl = TextEditingController();
   DateTime? _joinedDate;
 
   bool get _isEdit => widget.existing != null;
@@ -83,6 +92,11 @@ class _AddInternPageState extends State<AddInternPage> {
       _positionCtrl.text    = e.position;
       _degreesCtrl.text     = e.degrees;
       _whatLearnedCtrl.text = e.whatHaveILearned;
+      _firstNameArCtrl.text   = e.firstNameAr;
+      _lastNameArCtrl.text    = e.lastNameAr;
+      _positionArCtrl.text    = e.positionAr;
+      _degreesArCtrl.text     = e.degreesAr;
+      _whatLearnedArCtrl.text = e.whatHaveILearnedAr;
       _joinedDate           = e.joinedDate;
     }
   }
@@ -94,6 +108,11 @@ class _AddInternPageState extends State<AddInternPage> {
     _positionCtrl.dispose();
     _degreesCtrl.dispose();
     _whatLearnedCtrl.dispose();
+    _firstNameArCtrl.dispose();
+    _lastNameArCtrl.dispose();
+    _positionArCtrl.dispose();
+    _degreesArCtrl.dispose();
+    _whatLearnedArCtrl.dispose();
     super.dispose();
   }
 
@@ -180,6 +199,23 @@ class _AddInternPageState extends State<AddInternPage> {
     return true;
   }
 
+  // BUG-74: Arabic text field (optional — the site falls back to English).
+  Widget _arField(String label, TextEditingController ctrl,
+      {double height = 44, int maxLines = 1}) {
+    return CustomValidatedTextFieldMaster(
+      label:         label,
+      hint:          'اكتب هنا',
+      fillColor:     AppColors.white,
+      controller:    ctrl,
+      height:        height,
+      maxLines:      maxLines,
+      submitted:     _submitted,
+      primaryColor:  ColorPick.primary,
+      textDirection: ui.TextDirection.rtl,
+      textAlign:     TextAlign.right,
+    );
+  }
+
   // ── Perform Save (create / update) ─────────────────────────────────────────
   Future<void> _performSave() async {
     setState(() => _isSaving = true);
@@ -198,6 +234,11 @@ class _AddInternPageState extends State<AddInternPage> {
       degrees:          _degreesCtrl.text.trim(),
       joinedDate:       _joinedDate,
       whatHaveILearned: _whatLearnedCtrl.text.trim(),
+      firstNameAr:        _firstNameArCtrl.text.trim(),
+      lastNameAr:         _lastNameArCtrl.text.trim(),
+      positionAr:         _positionArCtrl.text.trim(),
+      degreesAr:          _degreesArCtrl.text.trim(),
+      whatHaveILearnedAr: _whatLearnedArCtrl.text.trim(),
       // tags:             tags,
     );
 
@@ -283,41 +324,40 @@ class _AddInternPageState extends State<AddInternPage> {
   Widget build(BuildContext context) {
     return BlocConsumer<InternCubit, InternState>(
       listener: (context, state) {
+        // These three outcomes used to be floating SnackBars. A snackbar for a
+        // destructive result is easy to miss — it fades on its own while the
+        // page is already navigating away — and it was the only place in the
+        // admin that reported a result that way. All three now use the shared
+        // dialogs, so the user has to acknowledge the result, and the page pops
+        // only after they do.
         if (state is InternCreated || state is InternUpdated) {
           setState(() { _isSaving = false; _isRemoving = false; });
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(_isEdit ? 'Intern updated!' : 'Intern created!',
-                style: StyleText.fontSize14Weight400
-                    .copyWith(color: Colors.white)),
-            backgroundColor: ColorPick.primary,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8.r)),
-          ));
-          Navigator.pop(context);
+          showSuccessDialog(
+            context:  context,
+            title:    _isEdit ? 'Intern Updated' : 'Intern Created',
+            subtitle: _isEdit
+                ? 'The intern details have been saved.'
+                : 'The new intern has been added.',
+            onClose:  () => Navigator.pop(context),
+          );
         }
         if (state is InternDeleted) {
           setState(() => _isRemoving = false);
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Intern removed.',
-                style: StyleText.fontSize14Weight400
-                    .copyWith(color: Colors.white)),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8.r)),
-          ));
-          Navigator.pop(context);
+          showSuccessDialog(
+            context:  context,
+            title:    'Intern Removed',
+            subtitle: 'The intern has been removed from the list.',
+            onClose:  () => Navigator.pop(context),
+          );
         }
         if (state is InternError) {
           setState(() { _isSaving = false; _isRemoving = false; });
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error: ${state.message}',
-                style: StyleText.fontSize14Weight400
-                    .copyWith(color: Colors.white)),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ));
+          showErrorDialog(
+            context:  context,
+            title:    'Something went wrong',
+            subtitle: state.message,
+            onClose:  () {},
+          );
         }
       },
       builder: (context, state) {
@@ -327,12 +367,8 @@ class _AddInternPageState extends State<AddInternPage> {
           children: [
             Scaffold(
 
-              body: SingleChildScrollView(
-                child: Center(
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: Column(
-                      children: [
+              body: AdminStickyBody(
+  children: [
 
 
                         AppAdminNavbar(
@@ -342,8 +378,6 @@ class _AddInternPageState extends State<AddInternPage> {
                           jobListingPage: MainMainPage(),
                         ),
                         AdminSubNavBar(activeIndex: 5),
-                        SizedBox(height: 30.h),
-
                         SizedBox(
                           width: 1000.w,
                           child: Column(
@@ -386,10 +420,7 @@ class _AddInternPageState extends State<AddInternPage> {
                                           width:  14.w,
                                           height: 14.h,
                                           child:
-                                          const CircularProgressIndicator(
-                                            color:       Colors.white,
-                                            strokeWidth: 2,
-                                          ),
+                                          const CircleProgress(),
                                         )
                                             : Text(
                                           'Remove',
@@ -496,6 +527,31 @@ class _AddInternPageState extends State<AddInternPage> {
                                       primaryColor: ColorPick.primary,
                                       isRequired:   true,
                                     ),
+
+                                    // ── BUG-74: Arabic fields ───────────────
+                                    SizedBox(height: 20.h),
+                                    Directionality(
+                                      textDirection: ui.TextDirection.rtl,
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(children: [
+                                            Expanded(child: _arField('الاسم الأول', _firstNameArCtrl)),
+                                            SizedBox(width: 16.w),
+                                            Expanded(child: _arField('اسم العائلة', _lastNameArCtrl)),
+                                          ]),
+                                          SizedBox(height: 14.h),
+                                          Row(children: [
+                                            Expanded(child: _arField('المسمى', _positionArCtrl)),
+                                            SizedBox(width: 16.w),
+                                            Expanded(child: _arField('المؤهلات', _degreesArCtrl)),
+                                          ]),
+                                          SizedBox(height: 14.h),
+                                          _arField('ماذا تعلمت', _whatLearnedArCtrl,
+                                              height: 100, maxLines: 5),
+                                        ],
+                                      ),
+                                    ),
                                     // ── Discard / Publish buttons ───────────
 
                                   ],
@@ -515,7 +571,7 @@ class _AddInternPageState extends State<AddInternPage> {
                                             ? ColorPick.discard.withValues(alpha: 0.5)
                                             : ColorPick.discard,
                                         borderRadius:
-                                        BorderRadius.circular(8.r),
+                                        BorderRadius.circular(4.r),
                                       ),
                                       child: Center(
                                         child: Text('Discard',
@@ -561,10 +617,7 @@ class _AddInternPageState extends State<AddInternPage> {
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                ),
-              ),
+),
             ),
 
             // ── Full-screen saving overlay ─────────────────────────────────
@@ -582,9 +635,7 @@ class _AddInternPageState extends State<AddInternPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircularProgressIndicator(
-                          color: _isRemoving ? Colors.red : ColorPick.primary,
-                        ),
+                        CircleProgress(),
                         SizedBox(height: 16.h),
                         Text(
                           _isRemoving ? 'Removing...' : 'Saving...',

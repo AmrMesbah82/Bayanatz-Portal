@@ -2,7 +2,9 @@
 /// File Name: home_preview.dart
 /// Page 7 — "Preview Home Details" (Figma screen 7)
 /// Desktop / Tablet / Mobile tabs + ENG/AR chips
-/// "Home View" accordion with real HomePage content (hero + cards only, NO navbar/footer)
+/// "Home View" accordion showing the REAL site Home page — navbar, hero,
+/// cards and footer — via SiteHomePreview. It used to render an admin-side
+/// copy of the hero and cards with no navbar and no footer.
 /// FIXED: Device tabs restyled to match job_listing_detail_page tab bar pattern
 
 import 'package:flutter/material.dart';
@@ -14,6 +16,7 @@ import 'package:go_router/go_router.dart';
 import 'package:web_app_admin/core/widget/network_image_view.dart';
 import '../../../../../core/constant/color.dart';
 import '../../../../../core/widget/branding_helper.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -21,11 +24,21 @@ import '../../../../../core/two_tab.dart';
 import '../../../data/models/home_model.dart';
 import '../../controller/home_cubit.dart';
 import '../../controller/home_state.dart';
-import '../../controller/lang_state.dart';
+import '../../../../../core/custom/3-custom_accordion.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
+import 'package:web_app_admin/core/main_widgets/app_admin_navbar.dart';
+import 'package:web_app_admin/features/careers/presentation/ui/pages/careers_main.dart';
+import 'package:web_app_admin/features/main/presentation/ui/pages/main_main.dart';
+import 'package:web_app_admin/features/job/presentation/ui/pages/job_listing_main.dart';
+import 'package:web_app_admin/core/site_preview/site_preview_frame.dart';
 
 
 part '../widgets/home_preview/home_preview_builders.dart';
 part '../widgets/home_preview/home_preview_cards.dart';
+
+// BUG-15: referenced here (not only in the part file) so an IDE
+// "Optimize Imports" can't drop the site_preview_frame import.
+typedef _PreviewViewport = PreviewViewport;
 
 
 // class _C {
@@ -50,6 +63,14 @@ class _HomePreviewPageMasterState extends State<HomePreviewPageMaster> {
   _Device _device   = _Device.desktop;
   bool    _isSaving = false;
   bool    _homeViewOpen = true;
+
+  /// The ENG / AR toggle above the preview belongs to THIS SCREEN ONLY.
+  ///
+  /// It used to drive the app-wide LanguageCubit, so flipping the preview to
+  /// Arabic flipped the whole CMS to Arabic and left it that way after you
+  /// navigated back. It is local state now — the preview shows the site in
+  /// Arabic, the admin around it does not change.
+  bool _isAr = false;
 
   Future<void> _publish(HomeCmsCubit cubit) async {
     setState(() => _isSaving = true);
@@ -87,8 +108,8 @@ class _HomePreviewPageMasterState extends State<HomePreviewPageMaster> {
 
         if (state is HomeCmsInitial || state is HomeCmsLoading) {
           return const Scaffold(
-            backgroundColor: ColorPick.white,
-            body: Center(child: CircularProgressIndicator(color: ColorPick.primary)),
+         
+            body: Center(child: CircleProgress()),
           );
         }
 
@@ -96,22 +117,22 @@ class _HomePreviewPageMasterState extends State<HomePreviewPageMaster> {
         if (state is HomeCmsLoaded) data = state.data;
         if (state is HomeCmsSaved)  data = state.data;
 
-        // ✅ Wrap in BlocBuilder<LanguageCubit> so everything reacts to lang changes
-        return BlocBuilder<LanguageCubit, LanguageState>(
-          builder: (context, langState) {
-            final bool isAr = langState.isArabic;
+        // Language is preview-local — see the _isAr field above.
+        return Builder(
+          builder: (context) {
+            final bool isAr = _isAr;
 
             return Scaffold(
               backgroundColor: ColorPick.white,
-              body: SingleChildScrollView(
-                child: Container(
-                  width: double.infinity,
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 1000.w,
-                        child: Column(
-                          children: [
+              body: AdminStickyBody(
+  contentWidth: 1000.w,
+  children: [
+                            AppAdminNavbar(
+                              activeLabel:    'Web Page',
+                              homePage:       CareersMainPageDashboard(),
+                              webPage:        MainMainPage(),
+                              jobListingPage: JobListingMainPage(),
+                            ),
                             SizedBox(height: 20.h),
                             AdminSubNavBar(
                               activeIndex: 1,
@@ -140,11 +161,8 @@ class _HomePreviewPageMasterState extends State<HomePreviewPageMaster> {
                                       CustomSegmentedTabs(
                                         tabs: ['ENG', 'AR'],
                                         selectedIndex: isAr ? 1 : 0,
-                                        onTabSelected: (i) {
-                                          context
-                                              .read<LanguageCubit>()
-                                              .setLanguage(i == 1 ? 'ar' : 'en');
-                                        },
+                                        onTabSelected: (i) =>
+                                            setState(() => _isAr = i == 1),
                                         selectedColor: ColorPick.primary,
                                         unselectedColor: Colors.transparent,
                                         selectedTextColor: Colors.white,
@@ -200,9 +218,7 @@ class _HomePreviewPageMasterState extends State<HomePreviewPageMaster> {
                                             child: _isSaving
                                                 ? SizedBox(
                                                 width: 18.w, height: 18.h,
-                                                child: const CircularProgressIndicator(
-                                                    color: Colors.white,
-                                                    strokeWidth: 2))
+                                                child: const CircleProgress())
                                                 : Text('Publish',
                                                 style: StyleText.fontSize14Weight600
                                                     .copyWith(color: Colors.white)),
@@ -216,12 +232,7 @@ class _HomePreviewPageMasterState extends State<HomePreviewPageMaster> {
                               ),
                             ),
                           ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+),
             );
           },
         );

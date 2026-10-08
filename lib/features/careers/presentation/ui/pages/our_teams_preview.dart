@@ -21,6 +21,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../../core/constant/color.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -28,6 +29,7 @@ import '../../../../../core/two_tab.dart';
 import '../../../data/models/our_teams_model.dart';
 import '../../controller/our_teams_cubit.dart';
 import '../../controller/our_teams_state.dart';
+import 'package:web_app_admin/core/custom/circle_progress.dart';
 
 part '../widgets/our_teams_preview/desktop_frame.dart';
 part '../widgets/our_teams_preview/tablet_frame.dart';
@@ -126,17 +128,12 @@ class _OurTeamsPreviewPageState extends State<OurTeamsPreviewPage> {
           children: [
             Scaffold(
               backgroundColor: ColorPick.white,
-              body: SingleChildScrollView(
-                child: Center(
-                  child: SizedBox(
-                    width: 1000.w,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+              body: AdminStickyBody(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  contentWidth: 1000.w,
+  children: [
                         SizedBox(height: 20.h),
                         AdminSubNavBar(activeIndex: 5),
-                        SizedBox(height: 16.h),
-
                         // ── Page title ──────────────────────────────────────
                         Text(
                           'Preview Our Teams Details',
@@ -189,10 +186,7 @@ class _OurTeamsPreviewPageState extends State<OurTeamsPreviewPage> {
                         _bottomButtons(cubit),
                         SizedBox(height: 40.h),
                       ],
-                    ),
-                  ),
-                ),
-              ),
+),
             ),
 
             // ── Saving overlay ──────────────────────────────────────────────
@@ -210,7 +204,7 @@ class _OurTeamsPreviewPageState extends State<OurTeamsPreviewPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const CircularProgressIndicator(color: ColorPick.primary),
+                        const CircleProgress(),
                         SizedBox(height: 16.h),
                         Text('Saving…',
                             style: StyleText.fontSize14Weight600
@@ -310,8 +304,7 @@ class _OurTeamsPreviewPageState extends State<OurTeamsPreviewPage> {
                         ? SizedBox(
                       width:  18.w,
                       height: 18.h,
-                      child: const CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2),
+                      child: const CircleProgress(),
                     )
                         : Text('Save',
                         style: StyleText.fontSize14Weight600

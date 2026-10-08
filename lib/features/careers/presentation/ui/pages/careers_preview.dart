@@ -24,6 +24,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../../../core/constant/color.dart';
 import '../../../../../core/custom_dialog.dart';
+import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -32,6 +33,11 @@ import '../../../data/models/careers_model.dart';
 import '../../controller/careers_cubit.dart';
 import '../../controller/careers_state.dart';
 import 'careers_main_page.dart'; // CareersMainPageMaster
+import 'package:web_app_admin/core/custom/circle_progress.dart';
+import 'package:web_app_admin/core/main_widgets/app_admin_navbar.dart';
+import 'package:web_app_admin/features/careers/presentation/ui/pages/careers_main.dart';
+import 'package:web_app_admin/features/main/presentation/ui/pages/main_main.dart';
+import 'package:web_app_admin/features/job/presentation/ui/pages/job_listing_main.dart';
 
 part '../widgets/careers_preview/a_c.dart';
 part '../widgets/careers_preview/desktop_frame.dart';
@@ -47,7 +53,28 @@ part '../widgets/careers_preview/browser_chrome.dart';
 // ── Admin-shell colors ────────────────────────────────────────────────────────
 
 class CareersPreviewPage extends StatefulWidget {
-  const CareersPreviewPage({super.key});
+  const CareersPreviewPage({
+    super.key,
+    this.initialTab,
+    this.showSave = true,
+    this.title = 'Preview Main Details',
+  });
+
+  /// Which of the site page's own tabs to open on — see [SiteCareersTab].
+  /// Null opens the page at the top (Why Join Our Team), which is what the
+  /// Main tab's preview wants.
+  final int? initialTab;
+
+  /// Whether this preview can publish.
+  ///
+  /// The edit flow opens it with Save, because it is showing work it just
+  /// staged. The "Preview Screen" button on the main page opens it read-only —
+  /// you are looking at what is already live, so there is nothing to save.
+  final bool showSave;
+
+  /// Heading above the frame, so each tab's preview says what it is showing.
+  final String title;
+
   @override
   State<CareersPreviewPage> createState() => _CareersPreviewPageState();
 }
@@ -117,20 +144,21 @@ class _CareersPreviewPageState extends State<CareersPreviewPage> {
                 if (state is CareersCmsSaved)  data = state.data;
                 data ??= context.read<CareersCmsCubit>().current;
 
-                return SingleChildScrollView(
-                  child: Center(
-                    child: SizedBox(
-                      width: 1000.w,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+                return AdminStickyBody(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  contentWidth: 1000.w,
+  children: [
+                          AppAdminNavbar(
+                            activeLabel:    'Web Page',
+                            homePage:       CareersMainPageDashboard(),
+                            webPage:        MainMainPage(),
+                            jobListingPage: JobListingMainPage(),
+                          ),
                           SizedBox(height: 20.h),
                           AdminSubNavBar(activeIndex: 5),
-                          SizedBox(height: 16.h),
-
                           // ── Page title ──────────────────────────────────
                           Text(
-                            'Preview Main Details',
+                            widget.title,
                             style: StyleText.fontSize45Weight600.copyWith(
                               color:      ColorPick.primary,
                               fontWeight: FontWeight.w700,
@@ -170,78 +198,16 @@ class _CareersPreviewPageState extends State<CareersPreviewPage> {
                           ),
                           SizedBox(height: 16.h),
 
-                          // ── Scaled device frame ─────────────────────────
-                          LayoutBuilder(
-                            builder: (ctx, box) =>
-                                _buildFrame(box.maxWidth, data!),
-                          ),
+                          // ── The real site, on the requested tab ─────────
+                          _buildFrame(data!),
 
                           SizedBox(height: 24.h),
 
-                          // ── Discard + Save buttons ──────────────────────
-                          Row(
-                            children: [
-                              Expanded(
-                                child: GestureDetector(
-                                  onTap: _onBack,
-                                  child: Container(
-                                    height: 44.h,
-                                    decoration: BoxDecoration(
-                                      color:        ColorPick.discard,
-                                      borderRadius: BorderRadius.circular(6.r),
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        'Discard',
-                                        style: StyleText.fontSize14Weight600
-                                            .copyWith(color: Colors.white),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              SizedBox(width: 300.w),
-                              Expanded(
-                                child: GestureDetector(
-                                  onTap: _isPublishing
-                                      ? null
-                                      : () => _onSave(data!),
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    height: 44.h,
-                                    decoration: BoxDecoration(
-                                      color: _isPublishing
-                                          ? ColorPick.primary.withValues(alpha: 0.5)
-                                          : ColorPick.primary,
-                                      borderRadius: BorderRadius.circular(6.r),
-                                    ),
-                                    child: Center(
-                                      child: _isPublishing
-                                          ? SizedBox(
-                                        width:  18.w,
-                                        height: 18.h,
-                                        child: const CircularProgressIndicator(
-                                          color:       Colors.white,
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                          : Text(
-                                        'Save',
-                                        style: StyleText.fontSize14Weight600
-                                            .copyWith(color: Colors.white),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                          // ── Discard (+ Save, when there is work to publish)
+                          _actions(data!),
                           SizedBox(height: 40.h),
                         ],
-                      ),
-                    ),
-                  ),
-                );
+);
               },
             ),
           ),
@@ -251,7 +217,7 @@ class _CareersPreviewPageState extends State<CareersPreviewPage> {
             Container(
               color: Colors.black.withValues(alpha: 0.35),
               child: const Center(
-                child: CircularProgressIndicator(color: ColorPick.primary),
+                child: CircleProgress(),
               ),
             ),
         ],
@@ -287,20 +253,99 @@ class _CareersPreviewPageState extends State<CareersPreviewPage> {
     );
   }
 
-  // ── Frame builder ──────────────────────────────────────────────────────────
-  Widget _buildFrame(double containerW, CareersCmsModel data) {
-    switch (_device) {
-      case _PreviewDevice.desktop:
-        return _DesktopFrame(
-            containerWidth: containerW, data: data, isAr: _isAr);
-      case _PreviewDevice.tablet:
-        return _TabletFrame(
-            containerWidth: containerW, data: data, isAr: _isAr);
-      case _PreviewDevice.mobile:
-        return _MobileFrame(
-            containerWidth: containerW, data: data, isAr: _isAr);
+  // ── Bottom actions ─────────────────────────────────────────────────────────
+  // Read-only preview (opened from the main page): Discard alone, full width.
+  Widget _actions(CareersCmsModel data) {
+    final back = GestureDetector(
+      onTap: _onBack,
+      child: Container(
+        height: 44.h,
+        decoration: BoxDecoration(
+          color:        ColorPick.discard,
+          borderRadius: BorderRadius.circular(6.r),
+        ),
+        child: Center(
+          child: Text(
+            widget.showSave ? 'Discard' : 'Back',
+            style: StyleText.fontSize14Weight600.copyWith(color: Colors.white),
+          ),
+        ),
+      ),
+    );
+
+    // Read-only: Back keeps the width and position it has next to Save — the
+    // empty half is left empty rather than stretching the button across.
+    if (!widget.showSave) {
+      return Row(
+        children: [
+          Expanded(child: back),
+          SizedBox(width: 300.w),
+          const Expanded(child: SizedBox()),
+        ],
+      );
     }
+
+    return Row(
+      children: [
+        Expanded(child: back),
+        SizedBox(width: 300.w),
+        Expanded(
+          child: GestureDetector(
+            onTap: _isPublishing ? null : () => _onSave(data),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              height: 44.h,
+              decoration: BoxDecoration(
+                color: _isPublishing
+                    ? ColorPick.primary.withValues(alpha: 0.5)
+                    : ColorPick.primary,
+                borderRadius: BorderRadius.circular(6.r),
+              ),
+              child: Center(
+                child: _isPublishing
+                    ? SizedBox(
+                        width:  18.w,
+                        height: 18.h,
+                        child: const CircleProgress(),
+                      )
+                    : Text(
+                        'Save',
+                        style: StyleText.fontSize14Weight600
+                            .copyWith(color: Colors.white),
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
+
+  // ── Frame builder ──────────────────────────────────────────────────────────
+  // Admin-only preview (no dependency on the website_app project).
+  Widget _buildFrame(CareersCmsModel data) {
+    return LayoutBuilder(builder: (ctx, box) {
+      final double containerW = box.maxWidth;
+      switch (_device) {
+        case _PreviewDevice.desktop:
+          return _DesktopFrame(
+              containerWidth: containerW, data: data, isAr: _isAr);
+        case _PreviewDevice.tablet:
+          return _TabletFrame(
+              containerWidth: containerW, data: data, isAr: _isAr);
+        case _PreviewDevice.mobile:
+          return _MobileFrame(
+              containerWidth: containerW, data: data, isAr: _isAr);
+      }
+    });
+  }
+}
+
+/// Tab indexes the Careers "Preview Screen" button passes as `initialTab`.
+class SiteCareersTab {
+  static const int whyJoin = 0;
+  static const int interns = 1;
+  static const int ourTeam = 2;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

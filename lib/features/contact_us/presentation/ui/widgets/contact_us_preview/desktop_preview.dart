@@ -19,7 +19,7 @@ class _DesktopPreview extends StatelessWidget {
           child: SizedBox(
             width: contentW,
             child: Text(
-              'Contact us',
+              'Contact Us', // BUG-107: same heading as the live page
               style: StyleText.fontSize45Weight600.copyWith(
                 fontSize: 48.sp,
                 color: ColorPick.primary,

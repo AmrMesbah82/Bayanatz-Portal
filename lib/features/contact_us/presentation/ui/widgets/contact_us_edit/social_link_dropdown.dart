@@ -32,9 +32,7 @@ class _SocialLinkDropdown extends StatelessWidget {
           children: [
             SizedBox(
               width: 14.w, height: 14.w,
-              child: const CircularProgressIndicator(
-                strokeWidth: 2, color: ColorPick.primary,
-              ),
+              child: const CircleProgress(),
             ),
             SizedBox(width: 10.w),
             Text(

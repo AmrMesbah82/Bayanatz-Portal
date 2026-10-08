@@ -18,12 +18,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../constant/color.dart';
+import '../main_widgets/form_dirty_scope.dart';
+import '../main_widgets/validation_scope.dart';
 import '../theme/appcolors.dart';
 import '../theme/new_theme.dart';
 
 /// Custom text field widget — mirrors CustomDropdown API exactly.
 ///
 /// Border rule: NO border by default; red border only when [errorText] is set.
+/// Sentinel returned by the built-in "required" check. It marks the field as
+/// in-error (red border) while rendering no message — see _resolvedError.
+const String _kRequiredNoMessage = '\u0000required';
+
 class CustomTextField extends StatefulWidget {
   // ── Controller / Focus ───────────────────────────────────────────────────
 
@@ -336,9 +342,19 @@ class _CustomTextFieldState extends State<CustomTextField> {
   /// NEVER shown (app-wide rule) so [showCharCount] adds no implicit limit.
   int? get _effectiveMaxLength => widget.maxLength;
 
-  bool get _hasValidation => widget.submitted || widget.onlyDigits;
+  /// True when a blocked Publish asked the page to show what's missing.
+  /// Reading it in build() subscribes, so the border appears immediately.
+  bool get _revealMissing =>
+      widget.required && ValidationScope.revealed(context);
 
-  bool get _needsTextListener => _hasValidation;
+  /// Treat a revealed page exactly like a submit attempt.
+  bool get _submitted => widget.submitted || _revealMissing;
+
+  bool get _hasValidation => _submitted || widget.onlyDigits;
+
+  // A required field has to repaint as soon as it is filled in, so the red
+  // border clears while the user types — not only on the next Publish tap.
+  bool get _needsTextListener => widget.submitted || widget.onlyDigits || widget.required;
 
   /// Resolves the error to display: explicit [errorText] wins, otherwise the
   /// built-in validation (only active when a validation flag is set).
@@ -354,8 +370,12 @@ class _CustomTextFieldState extends State<CustomTextField> {
     final isEmpty = text.trim().isEmpty;
     final isRtl = widget.textDirection == TextDirection.rtl;
 
-    if (widget.submitted && isEmpty) {
-      return isRtl ? 'هذا الحقل مطلوب' : 'This field is required.';
+    if (_submitted && isEmpty) {
+      // Border only, no message. The red outline already says "this one" —
+      // a line of text under every empty field just adds noise and shifts the
+      // layout. _EMPTY_REQUIRED is a sentinel: it turns the border red without
+      // rendering anything beneath the field.
+      return _kRequiredNoMessage;
     }
     if (widget.onlyDigits &&
         text.isNotEmpty &&
@@ -392,6 +412,13 @@ class _CustomTextFieldState extends State<CustomTextField> {
   Widget build(BuildContext context) {
     final resolvedError = _resolvedError;
     final hasError = resolvedError != null && resolvedError.isNotEmpty;
+    // BUG-27 / BUG-46: an empty required field now also says WHY it is red
+    // ("This field is required.") — a border alone looked like a broken
+    // button, especially when the field was far above Publish/Save.
+    final showMessage = hasError;
+    final String? messageText = resolvedError == _kRequiredNoMessage
+        ? 'This field is required.'
+        : resolvedError;
     final radius = widget.borderRadius ?? BorderRadius.circular(4.r);
     final isDisabled = !widget.enabled;
 
@@ -429,7 +456,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
             text: TextSpan(
               text: widget.label,
               style: widget.labelStyle ??
-                  StyleText.fontSize14Weight500.copyWith(
+                  StyleText.label.copyWith(
                     color: hasError
                         ? AppColors.red
                         : isDisabled
@@ -440,7 +467,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
                   ? [
                 TextSpan(
                   text: '',
-                  style: StyleText.fontSize14Weight500
+                  style: StyleText.label
                       .copyWith(color: AppColors.red),
                 ),
               ]
@@ -468,7 +495,16 @@ class _CustomTextFieldState extends State<CustomTextField> {
                 selectionHandleColor: ColorPick.primary,
               ),
             ),
-            child: TextField(
+            // ── No scrollbar rule ───────────────────────────────────────────
+            // A multi-line field (Short Description, Description, any textarea)
+            // gets a grey track down its right edge on web because Flutter's
+            // desktop ScrollBehavior draws one for every scrollable, including
+            // the one inside a TextField. It overlaps the text and looks like a
+            // rendering fault next to the flat, borderless field. Hidden here
+            // once, so it is gone from every textarea in the app.
+            child: ScrollConfiguration(
+              behavior: const _NoFieldScrollbar(),
+              child: TextField(
               controller: _controller,
               focusNode: _focusNode,
               enabled: widget.enabled,
@@ -489,11 +525,16 @@ class _CustomTextFieldState extends State<CustomTextField> {
               textCapitalization: widget.textCapitalization,
               autocorrect: widget.autocorrect,
               enableSuggestions: widget.enableSuggestions,
-              onChanged: widget.onChanged,
+              onChanged: (v) {
+                // Seeding a form sets controller.text directly, which never
+                // reaches here — so this only fires on a real human edit.
+                FormDirtyScope.markDirty(context);
+                widget.onChanged?.call(v);
+              },
               onSubmitted: widget.onSubmitted,
               onTap: widget.onTap,
               style: widget.valueStyle ??
-                  StyleText.fontSize14Weight400.copyWith(
+                  StyleText.value.copyWith(
                     color: isDisabled
                         ? AppColors.text.withOpacity(0.4)
                         : AppColors.text,
@@ -564,10 +605,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
                 // ─────────────────────────────────────────────────────────────
 
                 hintText: widget.hint,
-                hintStyle: widget.hintStyle ??
-                    StyleText.fontSize14Weight400.copyWith(
-                      color: AppColors.text.withOpacity(0.4),
-                    ),
+                hintStyle: widget.hintStyle ?? StyleText.hint,
 
                 prefixIcon: widget.prefixIcon != null
                     ? Padding(
@@ -591,23 +629,26 @@ class _CustomTextFieldState extends State<CustomTextField> {
                 counterText: '',
               ),
             ),
+            ),
           ),
         ),
 
         // ── Error / Helper row (NO counter — app-wide rule) ────────────────
-        if (hasError || widget.helperText != null) ...[
+        // The built-in "required" check reports through a sentinel so the
+        // border turns red WITHOUT a message underneath. Only a message the
+        // caller actually supplied is rendered.
+        if (showMessage || widget.helperText != null) ...[
           SizedBox(height: 4.h),
-          hasError
+          showMessage
               ? Text(
-            resolvedError!,
+            messageText!,
             style: widget.errorStyle ??
-                StyleText.fontSize12Weight400
-                    .copyWith(color: AppColors.red),
+                StyleText.subTitle.copyWith(color: AppColors.red),
           )
               : Text(
             widget.helperText!,
             style: widget.helperStyle ??
-                StyleText.fontSize12Weight400.copyWith(
+                StyleText.subTitle.copyWith(
                   color: AppColors.text.withOpacity(0.5),
                 ),
           ),
@@ -641,4 +682,17 @@ class _CapitalizeTextFormatter extends TextInputFormatter {
       selection: TextSelection.collapsed(offset: capitalizedText.length),
     );
   }
+}
+
+/// Scroll behaviour that draws no scrollbar.
+///
+/// Wrapped around the TextField above so multi-line fields don't get the
+/// desktop scrollbar track painted over their right edge. It only affects the
+/// scrollable inside the field — page scrollbars elsewhere are untouched.
+class _NoFieldScrollbar extends MaterialScrollBehavior {
+  const _NoFieldScrollbar();
+
+  @override
+  Widget buildScrollbar(
+      BuildContext context, Widget child, ScrollableDetails details) => child;
 }

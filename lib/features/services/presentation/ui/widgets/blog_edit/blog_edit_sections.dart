@@ -6,6 +6,54 @@
 part of '../../pages/blog_services/blog_edit.dart';
 
 extension _BlogEditSections on _BlogCreateEditPageState {
+  // ── Remove button (left) + Active/Inactive switch (right) ────────────────────
+  Widget _removeAndStatusRow() {
+    return Row(
+      children: [
+        // Remove button (only when editing an existing post)
+        if (_isEdit)
+          CustomDeleteIcon(
+            svgColor: Colors.white,
+            textStyle: StyleText.fontSize12Weight400.copyWith(
+              color: Colors.white
+            ),
+            title: 'Remove',
+            onTap: _confirmRemove,
+          ),
+        const Spacer(),
+        // The Active/Inactive switch only makes sense for a post that already
+        // exists. On "Create New" there is nothing to deactivate yet — a new
+        // post is created active — so the toggle is hidden there.
+        if (_isEdit) ...[
+          Text(
+            _isActive ? 'Active' : 'Inactive',
+            style: StyleText.fontSize12Weight500.copyWith(
+              color: _isActive
+                  ? ColorPick.activeColor
+                  : ColorPick.inactiveColor,
+            ),
+          ),
+          SizedBox(width: 6.w),
+          FlutterSwitch(
+            width: 35.sp,
+            height: 20.sp,
+            padding: 3.sp,
+            borderRadius: 20.sp,
+            toggleSize: 16.sp,
+            activeColor: ColorPick.primary,
+            inactiveColor: Colors.grey.withValues(alpha: .16),
+            value: _isActive,
+            onToggle: (val) {
+              setState(() => _isActive = val);
+              // BUG-61: the switch alone is a change worth publishing.
+              _markDirty();
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
   // ── Post Info ─────────────────────────────────────────────────────────────────
   Widget _postInfoContent() {
     final bool imageError =
@@ -47,25 +95,31 @@ extension _BlogEditSections on _BlogCreateEditPageState {
             ),
           ),
         ]),
-
+        SizedBox(height: 6.h),
         // ── Short description ─────────────────────────────────────────────────
-        Text('Short Description', style: _labelStyle()),
+        // BUG-70: the 150-character limit used to cut text silently. The
+        // limit is now stated and a live "n / 150" note appears under each box.
+        Text('Short Description (max 150 characters)', style: _labelStyle()),
         SizedBox(height: 6.h),
         CustomTextField(
           controller: _shortDescEnCtrl, hint: 'Text Here', fillColor: Colors.white,
           submitted: _submitted, maxLength: 150, showCharCount: false,
           isRequired: true, primaryColor: ColorPick.primary,
           textDirection: TextDirection.ltr, maxLines: 4, height: 100,
+          onChanged: (_) => setState(() {}),
         ),
+        _charLimitNote(_shortDescEnCtrl, 150, TextAlign.left),
         Align(alignment: Alignment.centerRight,
-            child: Text('وصف مختصر', style: _labelStyle())),
+            child: Text('وصف مختصر (150 حرفًا كحد أقصى)', style: _labelStyle())),
         SizedBox(height: 6.h),
         CustomTextField(
           controller: _shortDescArCtrl, hint: 'أكتب هنا', fillColor: Colors.white,
           isRequired: true, submitted: _submitted, maxLength: 150, showCharCount: false,
           primaryColor: ColorPick.primary, textDirection: TextDirection.rtl,
           textAlign: TextAlign.right, maxLines: 4, height: 100,
+          onChanged: (_) => setState(() {}),
         ),
+        _charLimitNote(_shortDescArCtrl, 150, TextAlign.right),
       ],
     );
   }
@@ -132,11 +186,21 @@ extension _BlogEditSections on _BlogCreateEditPageState {
 
       SizedBox(height: 10.h),
       Wrap(spacing: 10.w, runSpacing: 8.h, children: [
-        _addChip('+ Bullet Point', () => _addBlock(BlogBlockType.bulletPoint)),
-        _addChip('+ Paragraph',    () => _addBlock(BlogBlockType.paragraph)),
-        _addChip('+ Numbering',    () => _addBlock(BlogBlockType.numbering)),
+        _addChip('Bullet Point', () => _addBlock(BlogBlockType.bulletPoint)),
+        _addChip('Paragraph',    () => _addBlock(BlogBlockType.paragraph)),
+        _addChip('Numbering',    () => _addBlock(BlogBlockType.numbering)),
       ]),
     ]);
+  }
+
+  /// 1-based position of the numbering block at [idx] among the numbering
+  /// blocks only — paragraphs and bullet points in between don't advance it.
+  int _numberingOrdinal(int idx) {
+    int n = 0;
+    for (int i = 0; i <= idx && i < _blocks.length; i++) {
+      if (_blocks[i]['type'] == BlogBlockType.numbering) n++;
+    }
+    return n == 0 ? 1 : n;
   }
 
   // ── Block widget ──────────────────────────────────────────────────────────────
@@ -146,8 +210,11 @@ extension _BlogEditSections on _BlogCreateEditPageState {
     final arCtrl = blk['arCtrl'] as TextEditingController;
     final int    enMaxLines = type == BlogBlockType.paragraph ? 20 : 6;
     final double enHeight   = type == BlogBlockType.paragraph ? 180 : 90;
+    // A numbering block shows its position among the NUMBERING blocks, not its
+    // position in the block list. `idx + 1` counted paragraphs and bullets too,
+    // so adding the first numbered item after two paragraphs printed "3.".
     final String prefix = switch (type) {
-      BlogBlockType.numbering   => '${idx + 1}.',
+      BlogBlockType.numbering   => '${_numberingOrdinal(idx)}.',
       BlogBlockType.bulletPoint => '•',
       BlogBlockType.paragraph   => '',
     };
@@ -165,12 +232,20 @@ extension _BlogEditSections on _BlogCreateEditPageState {
             Text('$prefix  ',
                 style: StyleText.fontSize13Weight500
                     .copyWith(color: AppColors.text, fontWeight: FontWeight.w600)),
-          Text('$typeLabel *',
+          Text('$typeLabel',
               style: StyleText.fontSize12Weight500.copyWith(color: Colors.black)),
           const Spacer(),
+          // Remove-block control: the minus mirrors the "+" on the Add chips
+          // below, so add and remove read as the same pair.
           GestureDetector(
             onTap: () => _removeBlock(idx),
-            child: Icon(Icons.close, size: 18.sp, color: ColorPick.red),
+            child: CustomSvg(
+              assetPath: 'assets/minus.svg',
+              width:  14.w,
+              height: 14.w,
+              fit:    BoxFit.scaleDown,
+              color:  ColorPick.red,
+            ),
           ),
         ]),
         SizedBox(height: 6.h),
@@ -182,7 +257,7 @@ extension _BlogEditSections on _BlogCreateEditPageState {
         ),
         SizedBox(height: 8.h),
         Align(alignment: Alignment.centerRight,
-            child: Text('بالعربية *', style: _labelStyle())),
+            child: Text('بالعربية', style: _labelStyle())),
         SizedBox(height: 4.h),
         CustomTextField(
           controller: arCtrl, fillColor: Colors.white, hint: 'أكتب هنا',
@@ -194,83 +269,42 @@ extension _BlogEditSections on _BlogCreateEditPageState {
     );
   }
 
-  // ── Action buttons ────────────────────────────────────────────────────────────
+  // BUG-70: "n / max" under a limited field; red when the limit is reached.
+  Widget _charLimitNote(TextEditingController c, int max, TextAlign align) {
+    final int n = c.text.characters.length;
+    return Padding(
+      padding: EdgeInsets.only(top: 2.h, bottom: 4.h),
+      child: SizedBox(
+        width: double.infinity,
+        child: Text(
+          n >= max ? '$n / $max — limit reached' : '$n / $max',
+          textAlign: align,
+          style: StyleText.fontSize12Weight400.copyWith(
+            color: n >= max ? ColorPick.red : AppColors.secondaryText,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Action buttons (shared widget — one place for ALL edit pages) ─────────────
   Widget _actionButtons() {
-    return Column(children: [
-      Row(children: [
-        Expanded(
-          child: SizedBox(
-            height: 44.h,
-            child: ElevatedButton(
-              onPressed: _preview,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF608570),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8.r)),
-              ),
-              child: Text('Preview',
-                  style: StyleText.fontSize14Weight600.copyWith(color: Colors.white)),
-            ),
-          ),
-        ),
-        SizedBox(width: 300.w),
-        Expanded(
-          child: Tooltip(
-            message: _isPublishEnabled
-                ? ''
-                : 'Fill in all required fields and add an SVG image to publish',
-            child: SizedBox(
-              height: 44.h,
-              child: ElevatedButton(
-                onPressed: _isPublishEnabled ? _publish : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ColorPick.primary,
-                  disabledBackgroundColor: AppColors.secondaryText,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8.r)),
-                ),
-                child: Text('Publish',
-                    style: StyleText.fontSize14Weight600.copyWith(color: Colors.white)),
-              ),
-            ),
-          ),
-        ),
-      ]),
-      SizedBox(height: 10.h),
-      Row(children: [
-        Expanded(
-          child: SizedBox(
-            height: 44.h,
-            child: ElevatedButton(
-              onPressed: _discard,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF797979),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8.r)),
-              ),
-              child: Text('Discard',
-                  style: StyleText.fontSize14Weight600.copyWith(color: Colors.white)),
-            ),
-          ),
-        ),
-        SizedBox(width: 300.w),
-        Expanded(
-          child: SizedBox(
-            height: 44.h,
-            child: ElevatedButton(
-              onPressed: _saveForLater,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF525252),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8.r)),
-              ),
-              child: Text('Save For Later',
-                  style: StyleText.fontSize14Weight600.copyWith(color: Colors.white)),
-            ),
-          ),
-        ),
-      ]),
-    ]);
+    return EditActionButtons(
+      onPreview:      _preview,
+      onPublish:      _publish,
+      onDiscard:      _discard,
+      onSaveForLater: _saveForLater,
+      publishEnabled: _isPublishEnabled,
+      // BUG-60: publishing a Draft (or re-activating an Inactive read) IS the
+      // change — it must not wait for a text edit. Only an already-live,
+      // still-active post needs an actual edit before Publish lights up.
+      requireChanges: _isEdit &&
+          !_isEditingDraft &&
+          widget.existing?.status == 'published' &&
+          _isActive,
+      publishDisabledTooltip:
+          'Fill in all required fields and add an SVG image to publish',
+    );
   }
 
   // ── Accordion ─────────────────────────────────────────────────────────────────
@@ -280,31 +314,14 @@ extension _BlogEditSections on _BlogCreateEditPageState {
     required List<Widget> children,
   }) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        GestureDetector(
-          onTap: () => setState(() => _open[key] = !isOpen),
-          child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-            decoration: BoxDecoration(
-                color: ColorPick.primary, borderRadius: BorderRadius.circular(6.r)),
-            child: Row(children: [
-              Expanded(child: Text(title,
-                  style: StyleText.fontSize14Weight600.copyWith(color: Colors.white))),
-              Icon(
-                isOpen
-                    ? Icons.keyboard_arrow_up_rounded
-                    : Icons.keyboard_arrow_down_rounded,
-                color: Colors.white, size: 20.sp,
-              ),
-            ]),
-          ),
-        ),
-        if (isOpen)
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
-      ]),
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
     );
   }
 
@@ -314,8 +331,21 @@ extension _BlogEditSections on _BlogCreateEditPageState {
       padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 8.h),
       decoration: BoxDecoration(
           color: const Color(0xff797979), borderRadius: BorderRadius.circular(4.r)),
-      child: Text(label,
-          style: StyleText.fontSize12Weight500.copyWith(color: Colors.white)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CustomSvg(
+            assetPath: 'assets/plus.svg',
+            width: 14.w,
+            height: 14.w,
+            fit: BoxFit.scaleDown,
+            color: Colors.white,
+          ),
+          SizedBox(width: 6.w),
+          Text(label,
+              style: StyleText.fontSize12Weight500.copyWith(color: Colors.white)),
+        ],
+      ),
     ),
   );
 

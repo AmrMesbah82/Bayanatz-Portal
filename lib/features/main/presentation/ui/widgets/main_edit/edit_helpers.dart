@@ -39,7 +39,7 @@ extension _HomeEditHelpers on _MainEditPageState {
       );
 
   Widget _sectionLabel(String text) => Text(text,
-      style: StyleText.fontSize12Weight500.copyWith(color: AppColors.text));
+      style: StyleText.fontSize14Weight500.copyWith(color: AppColors.text));
 
   Widget _imgBox({
     required _PickedImage picked,

@@ -1,15 +1,24 @@
 // ******************* FILE INFO *******************
 // File Name: home_cubit.dart
 // Description: BLoC Cubit for Home CMS.
-//              Dual-document architecture:
-//              - load() checks for draft first, falls back to published
-//              - save(publishStatus: 'published') → writes published doc, deletes draft
-//              - save(publishStatus: 'draft')     → writes draft doc only
-//              - save(publishStatus: 'scheduled')  → writes draft doc with schedule date
-//              - discardDraft() → deletes draft doc
+//              THREE-document architecture — published, scheduled and draft
+//              each live in their own document, so saving one never overwrites
+//              another and a queued release can coexist with a draft:
+//
+//              - load()  reads all three at once and keeps them in memory, so
+//                        the overview can show every version side by side.
+//                        The editor buffer is seeded draft → scheduled →
+//                        published, i.e. the most recent unfinished work.
+//              - save('published') → writes the live doc, clears the draft
+//              - save('draft')     → writes the draft doc ONLY
+//              - save('scheduled') → writes the scheduled doc ONLY
+//              - removeDraft() / removeScheduled() → delete that slot
+//
+//              Only one draft and one scheduled release may exist at a time.
+//              Saving into an occupied slot you are not already editing is
+//              refused with HomeCmsSlotBusy rather than silently overwriting.
 // Created by: Amr Mesbah
-// Last Update: 20/04/2026
-// UPDATED: Dual-document draft system ✅
+// UPDATED: Scheduled split out of the draft document into its own slot ✅
 
 import 'dart:math';
 import 'dart:typed_data';
@@ -29,12 +38,66 @@ class HomeCmsCubit extends Cubit<HomeCmsState> {
 
   final HomeRepository _repo;
 
+  /// The editor buffer — what the edit screen reads and mutates.
   HomePageModel _model = HomePageModel.defaultModel;
   HomePageModel get current => _model;
 
-  /// Whether the currently loaded data came from a draft document.
-  bool _isFromDraft = false;
-  bool get isFromDraft => _isFromDraft;
+  // ── The three stored versions, cached from the last load() ────────────────
+  // The overview screen renders all three at once, so it needs them together
+  // rather than one at a time.
+
+  HomePageModel? _published;
+  HomePageModel? _scheduled;
+  HomePageModel? _draft;
+
+  /// The live version. Null only before the first successful load.
+  HomePageModel? get publishedModel => _published;
+
+  /// The queued release, or null when nothing is scheduled.
+  HomePageModel? get scheduledModel => _scheduled;
+
+  /// The open draft, or null when there isn't one.
+  HomePageModel? get draftModel => _draft;
+
+  bool get hasScheduled => _scheduled != null;
+  bool get hasDraft     => _draft != null;
+
+  /// Which stored version the editor buffer came from.
+  HomeVersionSlot _slot = HomeVersionSlot.published;
+  HomeVersionSlot get slot => _slot;
+
+  /// Kept for existing call sites.
+  bool get isFromDraft => _slot == HomeVersionSlot.draft;
+
+  /// A new draft can only be started when the draft slot is free. If you are
+  /// already editing the draft, saving again just updates it.
+  bool get canSaveDraft => !hasDraft || _slot == HomeVersionSlot.draft;
+
+  /// Same rule for the scheduled slot.
+  bool get canSaveScheduled =>
+      !hasScheduled || _slot == HomeVersionSlot.scheduled;
+
+  /// True once a scheduled release is due — its date is today or in the past.
+  bool get isScheduledDue {
+    final date = _scheduled?.scheduledPublishDate;
+    if (date == null) return false;
+    final startOfDay = DateTime(date.year, date.month, date.day);
+    return !DateTime.now().isBefore(startOfDay);
+  }
+
+  /// Load one specific version into the editor buffer. Used by the overview
+  /// when the user opens the editor from a particular tab.
+  void editSlot(HomeVersionSlot slot) {
+    final model = switch (slot) {
+      HomeVersionSlot.published => _published,
+      HomeVersionSlot.scheduled => _scheduled,
+      HomeVersionSlot.draft     => _draft,
+    };
+    if (model == null) return;
+    _model = model;
+    _slot  = slot;
+    emit(HomeCmsLoaded(_model, slot: slot));
+  }
 
   static final _rng = Random();
   static String _uid() {
@@ -64,28 +127,40 @@ class HomeCmsCubit extends Cubit<HomeCmsState> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  //  LOAD — draft-first strategy
+  //  LOAD — reads all three slots
   // ══════════════════════════════════════════════════════════════════════════
   Future<void> load() async {
     emit(HomeCmsLoading());
     try {
-      // 1️⃣ Check if a draft exists
-      final draft = await _repo.fetchDraft();
-      if (draft != null) {
-        final result = _mergeDefaults(draft);
-        _model       = result;
-        _isFromDraft = true;
-        emit(HomeCmsLoaded(_model, isFromDraft: true));
-        return;
+      // Fetch all three concurrently — the overview shows them together, and
+      // three sequential round-trips is three times the wait.
+      final results = await Future.wait([
+        _repo.fetchHomePageFresh(),
+        _repo.fetchScheduled(),
+        _repo.fetchDraft(),
+      ]);
+
+      _published = _mergeDefaults(results[0] as HomePageModel);
+      final scheduled = results[1] as HomePageModel?;
+      final draft     = results[2] as HomePageModel?;
+      _scheduled = scheduled == null ? null : _mergeDefaults(scheduled);
+      _draft     = draft == null ? null : _mergeDefaults(draft);
+
+      // Seed the editor with the most recent unfinished work: a draft first,
+      // then a queued release, otherwise what is live.
+      if (_draft != null) {
+        _model = _draft!;
+        _slot  = HomeVersionSlot.draft;
+      } else if (_scheduled != null) {
+        _model = _scheduled!;
+        _slot  = HomeVersionSlot.scheduled;
+      } else {
+        _model = _published!;
+        _slot  = HomeVersionSlot.published;
       }
 
-      // 2️⃣ No draft — load published
-      final fetched = await _repo.fetchHomePageFresh();
-      final result = _mergeDefaults(fetched);
-      _model       = result;
-      _isFromDraft = false;
-      emit(HomeCmsLoaded(_model, isFromDraft: false));
-    } catch (e, st) {
+      emit(HomeCmsLoaded(_model, slot: _slot));
+    } catch (e) {
       emit(HomeCmsError('Failed to load home page: $e'));
     }
   }
@@ -99,11 +174,33 @@ class HomeCmsCubit extends Cubit<HomeCmsState> {
   }) async {
 
 
+    // ── Slot guards ───────────────────────────────────────────────────────
+    // Refuse to clobber work that is already sitting in a slot. You can always
+    // keep updating the version you are currently editing.
+    if (publishStatus == 'draft' && !canSaveDraft) {
+      emit(HomeCmsSlotBusy(
+        'A draft already exists. Publish it or remove it before starting '
+        'another one.',
+        HomeVersionSlot.draft,
+        _model,
+      ));
+      return;
+    }
+    if (publishStatus == 'scheduled' && !canSaveScheduled) {
+      emit(HomeCmsSlotBusy(
+        'A scheduled release already exists. Publish it or remove it before '
+        'scheduling another one.',
+        HomeVersionSlot.scheduled,
+        _model,
+      ));
+      return;
+    }
+
     emit(HomeCmsSaving(_model));
 
     try {
       switch (publishStatus) {
-      // ── PUBLISH: save to published doc, delete draft ────────────────
+      // ── PUBLISH: write the live doc and close the draft ─────────────
         case 'published':
           final saving = _model.copyWith(
             publishStatus: 'published',
@@ -111,17 +208,22 @@ class HomeCmsCubit extends Cubit<HomeCmsState> {
             lastUpdatedAt: DateTime.now(),
           );
           await _repo.saveHomePage(saving);
-          // Clean up any existing draft
-          await _repo.deleteDraft();
-          _isFromDraft = false;
 
-          // Re-fetch to get server timestamp
+          // Publishing finishes the draft you were working on. A scheduled
+          // release is a separate, deliberate queue entry, so it is left
+          // alone — remove it explicitly if you no longer want it.
+          await _repo.deleteDraft();
+          _draft = null;
+
+          // Re-fetch to pick up the server timestamp.
           final persisted = await _repo.fetchHomePageFresh();
-          _model = _mergeDefaults(persisted);
-            emit(HomeCmsSaved(_model));
+          _published = _mergeDefaults(persisted);
+          _model     = _published!;
+          _slot      = HomeVersionSlot.published;
+          emit(HomeCmsSaved(_model));
           break;
 
-      // ── DRAFT: save to draft doc only, do NOT touch published ───────
+      // ── DRAFT: draft doc only, published stays live ─────────────────
         case 'draft':
           final saving = _model.copyWith(
             publishStatus: 'draft',
@@ -129,62 +231,86 @@ class HomeCmsCubit extends Cubit<HomeCmsState> {
             lastUpdatedAt: DateTime.now(),
           );
           await _repo.saveDraft(saving);
-          _isFromDraft = true;
+          _draft = saving;
           _model = saving;
+          _slot  = HomeVersionSlot.draft;
           emit(HomeCmsDraftSaved(_model));
           break;
 
-      // ── SCHEDULED: save to draft doc with schedule date ─────────────
+      // ── SCHEDULED: its own doc, published stays live until the date ─
         case 'scheduled':
           final saving = _model.copyWith(
             publishStatus: 'scheduled',
             scheduledPublishDate: scheduledPublishDate,
             lastUpdatedAt: DateTime.now(),
           );
-          await _repo.saveDraft(saving);
-          _isFromDraft = true;
-          _model = saving;
-          emit(HomeCmsDraftSaved(_model));
+          await _repo.saveScheduled(saving);
+          _scheduled = saving;
+          _model     = saving;
+          _slot      = HomeVersionSlot.scheduled;
+          emit(HomeCmsScheduledSaved(_model));
           break;
 
         default:
-          final saving = _model.copyWith(
-            publishStatus: publishStatus,
-            lastUpdatedAt: DateTime.now(),
-          );
-          await _repo.saveDraft(saving);
-          _isFromDraft = true;
-          _model = saving;
-          emit(HomeCmsDraftSaved(_model));
+          emit(HomeCmsError('Unknown publish status: $publishStatus', _model));
       }
-    } catch (e, st) {
+    } catch (e) {
       emit(HomeCmsError('Failed to save: $e', _model));
     }
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  //  SAVE NAV BUTTONS ONLY — partial write used by the MAIN page.
-  //  Writes ONLY Nav_Buttons_* keys; never uploads title/sections/status.
-  //  Silent: no state emitted, so home-page listeners don't react.
+  //  REMOVE A SLOT — the published version is never touched
   // ══════════════════════════════════════════════════════════════════════════
-  Future<void> saveNavButtonsOnly() async {
+
+  /// Delete the draft. The live page is unaffected.
+  Future<void> removeDraft() async {
     try {
-      await _repo.saveNavButtons(_model.navButtons);
-    } catch (_) {
-      // best-effort — nav persistence failure must not block Main publish
+      await _repo.deleteDraft();
+      _draft = null;
+      if (_slot == HomeVersionSlot.draft) {
+        _model = _scheduled ?? _published ?? HomePageModel.defaultModel;
+        _slot  = _scheduled != null
+            ? HomeVersionSlot.scheduled
+            : HomeVersionSlot.published;
+      }
+      emit(HomeCmsDraftDeleted());
+    } catch (e) {
+      emit(HomeCmsError('Failed to remove draft: $e', _model));
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  //  DISCARD DRAFT — deletes the draft doc (published stays untouched)
-  // ══════════════════════════════════════════════════════════════════════════
-  Future<void> discardDraft() async {
+  /// Cancel the scheduled release. The live page is unaffected.
+  Future<void> removeScheduled() async {
     try {
-      await _repo.deleteDraft();
-      _isFromDraft = false;
-      emit(HomeCmsDraftDeleted());
+      await _repo.deleteScheduled();
+      _scheduled = null;
+      if (_slot == HomeVersionSlot.scheduled) {
+        _model = _draft ?? _published ?? HomePageModel.defaultModel;
+        _slot  = _draft != null
+            ? HomeVersionSlot.draft
+            : HomeVersionSlot.published;
+      }
+      emit(HomeCmsScheduledDeleted());
     } catch (e) {
-      emit(HomeCmsError('Failed to discard draft: $e', _model));
+      emit(HomeCmsError('Failed to remove scheduled version: $e', _model));
+    }
+  }
+
+  /// Kept as an alias so existing "Discard draft" call sites keep working.
+  Future<void> discardDraft() => removeDraft();
+
+  /// Copy a due scheduled release into the published document and clear the
+  /// scheduled slot. Safe to call at any time — it does nothing unless a
+  /// scheduled version exists and its date has arrived.
+  Future<void> publishDueScheduled() async {
+    if (!isScheduledDue) return;
+    try {
+      await _repo.promoteScheduled();
+      _scheduled = null;
+      await load();
+    } catch (e) {
+      emit(HomeCmsError('Failed to publish scheduled version: $e', _model));
     }
   }
 
@@ -226,7 +352,7 @@ class HomeCmsCubit extends Cubit<HomeCmsState> {
     if (newIndex > oldIndex) newIndex--;
     list.insert(newIndex, list.removeAt(oldIndex));
     _model = _model.copyWith(navButtons: list);
-    emit(HomeCmsLoaded(_model, isFromDraft: _isFromDraft));
+    emit(HomeCmsLoaded(_model, slot: _slot));
   }
 
   void reorderNavButtonsSilent(int oldIndex, int newIndex) {

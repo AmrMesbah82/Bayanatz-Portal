@@ -113,16 +113,14 @@ extension _HomePreviewBuilders on _HomePreviewPageMasterState {
                 child: Transform.scale(
                   scale: scale,
                   alignment: Alignment.topLeft,
-                  child: ScreenUtilInit(
-                    designSize: Size(fakeW, fakeH),
-                    minTextAdapt: true,
-                    splitScreenMode: false,
-                    builder: (_, __) => MediaQuery(
-                      data: MediaQuery.of(context).copyWith(size: Size(fakeW, fakeH)),
-                      child: Directionality(
+                  // BUG-15: was a nested ScreenUtilInit that re-scaled the
+                  // whole admin app; PreviewViewport leaves ScreenUtil alone.
+                  child: _PreviewViewport(
+                    width: fakeW,
+                    height: fakeH,
+                    child: Directionality(
                         textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-                        child: SizedBox(
-                          width: fakeW, height: fakeH,
+                        child: SizedBox.expand(
                           child: Container(
                             color: AppColors.background,
                             child: SingleChildScrollView(
@@ -136,7 +134,6 @@ extension _HomePreviewBuilders on _HomePreviewPageMasterState {
                           ),
                         ),
                       ),
-                    ),
                   ),
                 ),
               ),

@@ -13,6 +13,7 @@ extension _CareersEditWidgets on _CareersEditPageState {
       textDirection: TextDirection.rtl,
       child: CustomTextField(
         label: label, hint: hint, controller: ctrl,
+        labelStyle: StyleText.fontSize13Weight600.copyWith(color: Colors.black87),
         maxLines: maxLines, maxLength: 100000,
         height: maxLines > 1 ? null : height,
         fillColor: Colors.white,
@@ -32,6 +33,7 @@ extension _CareersEditWidgets on _CareersEditPageState {
   }) {
     return CustomTextField(
       label: label, hint: hint, controller: ctrl,
+      labelStyle: StyleText.fontSize13Weight600.copyWith(color: Colors.black87),
       maxLines: maxLines, maxLength: 100000,
       height: maxLines > 1 ? null : height,
       fillColor: Colors.white,
@@ -59,24 +61,20 @@ extension _CareersEditWidgets on _CareersEditPageState {
   }
 
   Widget _actionButtons() {
+    // Shared action buttons — style lives in core/main_widgets/edit_action_buttons.dart
     return Column(
       children: [
-        Row(children: [
-          Expanded(child: _btn(label: 'Preview', color: const Color(0xFF608570), onTap: _preview)),
-          SizedBox(width: 300.w),
-          Expanded(
-            child: Tooltip(
-              message: _publishTooltip,
-              child: _btn(label: 'Publish', color: ColorPick.primary, onTap: _isPublishEnabled ? _handlePublish : null),
-            ),
-          ),
-        ]),
-        SizedBox(height: 10.h),
-        Row(children: [
-          Expanded(child: _btn(label: 'Discard', color: const Color(0xFF797979), onTap: _discard)),
-          SizedBox(width: 300.w),
-          Expanded(child: const SizedBox()),
-        ]),
+        EditActionButtons(
+          onPreview:      _preview,
+          onPublish:      _handlePublish,
+          onDiscard:      _discard,
+          publishEnabled: _isPublishEnabled,
+          publishDisabledTooltip: _publishTooltip,
+          // BUG-62: this page has its own exact change check (_hasChanges,
+          // which now includes statistics); the shared text-only dirty flag
+          // must not veto it.
+          requireChanges: false,
+        ),
         if (_submitted && !_isFormValid)
           Padding(
             padding: EdgeInsets.only(top: 12.h),
@@ -89,23 +87,14 @@ extension _CareersEditWidgets on _CareersEditPageState {
 
   Widget _accordion({required String key, required String title, required List<Widget> children}) {
     final isOpen = _open[key] ?? true;
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6.r)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        GestureDetector(
-          onTap: () => setState(() => _open[key] = !isOpen),
-          child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-            decoration: BoxDecoration(color: ColorPick.primary, borderRadius: BorderRadius.circular(6.r)),
-            child: Row(children: [
-              Expanded(child: Text(title, style: StyleText.fontSize14Weight600.copyWith(color: Colors.white))),
-              Icon(isOpen ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 25.sp),
-            ]),
-          ),
-        ),
-        if (isOpen) Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
-      ]),
+    return CustomAccordion(
+      title:    title,
+      isOpen:   isOpen,
+      onToggle: () => setState(() => _open[key] = !isOpen),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
     );
   }
 

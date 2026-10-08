@@ -1,0 +1,34 @@
+rules_version = '2';
+
+// BUG-01 / BUG-98 (7/10/2026): Storage could be LISTED and every file
+// (applicant CVs / cover letters included) downloaded without login.
+//   • admins = Firebase Auth users with the custom claim admin == true
+//     (issued by the `adminLogin` Cloud Function — BUG-96);
+//   • nobody but admins can list any folder;
+//   • website images / icons / PDFs: public read (single file), admin write;
+//   • applications/**: the public Apply form may upload a PDF (≤ 10 MB) and
+//     read it back for 10 minutes (to get its download URL); after that only
+//     admins can read it.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    match /applications/{jobId}/{file} {
+      allow create: if request.resource.size < 10 * 1024 * 1024 &&
+                    request.resource.contentType == 'application/pdf';
+      allow get: if isAdmin() ||
+                 request.time < resource.timeCreated + duration.value(10, 'm');
+      allow list, update, delete: if isAdmin();
+    }
+
+    // Rules are OR-ed: the catch-all must NOT re-open applications/**.
+    match /{allPaths=**} {
+      allow get: if !allPaths.matches('applications/.*');
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+  }
+}
