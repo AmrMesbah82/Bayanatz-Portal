@@ -1,0 +1,3 @@
+# BUG-254: private admin dashboard — not for search engines.
+User-agent: *
+Disallow: /

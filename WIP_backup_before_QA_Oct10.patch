@@ -1,0 +1,525 @@
+diff --git a/firebase.json b/firebase.json
+index 4cb04c1..d9ec304 100644
+--- a/firebase.json
++++ b/firebase.json
+@@ -28,6 +28,17 @@
+           "source": "**",
+           "destination": "/index.html"
+         }
++      ],
++      "headers": [
++        {
++          "source": "**",
++          "headers": [
++            {
++              "key": "X-Robots-Tag",
++              "value": "noindex, nofollow"
++            }
++          ]
++        }
+       ]
+     }
+   ],
+diff --git a/lib/core/custom/2-custom_textfield.dart b/lib/core/custom/2-custom_textfield.dart
+index 4f5aaa5..6ae790b 100644
+--- a/lib/core/custom/2-custom_textfield.dart
++++ b/lib/core/custom/2-custom_textfield.dart
+@@ -333,6 +333,10 @@ class _CustomTextFieldState extends State<CustomTextField> {
+     super.dispose();
+   }
+ 
++  /// One-line field with a fixed height → fills that height (see TextField).
++  bool get _fillsHeight =>
++      widget.height != null && !_isMultiline && !widget.obscureText;
++
+   bool get _isMultiline =>
+       (widget.maxLines ?? 1) != 1 || widget.minLines != null;
+ 
+@@ -510,18 +514,25 @@ class _CustomTextFieldState extends State<CustomTextField> {
+               enabled: widget.enabled,
+               readOnly: widget.readOnly,
+               obscureText: _effectiveObscure,
+-              maxLines: widget.obscureText ? 1 : widget.maxLines,
+-              minLines: widget.minLines,
++              // Fixed-height one-line field: EXPANDS to the full height,
++              // the same technique as the dropdown trigger (InputDecorator
++              // expands) — so field and dropdown are identical boxes.
++              maxLines: _fillsHeight ? null : (widget.obscureText ? 1 : widget.maxLines),
++              minLines: _fillsHeight ? null : widget.minLines,
++              expands: _fillsHeight,
+               maxLength: _effectiveMaxLength,
+               cursorColor: ColorPick.primary,
+               keyboardType: _isMultiline
+                   ? TextInputType.multiline
+                   : (widget.keyboardType ??
+                   (widget.onlyDigits ? TextInputType.number : null)),
+-              inputFormatters: _resolvedFormatters,
++              inputFormatters: _fillsHeight
++                  ? [...?_resolvedFormatters, FilteringTextInputFormatter.deny(RegExp(r'[\n\r]'))]
++                  : _resolvedFormatters,
+               textAlign: widget.textAlign,
+               textDirection: widget.textDirection,
+-              textInputAction: widget.textInputAction,
++              textInputAction: widget.textInputAction ??
++                  (_fillsHeight ? TextInputAction.done : null),
+               textCapitalization: widget.textCapitalization,
+               autocorrect: widget.autocorrect,
+               enableSuggestions: widget.enableSuggestions,
+@@ -547,6 +558,11 @@ class _CustomTextFieldState extends State<CustomTextField> {
+                     maxLength}) =>
+               const SizedBox.shrink()
+                   : null,
++              // A one-line field with a fixed height fills that WHOLE height
++              // (text centred), exactly like the dropdowns next to it — before,
++              // only the text line was painted and the box looked shorter.
++              textAlignVertical:
++                  _fillsHeight ? TextAlignVertical.center : null,
+               decoration: InputDecoration(
+                 isDense: true,
+                 contentPadding: effectivePadding,
+diff --git a/lib/features/about_us/presentation/ui/pages/terms_page/terms_edit.dart b/lib/features/about_us/presentation/ui/pages/terms_page/terms_edit.dart
+index af3d2ee..97baaf3 100644
+--- a/lib/features/about_us/presentation/ui/pages/terms_page/terms_edit.dart
++++ b/lib/features/about_us/presentation/ui/pages/terms_page/terms_edit.dart
+@@ -572,7 +572,7 @@ class _TermsEditPageState extends State<TermsEditPage> {
+       crossAxisAlignment: CrossAxisAlignment.start,
+       children: [
+         Text(
+-          'Editing Terms of Service Details',
++          'Editing Terms and Conditions Details',
+           style: StyleText.fontSize45Weight600.copyWith(
+               color: ColorPick.primary, fontWeight: FontWeight.w700),
+         ),
+diff --git a/lib/features/about_us/presentation/ui/pages/terms_page/terms_preview.dart b/lib/features/about_us/presentation/ui/pages/terms_page/terms_preview.dart
+index 2728026..a4f8b8d 100644
+--- a/lib/features/about_us/presentation/ui/pages/terms_page/terms_preview.dart
++++ b/lib/features/about_us/presentation/ui/pages/terms_page/terms_preview.dart
+@@ -228,7 +228,7 @@ class _TermsPreviewPageState extends State<TermsPreviewPage> {
+                 SizedBox(height: 20.h),
+                 AdminSubNavBar(activeIndex: 3),
+                 Text(
+-                  'Preview Terms of Service Details',
++                  'Preview Terms and Conditions Details',
+                   style: StyleText.fontSize45Weight600.copyWith(
+                       color: ColorPick.primary, fontWeight: FontWeight.w700),
+                 ),
+diff --git a/lib/features/careers/presentation/ui/pages/careers_main_page.dart b/lib/features/careers/presentation/ui/pages/careers_main_page.dart
+index fa583de..9592914 100644
+--- a/lib/features/careers/presentation/ui/pages/careers_main_page.dart
++++ b/lib/features/careers/presentation/ui/pages/careers_main_page.dart
+@@ -174,7 +174,7 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
+     final String title = switch (_careersTab) {
+       1 => 'Preview Why Join Our Team',
+       2 => 'Preview Our Interns',
+-      3 => 'Preview Our Teams',
++      3 => 'Preview Our Team',
+       _ => 'Preview Main Details',
+     };
+ 
+diff --git a/lib/features/careers/presentation/ui/pages/our_teams_edit.dart b/lib/features/careers/presentation/ui/pages/our_teams_edit.dart
+index 6615638..5d17a92 100644
+--- a/lib/features/careers/presentation/ui/pages/our_teams_edit.dart
++++ b/lib/features/careers/presentation/ui/pages/our_teams_edit.dart
+@@ -324,7 +324,7 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
+     await showPublishConfirmDialog(
+       context: context,
+       title: 'PUBLISH OUR TEAMS',
+-      subtitle: 'Do you want to publish the changes made to Our Teams?',
++      subtitle: 'Do you want to publish the changes made to Our Team?',
+       confirmLabel: 'Publish',
+       backLabel: 'Back',
+       onConfirm: () => _performSave(cubit),
+@@ -382,7 +382,7 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
+                           children: [
+                             // ── Page title ──────────────────────────────────
+                             Text(
+-                              'Editing Our Teams Details',
++                              'Editing Our Team Details',
+                               style: StyleText.fontSize45Weight600.copyWith(
+                                 color:      ColorPick.primary,
+                                 fontWeight: FontWeight.w700,
+diff --git a/lib/features/careers/presentation/ui/pages/our_teams_preview.dart b/lib/features/careers/presentation/ui/pages/our_teams_preview.dart
+index 0afdc15..a33646d 100644
+--- a/lib/features/careers/presentation/ui/pages/our_teams_preview.dart
++++ b/lib/features/careers/presentation/ui/pages/our_teams_preview.dart
+@@ -136,7 +136,7 @@ class _OurTeamsPreviewPageState extends State<OurTeamsPreviewPage> {
+                         AdminSubNavBar(activeIndex: 5),
+                         // ── Page title ──────────────────────────────────────
+                         Text(
+-                          'Preview Our Teams Details',
++                          'Preview Our Team Details',
+                           style: StyleText.fontSize45Weight600.copyWith(
+                             color:      ColorPick.primary,
+                             fontWeight: FontWeight.w700,
+diff --git a/lib/features/contact_us/presentation/ui/pages/contact_us_edit.dart b/lib/features/contact_us/presentation/ui/pages/contact_us_edit.dart
+index cd67b32..e23a6e6 100644
+--- a/lib/features/contact_us/presentation/ui/pages/contact_us_edit.dart
++++ b/lib/features/contact_us/presentation/ui/pages/contact_us_edit.dart
+@@ -217,9 +217,13 @@ class _ContactUsCmsEditPageState extends State<ContactUsCmsEditPage> {
+     return completer.future;
+   }
+ 
++  /// BUG-251: the confirmation image may also be a PNG / JPG / WebP photo
++  /// (SVG-only forced photos to be wrapped in an SVG, which Safari can't
++  /// draw).
+   Future<Uint8List?> _pickSvgFile() async {
+     final completer = Completer<Uint8List?>();
+-    final input = html.FileUploadInputElement();
++    final input = html.FileUploadInputElement()
++      ..accept = '.svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp';
+ 
+     input.onChange.listen((_) {
+       final files = input.files;
+@@ -229,7 +233,8 @@ class _ContactUsCmsEditPageState extends State<ContactUsCmsEditPage> {
+       }
+       final file     = files.first;
+       final fileName = file.name.toLowerCase();
+-      if (!fileName.endsWith('.svg')) {
++      const allowed = ['.svg', '.png', '.jpg', '.jpeg', '.webp'];
++      if (!allowed.any(fileName.endsWith)) {
+         completer.complete(null);
+         return;
+       }
+diff --git a/lib/features/contact_us/presentation/ui/widgets/contact_us_edit/contact_us_edit_ui.dart b/lib/features/contact_us/presentation/ui/widgets/contact_us_edit/contact_us_edit_ui.dart
+index 76421e4..217942e 100644
+--- a/lib/features/contact_us/presentation/ui/widgets/contact_us_edit/contact_us_edit_ui.dart
++++ b/lib/features/contact_us/presentation/ui/widgets/contact_us_edit/contact_us_edit_ui.dart
+@@ -441,7 +441,7 @@ extension _ContactUsEditUi on _ContactUsCmsEditPageState {
+       children: [
+         SizedBox(height: 15.h),
+         _imageUploadCircle(
+-          label: 'SVG',
++          label: 'Image', // BUG-251: SVG, PNG, JPG or WebP
+           bytes: _confirmSvgBytes,
+           url:   _confirmSvgUrl,
+           onTap: () async {
+diff --git a/lib/features/job/presentation/ui/pages/application_main.dart b/lib/features/job/presentation/ui/pages/application_main.dart
+index 4ff68c9..efead29 100644
+--- a/lib/features/job/presentation/ui/pages/application_main.dart
++++ b/lib/features/job/presentation/ui/pages/application_main.dart
+@@ -479,15 +479,17 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
+                                   tabCounts.putIfAbsent(t, () => 0);
+                                 }
+                               }
+-                              return SingleChildScrollView(
+-                                scrollDirection: Axis.horizontal,
+-                                child: Row(
+-                                  children: [
+-                                    _filterTab('All', apps.length, activeJobTitle == 'All', () => cubit.setJobTitleFilter('All')),
+-                                    ...tabCounts.entries.map((e) =>
+-                                        _filterTab(e.key, e.value, activeJobTitle == e.key, () => cubit.setJobTitleFilter(e.key))),
+-                                  ],
+-                                ),
++                              // BUG-218: the job chips WRAP onto more lines, so
++                              // the last jobs are reachable with a mouse (the
++                              // scroll row was cut with no hint).
++                              return Wrap(
++                                spacing: 0,
++                                runSpacing: 8,
++                                children: [
++                                  _filterTab('All', apps.length, activeJobTitle == 'All', () => cubit.setJobTitleFilter('All')),
++                                  ...tabCounts.entries.map((e) =>
++                                      _filterTab(e.key, e.value, activeJobTitle == e.key, () => cubit.setJobTitleFilter(e.key))),
++                                ],
+                               );
+                             }),
+                             SizedBox(height: 16.h),
+diff --git a/lib/features/job/presentation/ui/pages/job_listing_edit.dart b/lib/features/job/presentation/ui/pages/job_listing_edit.dart
+index 5a8f2e7..732f72b 100644
+--- a/lib/features/job/presentation/ui/pages/job_listing_edit.dart
++++ b/lib/features/job/presentation/ui/pages/job_listing_edit.dart
+@@ -327,7 +327,8 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
+         {
+           'name': TextEditingController(text: 'Cover Letter'),
+           'nameAr': TextEditingController(text: 'خطاب التغطية'), // BUG-34
+-          'type': 'PDF',
++          // BUG-207: Figma Apply form — Cover Letter is a link field.
++          'type': 'Link',
+           'required': true,
+         },
+       ]);
+@@ -439,7 +440,8 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
+         {
+           'name': TextEditingController(text: 'Cover Letter'),
+           'nameAr': TextEditingController(text: 'خطاب التغطية'), // BUG-34
+-          'type': 'PDF',
++          // BUG-207: Figma Apply form — Cover Letter is a link field.
++          'type': 'Link',
+           'required': true,
+         },
+       ]);
+diff --git a/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_form_helpers.dart b/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_form_helpers.dart
+index aa90329..9378685 100644
+--- a/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_form_helpers.dart
++++ b/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_form_helpers.dart
+@@ -68,7 +68,7 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
+               Expanded(
+                 child: _field(
+                   'Maximum Number of Applications for This Position',
+-                  'Text Here', // Figma
++                  'e.g. 100', // BUG-129
+                   _maxApps,
+                   onlyDigits: true, // numbers only
+                 ),
+diff --git a/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_sections.dart b/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_sections.dart
+index ce5ff7d..3a4e5b0 100644
+--- a/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_sections.dart
++++ b/lib/features/job/presentation/ui/widgets/job_listing_edit/edit_sections.dart
+@@ -54,11 +54,11 @@ extension _JobEditSections on _JobListingEditPageState {
+           Row(
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+-              // Figma (Create New Job Post): "Text Here" placeholders.
+-              Expanded(child: _field('Job Title', 'Text Here', _titleEn)),
++              // BUG-129: field-specific placeholders (were "Text Here" everywhere).
++              Expanded(child: _field('Job Title', 'e.g. Senior Flutter Developer', _titleEn)),
+               SizedBox(width: 16.w),
+               Expanded(
+-                child: _fieldRtl('المسمى الوظيفي', 'أدخل النص هنا', _titleAr),
++                child: _fieldRtl('المسمى الوظيفي', 'اكتب هنا بالعربية', _titleAr),
+               ),
+             ],
+           ),
+@@ -160,7 +160,7 @@ extension _JobEditSections on _JobListingEditPageState {
+                 Expanded(
+                   child: CustomTextField(
+                     controller: _otherLocation,
+-                    hint: 'Text Here',
++                    hint: 'e.g. Cairo, Egypt',
+                     height: 36,
+                     submitted: _submitted,
+                     onChanged: (v) => setState(() =>
+@@ -222,7 +222,7 @@ extension _JobEditSections on _JobListingEditPageState {
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+                     Expanded(
+-                      child: _field('Employment Duration', 'Text Number', _durationText,
++                      child: _field('Employment Duration', 'e.g. 6', _durationText,
+                           onlyDigits: true), // numbers only (Figma hint "Text Number")
+                     ),
+                     SizedBox(width: 8.w),
+@@ -338,11 +338,11 @@ extension _JobEditSections on _JobListingEditPageState {
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+               Expanded(
+-                child: _field('Required Qualification', 'Text Here', _qualificationEn),
++                child: _field('Required Qualification', "e.g. Bachelor's degree in Computer Science", _qualificationEn),
+               ),
+               SizedBox(width: 16.w),
+               Expanded(
+-                child: _fieldRtl('المؤهلات المطلوبة', 'أدخل النص هنا', _qualificationAr),
++                child: _fieldRtl('المؤهلات المطلوبة', 'اكتب هنا بالعربية', _qualificationAr),
+               ),
+             ],
+           ),
+@@ -365,7 +365,7 @@ extension _JobEditSections on _JobListingEditPageState {
+                 children: [
+                   Expanded(
+                     child: _field(i == 0 ? 'Required Skills' : '',
+-                        'Text Here',
++                        'e.g. Flutter',
+                         _skills[i]['en']!,
+                         required: false),
+                   ),
+@@ -394,7 +394,7 @@ extension _JobEditSections on _JobListingEditPageState {
+                   SizedBox(width: 8.w),
+                   Expanded(
+                     child: _fieldRtl(i == 0 ? 'المهارات المطلوبة' : '',
+-                        'أدخل النص هنا', _skills[i]['ar']!,
++                        'اكتب هنا بالعربية', _skills[i]['ar']!,
+                         required: false),
+                   ),
+                 ],
+@@ -429,18 +429,18 @@ extension _JobEditSections on _JobListingEditPageState {
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.start,
+         children: [
+-          // Figma (Create New Job Post): "Text Here" placeholders.
+-          _field('About This Position', 'Text Here', _aboutEn, maxLines: 4, height: 100),
++          // BUG-129: field-specific placeholders (were "Text Here" everywhere).
++          _field('About This Position', 'Describe the role and its main goals', _aboutEn, maxLines: 4, height: 100),
+           SizedBox(height: 10.sp),
+-          _fieldRtl('', 'أدخل النص هنا', _aboutAr, maxLines: 4, height: 100),
++          _fieldRtl('', 'اكتب هنا بالعربية', _aboutAr, maxLines: 4, height: 100),
+           SizedBox(height: 10.sp),
+-          _field('Requirements', 'Text Here', _requirementsEn, maxLines: 4, height: 100),
++          _field('Requirements', 'One requirement per line', _requirementsEn, maxLines: 4, height: 100),
+           SizedBox(height: 10.sp),
+-          _fieldRtl('', 'أدخل النص هنا', _requirementsAr, maxLines: 4, height: 100),
++          _fieldRtl('', 'اكتب هنا بالعربية', _requirementsAr, maxLines: 4, height: 100),
+           SizedBox(height: 10.sp),
+-          _field('Preferred Skills', 'Text Here', _prefSkillsEn, maxLines: 4, height: 100),
++          _field('Preferred Skills', 'One skill per line', _prefSkillsEn, maxLines: 4, height: 100),
+           SizedBox(height: 10.sp),
+-          _fieldRtl('', 'أدخل النص هنا', _prefSkillsAr, maxLines: 4, height: 100),
++          _fieldRtl('', 'اكتب هنا بالعربية', _prefSkillsAr, maxLines: 4, height: 100),
+         ],
+       ),
+     );
+@@ -495,11 +495,11 @@ extension _JobEditSections on _JobListingEditPageState {
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+                     Expanded(
+-                      child: _field('Title', 'Text Here', b['titleEn']!),
++                      child: _field('Title', 'e.g. Flexible hours', b['titleEn']!),
+                     ),
+                     SizedBox(width: 16.w),
+                     Expanded(
+-                      child: _fieldRtl('العنوان', 'أدخل النص هنا', b['titleAr']!),
++                      child: _fieldRtl('العنوان', 'اكتب هنا بالعربية', b['titleAr']!),
+                     ),
+                   ],
+                 ),
+diff --git a/lib/features/services/presentation/controller/blog_cubit.dart b/lib/features/services/presentation/controller/blog_cubit.dart
+index 125efff..bd8a94c 100644
+--- a/lib/features/services/presentation/controller/blog_cubit.dart
++++ b/lib/features/services/presentation/controller/blog_cubit.dart
+@@ -50,7 +50,7 @@ class BlogCubit extends Cubit<BlogState> {
+ 
+       // Upload image if provided
+       if (imageBytes != null) {
+-        final path = 'blog_images/${DateTime.now().millisecondsSinceEpoch}.svg';
++        final path = 'blog_images/${DateTime.now().millisecondsSinceEpoch}.${_ext(imageBytes)}';
+         imageUrl = await _repo.uploadImage(bytes: imageBytes, storagePath: path);
+       }
+ 
+@@ -91,7 +91,7 @@ class BlogCubit extends Cubit<BlogState> {
+ 
+       // Upload image if provided
+       if (imageBytes != null) {
+-        final path = 'blog_images/${post.id}_${DateTime.now().millisecondsSinceEpoch}.svg';
++        final path = 'blog_images/${post.id}_${DateTime.now().millisecondsSinceEpoch}.${_ext(imageBytes)}';
+         imageUrl = await _repo.uploadImage(bytes: imageBytes, storagePath: path);
+       }
+ 
+@@ -172,4 +172,13 @@ class BlogCubit extends Cubit<BlogState> {
+       emit(BlogError(e.toString()));
+     }
+   }
+-}
+\ No newline at end of file
++
++  /// BUG-251: keep the real file type in the Storage name (PNG / JPG / WebP
++  /// photos are allowed now, not only SVG).
++  static String _ext(List<int> b) {
++    if (b.length >= 4 && b[0] == 0x89 && b[1] == 0x50) return 'png';
++    if (b.length >= 3 && b[0] == 0xFF && b[1] == 0xD8) return 'jpg';
++    if (b.length >= 12 && b[0] == 0x52 && b[1] == 0x49 && b[8] == 0x57 && b[9] == 0x45) return 'webp';
++    return 'svg';
++  }
++}
+diff --git a/lib/features/services/presentation/ui/pages/blog_services/blog_edit.dart b/lib/features/services/presentation/ui/pages/blog_services/blog_edit.dart
+index 371dce8..4cc13c3 100644
+--- a/lib/features/services/presentation/ui/pages/blog_services/blog_edit.dart
++++ b/lib/features/services/presentation/ui/pages/blog_services/blog_edit.dart
+@@ -214,10 +214,13 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
+     );
+   }
+ 
+-  // ── SVG-only image picker ──────────────────────────────────────────────────
++  // ── Image picker ────────────────────────────────────────────────────────────
++  // BUG-251: PNG / JPG / WebP photos are accepted as well as SVG. Before,
++  // only SVG was allowed, so photos were wrapped in an SVG (<image href=
++  // "data:image/png…">) — and Safari draws such files as blank boxes.
+   Future<void> _pickImage() async {
+     final uploadInput = html.FileUploadInputElement()
+-      ..accept = '.svg,image/svg+xml';
++      ..accept = '.svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp';
+     uploadInput.click();
+ 
+     await uploadInput.onChange.first;
+@@ -225,29 +228,6 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
+ 
+     final file = uploadInput.files!.first;
+ 
+-    // 1. Check file extension
+-    final fileName = file.name.toLowerCase();
+-    if (!fileName.endsWith('.svg')) {
+-      if (mounted) {
+-        _showErrorDialog(
+-          title: 'Invalid File Type',
+-          subtitle: 'Only SVG files are allowed. Please select an SVG file.',
+-        );
+-      }
+-      return;
+-    }
+-
+-    // 2. Check MIME type
+-    if (file.type.isNotEmpty && file.type != 'image/svg+xml') {
+-      if (mounted) {
+-        _showErrorDialog(
+-          title: 'Invalid File Type',
+-          subtitle: 'Only SVG files are allowed. Please select an SVG file.',
+-        );
+-      }
+-      return;
+-    }
+-
+     final reader = html.FileReader();
+     reader.readAsArrayBuffer(file);
+     await reader.onLoadEnd.first;
+@@ -256,23 +236,26 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
+     if (result == null) return;
+ 
+     final bytes = Uint8List.fromList((result as List<int>));
+-    final fileContent = String.fromCharCodes(bytes.take(100)).toLowerCase().trimLeft();
+-
+-    // 3. Validate SVG content (must start with <svg or <?xml)
+-    if (!fileContent.startsWith('<svg') && !fileContent.startsWith('<?xml')) {
++    final head = String.fromCharCodes(bytes.take(100)).toLowerCase().trimLeft();
++    final bool isPng = bytes.length > 4 && bytes[0] == 0x89 && bytes[1] == 0x50;
++    final bool isJpg = bytes.length > 3 && bytes[0] == 0xFF && bytes[1] == 0xD8;
++    final bool isWebp = bytes.length > 12 && bytes[0] == 0x52 && bytes[1] == 0x49 &&
++        bytes[8] == 0x57 && bytes[9] == 0x45;
++    final bool isSvg = head.startsWith('<svg') || head.startsWith('<?xml');
++
++    if (!isPng && !isJpg && !isWebp && !isSvg) {
+       if (mounted) {
+         _showErrorDialog(
+-          title: 'Invalid SVG File',
+-          subtitle: 'The selected file is not a valid SVG image. Please select a valid SVG file.',
++          title: 'Invalid File Type',
++          subtitle: 'Please select an SVG, PNG, JPG or WebP image.',
+         );
+       }
+       return;
+     }
+ 
+-    // 4. Success - update the state
+     setState(() {
+       _imageBytes = bytes;
+-      _isPickedSvg = true;
++      _isPickedSvg = isSvg;
+       _existingImageUrl = '';
+     });
+   }
+diff --git a/storage.rules b/storage.rules
+index 4e7912e..5282bf3 100644
+--- a/storage.rules
++++ b/storage.rules
+@@ -17,7 +17,9 @@ service firebase.storage {
+     }
+ 
+     match /applications/{jobId}/{file} {
+-      allow create: if request.resource.size < 10 * 1024 * 1024 &&
++      // BUG-237: no empty files, max 10 MB, PDF content type only.
++      allow create: if request.resource.size > 0 &&
++                    request.resource.size <= 10 * 1024 * 1024 &&
+                     request.resource.contentType == 'application/pdf';
+       allow get: if isAdmin() ||
+                  request.time < resource.timeCreated + duration.value(10, 'm');
+diff --git a/web/index.html b/web/index.html
+index 8c13aa5..175e544 100644
+--- a/web/index.html
++++ b/web/index.html
+@@ -5,7 +5,9 @@
+ 
+     <meta charset="UTF-8">
+     <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+-    <meta name="description" content="A new Flutter project.">
++    <meta name="description" content="Bayanatz CMS — admin dashboard (private).">
++    <!-- BUG-254: the admin must never be indexed by search engines. -->
++    <meta name="robots" content="noindex, nofollow">
+ 
+     <!-- iOS meta tags & icons -->
+     <meta name="mobile-web-app-capable" content="yes">
