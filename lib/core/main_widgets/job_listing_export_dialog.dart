@@ -517,6 +517,11 @@ class _JobListingExportDialogState extends State<_JobListingExportDialog> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8.r),
                             ),
+                          ).copyWith(
+                            // No hover / press shade on Cancel.
+                            overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+                            shadowColor: const WidgetStatePropertyAll(Colors.transparent),
+                            elevation: const WidgetStatePropertyAll(0),
                           ),
                           child: Text(
                             'Cancel', // BUG-157: closes the dialog

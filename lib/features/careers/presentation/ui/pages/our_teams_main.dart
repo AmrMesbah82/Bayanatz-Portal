@@ -226,15 +226,30 @@ class _OurTeamsViewPageState extends State<OurTeamsViewPage> {
           _readFieldRtl('الوصف', item.description.ar, height: 80),
           SizedBox(height: 14.h),
 
-          // Deliverables EN / AR
-          Row(children: [
-            Expanded(
-                child: _readField('Deliverables', item.deliverables.en)),
-            SizedBox(width: 16.w),
-            Expanded(
-                child: _readFieldRtl(
-                    'المخرجات', item.deliverables.ar)),
-          ]),
+          // Deliverables EN / AR — the editor saves them as a LIST
+          // (`deliverableItems`, one EN/AR pair per row); the single legacy
+          // `deliverables` field is never written, which is why this always
+          // showed "Text Here". Show every saved row (legacy value as a
+          // fallback for old documents).
+          ...() {
+            final rows = item.deliverableItems.isNotEmpty
+                ? item.deliverableItems.map((d) => d.label).toList()
+                : [item.deliverables];
+            return [
+              for (var j = 0; j < rows.length; j++) ...[
+                if (j > 0) SizedBox(height: 8.h),
+                Row(children: [
+                  Expanded(
+                      child: _readField(
+                          j == 0 ? 'Deliverables' : '', rows[j].en)),
+                  SizedBox(width: 16.w),
+                  Expanded(
+                      child: _readFieldRtl(
+                          j == 0 ? 'المخرجات' : '', rows[j].ar)),
+                ]),
+              ],
+            ];
+          }(),
 
 
           SizedBox(height: 16.h),

@@ -225,6 +225,11 @@ class _CsvExportDialogState extends State<_CsvExportDialog> {
                           backgroundColor: Colors.grey.shade300,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8.r)),
+                        ).copyWith(
+                          // No hover / press shade on Cancel.
+                          overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+                          shadowColor: const WidgetStatePropertyAll(Colors.transparent),
+                          elevation: const WidgetStatePropertyAll(0),
                         ),
                         onPressed: () => Navigator.of(context).pop(),
                         child: Text('Cancel', // BUG-157: closes the dialog — it discards nothing

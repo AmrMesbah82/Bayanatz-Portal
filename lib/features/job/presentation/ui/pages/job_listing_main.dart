@@ -344,7 +344,7 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
                                   function: _openFilterDialog,
                                   width: 100.w,
                                   height: 36.h,
-                                  radius: 6,
+                                  radius: 8.r, // same as the Search field (8.r)
                                   color: ColorPick.primary,
                                   textColor: Colors.white,
                                   textStyle: StyleText.fontSize13Weight600.copyWith(color: Colors.white),

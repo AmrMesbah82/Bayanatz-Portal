@@ -43,12 +43,18 @@ class _AppCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Tags row ──
+            // ── Tags row ── top-aligned so the chip and the button sit
+            // exactly 10 px from the top, matching the 10 px side insets.
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (app.tag.isNotEmpty)
+                // The 6 px gap only BETWEEN two chips — with no tag it pushed
+                // the status chip 6 px in, so the left inset was larger than
+                // the top one (now equal: 10 px from the top and the left).
+                if (app.tag.isNotEmpty) ...[
                   _tag(app.tag, ColorPick.primary, icon: Icons.local_offer_outlined),
-                SizedBox(width: 6.w),
+                  SizedBox(width: 6.w),
+                ],
                 _tag(app.status.label, ColorPick.primary, svgAsset: _statusSvg),
                 const Spacer(),
                 GestureDetector(

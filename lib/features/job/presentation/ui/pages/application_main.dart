@@ -589,7 +589,7 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                                   },
                                   width: 100.w,
                                   height: 36.h,
-                                  radius: 6,
+                                  radius: 8.r, // same as the Search field (8.r)
                                   color: _activeFilter != null && !_activeFilter!.isEmpty
                                       ? ColorPick.primary.withValues(alpha: 0.85)
                                       : ColorPick.primary,
