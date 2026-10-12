@@ -18,19 +18,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../features/main/data/models/main_model.dart';
 import '../../features/main/presentation/controller/main_cubit.dart';
-import '../../features/main/presentation/controller/main_state.dart';
 
 /// The Main-page draft — branding colors, logo, footer columns, social links
 /// and the site navbar items. Every preview needs it, because the site shell
 /// wraps every page.
 MainPageModel draftMainModel(BuildContext context) {
   final MainCmsCubit cubit = context.watch<MainCmsCubit>();
-  final MainCmsState state = cubit.state;
 
-  if (state is MainCmsLoaded)     return state.data;
-  if (state is MainCmsSaving)     return state.data;
-  if (state is MainCmsSaved)      return state.data;
-  if (state is MainCmsDraftSaved) return state.data;
-  if (state is MainCmsError && state.lastData != null) return state.lastData!;
+  // BUG-53: the cubit's in-memory model holds the edits being made (the
+  // editor copies them in before opening Preview); state.data is the
+  // snapshot taken when the page was LOADED, i.e. the published text.
   return cubit.current;
 }

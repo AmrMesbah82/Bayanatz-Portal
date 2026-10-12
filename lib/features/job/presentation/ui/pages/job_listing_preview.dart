@@ -6,6 +6,7 @@
 // UPDATED: UI matches Figma — green-tinted sections, bold key bullets, Benefits layout
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/two_tab.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -174,10 +175,25 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                         _viewModeTab('Tablet'),
                         SizedBox(width: 16.w),
                         _viewModeTab('Mobile'),
-                        // const Spacer(),
-                        // _langToggle('ENG'),
-                        // SizedBox(width: 4.w),
-                        // _langToggle('AR'),
+                        // BUG-305: ENG | AR like every CMS preview, so the
+                        // Arabic title, requirements and benefits can be
+                        // checked before publishing.
+                        const Spacer(),
+                        CustomSegmentedTabs(
+                          tabs: const ['ENG', 'AR'],
+                          selectedIndex: isAr ? 1 : 0,
+                          onTabSelected: (i) =>
+                              setState(() => _lang = i == 1 ? 'AR' : 'ENG'),
+                          selectedColor:       ColorPick.primary,
+                          unselectedColor:     Colors.transparent,
+                          selectedTextColor:   Colors.white,
+                          unselectedTextColor: AppColors.text,
+                          containerColor:
+                              ColorPick.white.withValues(alpha: 0.45),
+                          equalWidth: false,
+                          containerPadding: EdgeInsets.symmetric(
+                              horizontal: 8.sp, vertical: 4.sp),
+                        ),
                       ],
                     ),
                     SizedBox(height: 24.h),
@@ -264,7 +280,7 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                                         'Work Type:',
                                         job.isUnset('workType')
                                             ? '-'
-                                            : job.workType.label,
+                                            : job.workType.displayLabel, // BUG-157
                                         'Employment Duration:',
                                         _durationText(job),
                                       ),
@@ -274,7 +290,7 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
                                         job.isUnset('employmentType')
                                             ? '-'
                                             : job.employmentType.label,
-                                        'Compensation Range:',
+                                        'Salary Range:', // BUG-157: same name as the form
                                         _salaryText(job),
                                       ),
                                       SizedBox(height: 10.h),
@@ -455,21 +471,12 @@ class _JobListingPreviewPageState extends State<JobListingPreviewPage> {
   }
 
   // BUG-09: real values only — no invented "3 Weeks" / "0 - 0".
-  String _durationText(JobPostModel job) {
-    final n = job.employmentDurationText.trim();
-    final unit = job.isUnset('employmentDurationType')
-        ? ''
-        : job.employmentDurationType.label;
-    if (unit == 'Open') return 'Open';
-    if (n.isEmpty && unit.isEmpty) return '-';
-    return [n, unit].where((s) => s.isNotEmpty).join(' ');
-  }
+  // BUG-172: "12 Months", not "12 Month".
+  String _durationText(JobPostModel job) => job.durationDisplay;
 
-  String _salaryText(JobPostModel job) {
-    if (job.salaryMin <= 0 && job.salaryMax <= 0) return '-';
-    return '${job.salaryMin.toInt()} - ${job.salaryMax.toInt()} ${job.salaryCurrency}'
-        .trim();
-  }
+  // BUG-304: "45,000 – 65,000 EGP".
+  String _salaryText(JobPostModel job) => job.salaryDisplay;
+
 
   // ═════════════════════════════════════════════════════════════════════════════
   //  VIEW MODE TAB

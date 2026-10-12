@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/custom_dialog.dart' show confirmDiscard;
 import 'package:web_app_admin/core/widget/date_pic.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -27,6 +28,7 @@ import '../../../../../core/custom/2-custom_textfield.dart';
 import '../../../../../core/custom_svg.dart';
 import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../core/main_widgets/cms_sub_tabs.dart'; // BUG-155
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../core/theme/appcolors.dart';
 import '../../../../../core/theme/new_theme.dart';
@@ -174,7 +176,7 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
     final String title = switch (_careersTab) {
       1 => 'Preview Why Join Our Team',
       2 => 'Preview Our Interns',
-      3 => 'Preview Our Teams',
+      3 => 'Preview Our Team',
       _ => 'Preview Main Details',
     };
 
@@ -222,34 +224,12 @@ class _CareersMainPageMasterState extends State<CareersMainPageMaster> {
         SizedBox(height: 14.h),
 
         // ── Tab bar (always visible) ─────────────────────────────────────────
-        Container(
-          width: 1000.w,
-          child: Row(
-            children: List.generate(_careersTabLabels.length, (i) {
-              final active = _careersTab == i;
-              return GestureDetector(
-                onTap: () => setState(() => _careersTab = i),
-                // BUG-155: same height as the About Us / Services sub-tabs
-                // (text + 6.h + 2 px line; was 4.h top + 4.h bottom + 2.5).
-                child: Container(
-                  padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 6.h),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: active ? ColorPick.primary : Colors.transparent,
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                  child: Text(_careersTabLabels[i],
-                      style: StyleText.fontSize15Weight500.copyWith(
-                        color: active ? ColorPick.primary : AppColors.text,
-                        fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                      )),
-                ),
-              );
-            }),
-          ),
+        // BUG-155: shared sub-tab row — Careers drew padded boxes with dark
+        // text and no gaps, unlike Services / About Us.
+        CmsSubTabs(
+          labels: _careersTabLabels,
+          activeIndex: _careersTab,
+          onTap: (i) => setState(() => _careersTab = i),
         ),
         SizedBox(height: 16.h),
 

@@ -56,6 +56,13 @@ class CustomValidatedTextFieldMaster extends StatelessWidget {
   /// Defaults to the legacy 14sp / w500 style.
   final TextStyle? labelStyle;
 
+  /// Explicit error (red border + message under the field), e.g. a score
+  /// outside 1–5 (BUG-264).
+  final String? errorText;
+
+  /// BUG-294: detail-page read-only value — solid white, not dimmed.
+  final bool readOnlyView;
+
   const CustomValidatedTextFieldMaster({
     super.key,
     this.label,
@@ -81,6 +88,8 @@ class CustomValidatedTextFieldMaster extends StatelessWidget {
     this.minLength = 0,
     this.validator,
     this.labelStyle,
+    this.errorText,
+    this.readOnlyView = false,
   });
 
   @override
@@ -120,9 +129,15 @@ class CustomValidatedTextFieldMaster extends StatelessWidget {
       textDirection: textDirection,
       textAlign: textAlign,
       onlyDigits: onlyDigits,
+      // BUG-290: `submitted` / `isRequired` used to be accepted and IGNORED,
+      // so these fields never showed the shared red border + message.
+      submitted: submitted && isRequired,
+      required: isRequired,
+      errorText: errorText,
       keyboardType: onlyDigits ? TextInputType.number : TextInputType.text,
       onChanged: onChanged,
       fillColor: resolvedFill,
+      readOnlyView: readOnlyView, // BUG-294
       // contentPadding: contentPadding,
       valueStyle: textStyle ??
           StyleText.fontSize12Weight400.copyWith(color: AppColors.text),

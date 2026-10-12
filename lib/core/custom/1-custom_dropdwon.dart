@@ -58,6 +58,11 @@ class CustomDropdown<T> extends StatefulWidget {
   final TextStyle? errorStyle;
   final TextStyle? helperStyle;
   final double? itemHeight;
+
+  /// BUG-289: fixed trigger height (in design units, scaled with .h) so a
+  /// dropdown is exactly as tall as the CustomTextField(height: …) beside it
+  /// — dropdowns were 38–39 px next to 48 px text fields.
+  final double? fieldHeight;
   final double overlayElevation;
   final double? overlayOffset;
   final bool showDivider;
@@ -90,6 +95,7 @@ class CustomDropdown<T> extends StatefulWidget {
     this.errorStyle,
     this.helperStyle,
     this.itemHeight,
+    this.fieldHeight,
     this.overlayElevation = 4,
     this.overlayOffset,
     this.showDivider = false,
@@ -105,6 +111,12 @@ class CustomDropdown<T> extends StatefulWidget {
 
 class _CustomDropdownState<T> extends State<CustomDropdown<T>>
     with SingleTickerProviderStateMixin {
+  /// QA-Oct11 #25: value + hint on the middle of a fixed-height trigger
+  /// (Cairo's tall ascent sat them low).
+  TextStyle _centred(TextStyle s) => widget.fieldHeight != null
+      ? s.copyWith(height: 1.4, leadingDistribution: TextLeadingDistribution.even)
+      : s;
+
   // ── CompositedTransformTarget link ──────────────────────
   final _layerLink = LayerLink();
 
@@ -300,10 +312,17 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
           link: _layerLink,
           child: GestureDetector(
             onTap: _toggleDropdown,
-            child: InputDecorator(
+            child: SizedBox(
+             height: widget.fieldHeight?.h,
+             child: InputDecorator(
               key: _triggerKey,
               isFocused: false,
               isEmpty: _selectedItem == null,
+              // BUG-289: fill the fixed height like the text field does.
+              expands: widget.fieldHeight != null,
+              textAlignVertical: widget.fieldHeight != null
+                  ? TextAlignVertical.center
+                  : null,
               decoration: InputDecoration(
                 isDense: true,
                 contentPadding: widget.triggerPadding ??
@@ -373,7 +392,7 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
                 ),
                 suffixIconConstraints: const BoxConstraints(),
                 hintText: _selectedItem == null ? (widget.hint ?? '') : null,
-                hintStyle: widget.hintStyle ?? StyleText.hint,
+                hintStyle: _centred(widget.hintStyle ?? StyleText.hint),
                 // Suppress built-in error text — we render our own below
                 errorText: null,
               ),
@@ -388,12 +407,12 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
                         Expanded(
                           child: Text(
                             _selectedItem!.label,
-                            style: widget.valueStyle ??
+                            style: _centred(widget.valueStyle ??
                                 StyleText.value.copyWith(
                                   color: widget.enabled
                                       ? AppColors.text
                                       : AppColors.text.withOpacity(0.4),
-                                ),
+                                )),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -402,6 +421,7 @@ class _CustomDropdownState<T> extends State<CustomDropdown<T>>
                   // InputDecorator shows hintText automatically when child
                   // isEmpty — but we still need a zero-height child.
                   : const SizedBox.shrink(),
+             ),
             ),
           ),
         ),

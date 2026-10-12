@@ -226,6 +226,8 @@ class CareersDashboardData {
   // Candidate Quality — pie chart
   final double qualifiedPercent;
   final double unqualifiedPercent;
+  /// BUG-258: share of applicants still at "Applied" (not reviewed yet).
+  final double notReviewedPercent;
   final int totalApplications;
 
   // Jobs Performance — grouped bar per role
@@ -267,6 +269,7 @@ class CareersDashboardData {
     required this.jobStatusTotal,
     required this.qualifiedPercent,
     required this.unqualifiedPercent,
+    this.notReviewedPercent = 0,
     required this.totalApplications,
     required this.performanceRoles,
     required this.performanceApplications,
@@ -300,23 +303,32 @@ class CareersDashboardData {
     final totalJobs     = jobs.length;
     // "Office" = any job that involves the office: On Site AND Hybrid (Hybrid
     // was counted nowhere, so Office + Remote never equalled All Jobs).
-    final officeJobs    = jobs.where((j) =>
-        !j.isUnset('workType') &&
-        (j.workType == WorkType.onSite || j.workType == WorkType.hybrid)).length;
+    // BUG-268: work-type cards add up to All Jobs (On Site + Hybrid +
+    // Remote — Hybrid was hidden inside "Office"), and status cards add up
+    // too (Active + Scheduled + Inactive/Ended + Draft).
+    final onSiteJobs    = jobs.where((j) =>
+        !j.isUnset('workType') && j.workType == WorkType.onSite).length;
+    final hybridJobs    = jobs.where((j) =>
+        !j.isUnset('workType') && j.workType == WorkType.hybrid).length;
     final remoteJobs    = jobs.where((j) =>
         !j.isUnset('workType') && j.workType == WorkType.remote).length;
     final activeJobs    = jobs.where((j) => j.status == JobStatus.active).length;
-    final endedJobs     = jobs.where((j) => j.status == JobStatus.ended).length;
+    final scheduledJobs = jobs.where((j) => j.status == JobStatus.scheduled).length;
+    final closedJobs    = jobs.where((j) =>
+        j.status == JobStatus.ended || j.status == JobStatus.inactive).length;
     final draftedJobs   = jobs.where((j) => j.status == JobStatus.drafted).length;
 
     final statCards = [
       DashboardStatCard(label: 'All Jobs',          value: totalJobs,   iconAsset: 'assets/images/job_list/all_job.svg'),
-      DashboardStatCard(label: 'Office Jobs',       value: officeJobs,  iconAsset: 'assets/images/job_list/office_job.svg'),
+      DashboardStatCard(label: 'On Site Jobs',      value: onSiteJobs,  iconAsset: 'assets/images/job_list/office_job.svg'),
+      DashboardStatCard(label: 'Hybrid Jobs',       value: hybridJobs,  iconAsset: 'assets/images/job_list/office_job.svg'),
       DashboardStatCard(label: 'Remote Jobs',       value: remoteJobs,  iconAsset: 'assets/images/job_list/remote_job.svg'),
       // BUG-41: plural, like "All Jobs" / "Office Jobs".
       DashboardStatCard(label: 'Active Jobs',       value: activeJobs,  iconAsset: 'assets/images/job_list/active_job.svg'),
-      DashboardStatCard(label: 'Recruitment End', value: endedJobs,   iconAsset: 'assets/images/job_list/requiement_end.svg'),
-      DashboardStatCard(label: 'Drafted',           value: draftedJobs, iconAsset: 'assets/images/job_list/dradt.svg'),
+      DashboardStatCard(label: 'Scheduled Jobs',    value: scheduledJobs, iconAsset: 'assets/images/job_list/active_job.svg'),
+      // BUG-279: Job Listing names ("Inactive" / "Ended", "Draft").
+      DashboardStatCard(label: 'Inactive / Ended',  value: closedJobs,  iconAsset: 'assets/images/job_list/requiement_end.svg'),
+      DashboardStatCard(label: 'Draft Jobs',        value: draftedJobs, iconAsset: 'assets/images/job_list/dradt.svg'),
     ];
 
     // ── Applications Received — group by month of applicationDate ─────────────
@@ -330,17 +342,18 @@ class CareersDashboardData {
 
     // ── Job Posting Status — BUG-21: grouped by STATUS (the chart's title and
     // legend), not by department. One bar per status, coloured per legend.
-    // "Closed" = Ended + Inactive.
-    final deptLabels = <String>['Active', 'Closed', 'Scheduled', 'Draft'];
+    // BUG-279: the same status names as the Job Listing tabs (one bar each):
+    // Active · Scheduled · Inactive · Ended · Draft — "Closed" merged two.
+    final deptLabels = <String>['Active', 'Scheduled', 'Inactive', 'Ended', 'Draft'];
     final nActive    = jobs.where((j) => j.status == JobStatus.active).length.toDouble();
-    final nClosed    = jobs.where((j) =>
-        j.status == JobStatus.ended || j.status == JobStatus.inactive).length.toDouble();
+    final nInactive  = jobs.where((j) => j.status == JobStatus.inactive).length.toDouble();
+    final nEnded     = jobs.where((j) => j.status == JobStatus.ended).length.toDouble();
     final nScheduled = jobs.where((j) => j.status == JobStatus.scheduled).length.toDouble();
     final nDraft     = jobs.where((j) => j.status == JobStatus.drafted).length.toDouble();
-    final qActive    = <double>[nActive, 0, 0, 0];
-    final qClosed    = <double>[0, nClosed, 0, 0];
-    final qScheduled = <double>[0, 0, nScheduled, 0];
-    final qDraft     = <double>[0, 0, 0, nDraft];
+    final qActive    = <double>[nActive, 0, 0, 0, 0];
+    final qScheduled = <double>[0, nScheduled, 0, 0, 0];
+    final qClosed    = <double>[0, 0, nInactive, nEnded, 0];
+    final qDraft     = <double>[0, 0, 0, 0, nDraft];
 
     // ── Hiring Stage — funnel from application statuses ───────────────────────
     // An application carries only its CURRENT status, so a hired candidate is
@@ -372,7 +385,8 @@ class CareersDashboardData {
     final hiringStages = [
       HiringStageItem(label: 'Applied',  value: applied),
       HiringStageItem(label: 'Interview',  value: interviewed),
-      HiringStageItem(label: 'Offer Sent', value: offerSent),
+      // BUG-278: one stage list everywhere — Applied · Interview · Offer · Hired.
+      HiringStageItem(label: 'Offer',      value: offerSent),
       HiringStageItem(label: 'Hired',      value: hired),
     ];
 
@@ -381,7 +395,8 @@ class CareersDashboardData {
     final statusCounts = <String, double>{
       'Active':    nActive,
       'Scheduled': nScheduled,
-      'Closed':    nClosed,
+      'Inactive':  nInactive, // BUG-279: was "Closed"
+      'Ended':     nEnded,
       'Draft':     nDraft,
     }..removeWhere((_, v) => v == 0);
 
@@ -389,13 +404,18 @@ class CareersDashboardData {
     final totalForStatus = jobs.length;
 
     // ── Candidate Quality ─────────────────────────────────────────────────────
+    // BUG-258: statuses are counted explicitly. Not-yet-reviewed "Applied"
+    // applicants are their own "Not reviewed" slice — they used to be
+    // counted as Unqualified (unqualified = total − qualified → 100 %).
     final totalApps      = apps.length;
-    final qualifiedCount = apps.where((a) =>
-    a.status != ApplicationStatus.applied &&
-        a.status != ApplicationStatus.unqualified).length;
-    final unqualifiedCount = totalApps - qualifiedCount;
+    final notReviewedCount =
+        apps.where((a) => a.status == ApplicationStatus.applied).length;
+    final unqualifiedCount =
+        apps.where((a) => a.status == ApplicationStatus.unqualified).length;
+    final qualifiedCount = totalApps - notReviewedCount - unqualifiedCount;
     final qualifiedPct   = totalApps > 0 ? (qualifiedCount / totalApps * 100) : 0.0;
     final unqualifiedPct = totalApps > 0 ? (unqualifiedCount / totalApps * 100) : 0.0;
+    final notReviewedPct = totalApps > 0 ? (notReviewedCount / totalApps * 100) : 0.0;
 
     // ── Jobs Performance — top 4 job titles by application count ─────────────
     // BUG-19: never show a raw Firestore id as a job name. Resolve the title
@@ -529,6 +549,7 @@ class CareersDashboardData {
       jobStatusTotal:      totalForStatus,
       qualifiedPercent:    qualifiedPct,
       unqualifiedPercent:  unqualifiedPct,
+      notReviewedPercent:  notReviewedPct, // BUG-258
       totalApplications:   totalApps,
       performanceRoles:        perfRoles,
       performanceApplications: perfApps,
@@ -565,7 +586,7 @@ class CareersDashboardData {
     hiringStages: const [
       HiringStageItem(label: 'Applied',  value: 500),
       HiringStageItem(label: 'Interview',  value: 350),
-      HiringStageItem(label: 'Offer Sent', value: 200),
+      HiringStageItem(label: 'Offer', value: 200),
       HiringStageItem(label: 'Hired',      value: 120),
     ],
     jobStatus: const {'Active': 35, 'Scheduled': 25, 'Closed': 20, 'Draft': 20},

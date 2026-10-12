@@ -14,9 +14,13 @@ import '../theme/appcolors.dart';
 // StyleText resolves the admin-selected English/Arabic font at runtime,
 // so navbar labels follow the CMS font choice instead of a hardcoded Cairo.
 import '../theme/new_theme.dart';
+import 'leave_guard.dart';
 
 class _BP {
-  static const double mobile = 600;
+  // BUG-266: at 600 px the tablet menu row did not fit ("In…", Web Page
+  // hidden, no ☰). The full row needs ≈ 768 px, so below that the ☰ menu
+  // is used.
+  static const double mobile = 768;
   static const double tablet = 1024;
 }
 
@@ -50,14 +54,17 @@ class AdminRoutes {
 }
 
 void _goTo(BuildContext context, String location) {
-  // BUG-101: detail pages (Job Post Details, Applicant details …) are pushed
-  // on top of their section with Navigator.push. go('/jobs') while already
-  // on /jobs changed nothing, so "Job Listing" in the menu did nothing.
-  // Close every page that was pushed on top first, then go.
-  final router = GoRouter.of(context);
-  Navigator.of(context, rootNavigator: true)
-      .popUntil((route) => route.settings is Page);
-  router.go(location);
+  // BUG-267: leaving an editor with unsaved changes asks first.
+  guardedLeave(context, () {
+    // BUG-101: detail pages (Job Post Details, Applicant details …) are
+    // pushed on top of their section with Navigator.push. go('/jobs') while
+    // already on /jobs changed nothing, so "Job Listing" in the menu did
+    // nothing. Close every page that was pushed on top first, then go.
+    final router = GoRouter.of(context);
+    Navigator.of(context, rootNavigator: true)
+        .popUntil((route) => route.settings is Page);
+    router.go(location);
+  });
 }
 
 class _AdminNavItem {

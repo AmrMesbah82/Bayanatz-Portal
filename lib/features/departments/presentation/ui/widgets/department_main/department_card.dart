@@ -20,15 +20,25 @@ class _DepartmentCardState extends State<_DepartmentCard> {
 
   @override
   Widget build(BuildContext context) {
+    // BUG-270: removed jobs are not counted, and every remaining job is in
+    // exactly one line, so Total = Active + Scheduled + Inactive + Draft
+    // (a Scheduled job used to be in neither Active nor Inactive).
     final deptJobs = widget.allJobs
         .where((j) => widget.department.matchesJob(j.department))
+        .where((j) => j.status != JobStatus.removed)
         .toList();
 
     final totalCount    = deptJobs.length;
     final activeCount   =
         deptJobs.where((j) => j.status == JobStatus.active).length;
-    final inactiveCount =
-        deptJobs.where((j) => j.status == JobStatus.inactive).length;
+    final scheduledCount =
+        deptJobs.where((j) => j.status == JobStatus.scheduled).length;
+    final inactiveCount = deptJobs
+        .where((j) =>
+            j.status == JobStatus.inactive || j.status == JobStatus.ended)
+        .length;
+    final draftCount =
+        deptJobs.where((j) => j.status == JobStatus.drafted).length;
 
     final createdText = widget.department.createdAt != null
         ? 'Created At: ${widget.department.createdAt!.day} '
@@ -122,7 +132,13 @@ class _DepartmentCardState extends State<_DepartmentCard> {
                     _statRow('Active Job:', activeCount,
                         'assets/images/job_list/active_job.svg'),
                     SizedBox(height: 6.h),
-                    _statRow('Inactive Job:', inactiveCount,
+                    _statRow('Scheduled Job:', scheduledCount,
+                        'assets/images/job_list/active_job.svg'),
+                    SizedBox(height: 6.h),
+                    _statRow('Inactive / Ended Job:', inactiveCount,
+                        'assets/images/job_list/inactive_job.svg'),
+                    SizedBox(height: 6.h),
+                    _statRow('Draft:', draftCount,
                         'assets/images/job_list/inactive_job.svg'),
                   ],
                 ),

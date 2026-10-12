@@ -68,7 +68,7 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
               Expanded(
                 child: _field(
                   'Maximum Number of Applications for This Position',
-                  'Text Here', // Figma
+                  'e.g. 100', // BUG-129
                   _maxApps,
                   onlyDigits: true, // numbers only
                 ),
@@ -132,7 +132,7 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
           .copyWith(fontSize: 12.sp, color: AppColors.secondaryText),
       valueStyle: StyleText.fontSize12Weight400
           .copyWith(fontSize: 12.sp, color: AppColors.text),
-      dateFormatter: (d) => DateFormat('dd/MM/yyyy').format(d),
+      dateFormatter: (d) => DateFormat('d MMM yyyy').format(d), // BUG-304
       onChanged: (d) {
         if (d != null) onPicked(d);
       },
@@ -342,6 +342,9 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
     double height = 36,
     bool required = true,
     bool onlyDigits = false,
+    String? errorText,
+    ValueChanged<String>? onChanged,
+    Widget? suffixIcon,
   }) {
     final bool isMultiline = maxLines > 1;
     return CustomTextField(
@@ -349,6 +352,11 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
       labelStyle: _kFieldLabelStyle,
       hint: hint,
       controller: ctrl,
+      // BUG-290 / BUG-274: cross-field errors (salary) use the field's own
+      // red border + message, and the page re-checks them while typing.
+      errorText: errorText,
+      onChanged: onChanged,
+      suffixIcon: suffixIcon,
       height: isMultiline ? null : height,
       maxLines: maxLines,
       // Multiline descriptions: no cap — supports long markdown content
@@ -370,6 +378,7 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
     int maxLines = 1,
     double height = 36,
     bool required = true,
+    Widget? suffixIcon,
   }) {
     final bool isMultiline = maxLines > 1;
     // Directionality wrapper: AR label + hint + text all start from the RIGHT.
@@ -380,6 +389,7 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
         labelStyle: _kFieldLabelStyle,
         hint: hint,
         controller: ctrl,
+        suffixIcon: suffixIcon,
         height: isMultiline ? null : height,
         maxLines: maxLines,
         // Multiline descriptions: no cap — supports long markdown content
@@ -408,8 +418,12 @@ extension _JobEditFormHelpers on _JobListingEditPageState {
           ),
         );
 
-  /// Inline "required" message shown under dropdowns / date pickers,
-  /// which have no built-in error support.
+  /// BUG-290: dropdowns now show this through their own errorText (red
+  /// border + message, same as text fields).
+  String? _reqMsg(bool show) => show ? 'This field is required.' : null;
+
+  /// Inline "required" message shown under date pickers, which have no
+  /// built-in error support.
   Widget _requiredError(bool show) => show
       ? Padding(
           padding: EdgeInsets.only(top: 4.h),

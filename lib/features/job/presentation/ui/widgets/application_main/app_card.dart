@@ -59,7 +59,7 @@ class _AppCard extends StatelessWidget {
                       color: ColorPick.primary,
                       borderRadius: BorderRadius.circular(4.r),
                     ),
-                    child: Text('Download Files', style: StyleText.fontSize10Weight700.copyWith(fontSize: 10.sp, fontWeight: FontWeight.w600, color: Colors.white)),
+                    child: Text('Download Summary' /* BUG-241: it builds a summary PDF */, style: StyleText.fontSize10Weight700.copyWith(fontSize: 10.sp, fontWeight: FontWeight.w600, color: Colors.white)),
                   ),
                 ),
               ],

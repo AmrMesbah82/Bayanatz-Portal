@@ -113,9 +113,11 @@ class _HomePreviewPageMasterState extends State<HomePreviewPageMaster> {
           );
         }
 
+        // BUG-53: read the cubit's in-memory model — it holds the edits the
+        // editor copied in before opening Preview. state.data is the snapshot
+        // from load time, i.e. the PUBLISHED title.
         HomePageModel? data;
-        if (state is HomeCmsLoaded) data = state.data;
-        if (state is HomeCmsSaved)  data = state.data;
+        if (state is HomeCmsLoaded || state is HomeCmsSaved) data = cubit.current;
 
         // Language is preview-local — see the _isAr field above.
         return Builder(

@@ -17,6 +17,7 @@ import '../../features/contact_us/presentation/ui/pages/contact_us_preview.dart'
 import '../../features/contact_us/presentation/ui/pages/contact_us_main.dart';
 import '../../features/home/presentation/controller/home_cubit.dart';
 import '../../features/home/presentation/ui/pages/home_main.dart';
+import '../../features/home/presentation/ui/pages/home_edit.dart';
 import '../../features/job/data/repository/application_repo_impl.dart';
 import '../../features/job/data/repository/job_listing_repo_impl.dart';
 import '../../features/main/presentation/ui/pages/main_edit.dart';
@@ -24,6 +25,7 @@ import '../../features/main/presentation/ui/pages/main_main.dart';
 import '../../features/main/presentation/ui/pages/main_preview.dart';
 import '../../features/job/presentation/ui/pages/job_listing_main.dart';
 import '../../features/job/presentation/ui/pages/job_listing_edit.dart';
+import '../../features/job/presentation/ui/pages/job_listing_detail.dart' show JobListingDetailPage;
 import '../../features/departments/presentation/ui/pages/department_main.dart';
 import '../../features/job/presentation/ui/pages/application_main.dart';
 import '../../features/inquire/presentation/ui/pages/inquiry_main.dart';
@@ -150,6 +152,17 @@ class AppRouter {
           slideDirection: SlideDirection.fromBottom,
         ),
       ),
+      // BUG-259: Job Post Details had no URL (address stayed /jobs). Declared
+      // AFTER /jobs/new and /jobs/departments so those still match first.
+      GoRoute(
+        path: '/jobs/:jobId',
+        name: 'job-detail',
+        pageBuilder: (context, state) => animatedPage(
+          key: state.pageKey,
+          child: JobListingDetailPage(jobId: state.pathParameters['jobId']!),
+          slideDirection: SlideDirection.fromBottom,
+        ),
+      ),
       GoRoute(
         path: '/applications',
         name: 'applications',
@@ -187,6 +200,21 @@ class AppRouter {
             value: context
                 .read<HomeCmsCubit>(), // ✅ reuse global cubit from main.dart
             child: const HomeMainPageMaster(),
+          ),
+          slideDirection: SlideDirection.fromBottom,
+        ),
+      ),
+
+      // BUG-276: the Home editor has its own URL like Main / Contact /
+      // Careers, so refresh / Back / bookmarks open the right state.
+      GoRoute(
+        path: '/admin/home-page/edit',
+        name: 'home-page-edit',
+        pageBuilder: (context, state) => animatedPage(
+          key: state.pageKey,
+          child: BlocProvider.value(
+            value: context.read<HomeCmsCubit>(),
+            child: const HomeEditPageMaster(),
           ),
           slideDirection: SlideDirection.fromBottom,
         ),

@@ -9,6 +9,7 @@ import 'dart:math';
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:web_app_admin/core/widget/auto_close_dialog.dart';
 import 'package:web_app_admin/core/widget/date_pic.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -19,6 +20,7 @@ import 'package:web_app_admin/core/widget/navigator.dart';
 import 'package:web_app_admin/core/widget/search.dart';
 import 'package:web_app_admin/core/custom_svg.dart';
 import 'package:web_app_admin/core/widget/textfield.dart';
+import 'package:web_app_admin/core/widget/empty_lottie.dart'; // QA-Oct11 #24
 
 import '../../../../../core/constant/color.dart';
 import 'package:web_app_admin/core/main_widgets/admin_layout.dart';
@@ -274,7 +276,7 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
                               // Closed were the same red → Figma colours
                               // (Inquires, nodes 7126:65493/65498/65503):
                               // New green, Replied orange, Closed red.
-                              _summaryCard('Total Submission', totalCount, Colors.grey),
+                              _summaryCard('Total Submissions', totalCount, Colors.grey), // BUG-157
                               _summaryCard('New', newCount, InquiryStatus.newInquiry.color),
                               _summaryCard('Replied', repliedCount, InquiryStatus.replied.color),
                               _summaryCard('Closed', closedCount, InquiryStatus.closed.color),
@@ -343,7 +345,7 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _calendarButton(InquiryCubit cubit, DateTime? from, DateTime? to) {
-    String f(DateTime d) => '${d.day}/${d.month}/${d.year}';
+    String f(DateTime d) => DateFormat('d MMM yyyy').format(d); // BUG-304
     final bool active = from != null || to != null;
     return GestureDetector(
       onTap: () async {
@@ -357,10 +359,10 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
         if (picked != null) cubit.setDateRange(picked.start, picked.end);
       },
       child: Container(
-        // Same height as the Status / Entity Type / Location dropdowns next
-        // to it: their box is 12.h padding top + bottom around the 20.sp
-        // arrow icon.
-        height: 24.h + 20.sp,
+        // QA-Oct11 #27: EXACTLY the dropdowns' box — they are built with
+        // `height: 32` → fieldHeight 32.h (the old 24.h + 20.sp guess came
+        // out at a different height than the Location dropdown).
+        height: 32.h,
         padding: EdgeInsets.symmetric(horizontal: 12.w),
         decoration: BoxDecoration(
           color: ColorPick.white,
@@ -484,8 +486,9 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
               ),
             ),
             alignment: Alignment.center,
-            child: Text('No inquiries yet',
-                style: TextStyle(fontSize: 12.sp, color: AppColors.secondaryText)),
+            // QA-Oct11 #24: Lottie, no text.
+            child: const EmptyLottie(
+                size: 180, semanticLabel: 'No inquiries yet'),
           ),
       ],
     );
@@ -508,7 +511,7 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
             ...List.generate(inquiries.length, (index) {
               final i = inquiries[index];
               final rowColor = index.isEven ? const Color(0xFFF7F8FA) : Colors.white;
-              final dateStr = i.submissionDate != null ? '${i.submissionDate!.day}/${i.submissionDate!.month}/${i.submissionDate!.year}' : '-';
+              final dateStr = i.submissionDate != null ? DateFormat('d MMM yyyy').format(i.submissionDate!) : '-'; // BUG-304
               final cells = [
                 _textCell('${index + 1}', maxLines: 1), _textCell(dateStr, maxLines: 1),
                 _textCell(i.preferredLanguage, maxLines: 1), _textCell(i.firstName),
@@ -750,16 +753,8 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
         // Stacked horizontal bar — an empty grey track when there is no data
         // (it used to draw five equal coloured parts).
         if (noData)
-          Container(
-            height: 24.h,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0F0F0),
-              borderRadius: BorderRadius.circular(4.r),
-            ),
-            alignment: Alignment.center,
-            child: Text('No data yet',
-                style: TextStyle(fontSize: 10.sp, color: AppColors.secondaryText)),
-          )
+          // QA-Oct11 #24: Lottie, no text.
+          const EmptyLottie(size: 120, semanticLabel: 'No data yet')
         else
         ClipRRect(
           borderRadius: BorderRadius.circular(4.r),
@@ -802,13 +797,8 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
   Widget _emptyChart() => SizedBox(
         height: 160.h,
         width: double.infinity,
-        child: Center(
-          child: Text(
-            'No inquiries yet', // BUG-151: same wording as the table
-            style: StyleText.fontSize12Weight400
-                .copyWith(color: AppColors.secondaryText),
-          ),
-        ),
+        // QA-Oct11 #24: Lottie, no text.
+        child: const EmptyLottie(size: 120, semanticLabel: 'No inquiries yet'),
       );
 
   Widget _buildLocationChart(Map<String, int> counts) {
@@ -818,13 +808,8 @@ class _InquiryMainPageState extends State<InquiryMainPage> {
       return SizedBox(
         height: 160.h,
         width: double.infinity,
-        child: Center(
-          child: Text(
-            'No data',
-            style: StyleText.fontSize12Weight400
-                .copyWith(color: AppColors.secondaryText),
-          ),
-        ),
+        // QA-Oct11 #24: Lottie, no text.
+        child: const EmptyLottie(size: 120, semanticLabel: 'No data'),
       );
     }
     final total    = counts.values.fold(0, (a, b) => a + b);

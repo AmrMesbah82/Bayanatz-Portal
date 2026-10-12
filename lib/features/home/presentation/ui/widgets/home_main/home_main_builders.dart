@@ -163,7 +163,8 @@ extension _HomeMainBuilders on _HomeMainPageMasterState {
                 // Open the editor on the version being viewed, so editing the
                 // draft edits the draft — not whatever loaded first.
                 cubit.editSlot(_activeSlot);
-                navigateTo(context, HomeEditPageMaster());
+                // BUG-276: the editor has its own URL now.
+                GoRouter.of(context).go('/admin/home-page/edit');
               },
               child: Container(
                 width: 130.w, height: 36.h,
@@ -268,7 +269,7 @@ extension _HomeMainBuilders on _HomeMainPageMasterState {
                 SizedBox(width: 8.w),
                 Expanded(
                   child: Text(
-                    'Scheduled to publish on ${data.scheduledPublishDate!.day}/${data.scheduledPublishDate!.month}/${data.scheduledPublishDate!.year}'
+                    'Scheduled to publish on ${DateFormat('d MMM yyyy').format(data.scheduledPublishDate!)}' /* BUG-304 */
                     ' — the published version stays live until then.',
                     style: StyleText.fontSize13Weight500.copyWith(color: ColorPick.scheduled),
                   ),

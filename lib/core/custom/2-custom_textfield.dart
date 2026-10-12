@@ -131,6 +131,11 @@ class CustomTextField extends StatefulWidget {
   /// Background fill color.
   final Color? fillColor;
 
+  /// BUG-294: a read-only VIEW (detail pages) — not editable, but drawn
+  /// like a normal field (solid white, normal text colour) instead of the
+  /// dimmed "disabled" look.
+  final bool readOnlyView;
+
   /// Border radius — defaults to 4.r internally.
   final BorderRadius? borderRadius;
 
@@ -206,6 +211,7 @@ class CustomTextField extends StatefulWidget {
     this.onFocusChanged,
     this.onTap,
     this.fillColor,
+    this.readOnlyView = false,
     this.borderRadius,
     this.contentPadding,
     this.valueStyle,
@@ -333,6 +339,16 @@ class _CustomTextFieldState extends State<CustomTextField> {
     super.dispose();
   }
 
+  /// QA-Oct11 #25: Cairo's tall ascent sat the text LOW in a fixed-height
+  /// field; an even 1.4 line box puts the glyphs on the box's middle.
+  TextStyle _centred(TextStyle s) => _fillsHeight
+      ? s.copyWith(height: 1.4, leadingDistribution: TextLeadingDistribution.even)
+      : s;
+
+  /// One-line field with a fixed height → fills that height (see TextField).
+  bool get _fillsHeight =>
+      widget.height != null && !_isMultiline && !widget.obscureText;
+
   bool get _isMultiline =>
       (widget.maxLines ?? 1) != 1 || widget.minLines != null;
 
@@ -416,11 +432,17 @@ class _CustomTextFieldState extends State<CustomTextField> {
     // ("This field is required.") — a border alone looked like a broken
     // button, especially when the field was far above Publish/Save.
     final showMessage = hasError;
+    // BUG-291: an Arabic field says it in Arabic (it showed the English
+    // text with the full stop flipped to the front: ".This field is required").
+    final bool isRtlField = widget.textDirection == TextDirection.rtl ||
+        Directionality.of(context) == TextDirection.rtl;
     final String? messageText = resolvedError == _kRequiredNoMessage
-        ? 'This field is required.'
-        : resolvedError;
+        ? (isRtlField ? 'هذا الحقل مطلوب.' : 'This field is required.')
+        : (isRtlField && resolvedError == 'Only numbers are allowed.'
+            ? 'يُسمح بالأرقام فقط.'
+            : resolvedError);
     final radius = widget.borderRadius ?? BorderRadius.circular(4.r);
-    final isDisabled = !widget.enabled;
+    final isDisabled = !widget.enabled && !widget.readOnlyView; // BUG-294
 
     // ── Suffix icon resolution ─────────────────────────────────────────────
     // Priority: explicit suffixIcon > password-toggle eye > nothing
@@ -510,18 +532,25 @@ class _CustomTextFieldState extends State<CustomTextField> {
               enabled: widget.enabled,
               readOnly: widget.readOnly,
               obscureText: _effectiveObscure,
-              maxLines: widget.obscureText ? 1 : widget.maxLines,
-              minLines: widget.minLines,
+              // Fixed-height one-line field: EXPANDS to the full height,
+              // the same technique as the dropdown trigger (InputDecorator
+              // expands) — so field and dropdown are identical boxes.
+              maxLines: _fillsHeight ? null : (widget.obscureText ? 1 : widget.maxLines),
+              minLines: _fillsHeight ? null : widget.minLines,
+              expands: _fillsHeight,
               maxLength: _effectiveMaxLength,
               cursorColor: ColorPick.primary,
               keyboardType: _isMultiline
                   ? TextInputType.multiline
                   : (widget.keyboardType ??
                   (widget.onlyDigits ? TextInputType.number : null)),
-              inputFormatters: _resolvedFormatters,
+              inputFormatters: _fillsHeight
+                  ? [...?_resolvedFormatters, FilteringTextInputFormatter.deny(RegExp(r'[\n\r]'))]
+                  : _resolvedFormatters,
               textAlign: widget.textAlign,
               textDirection: widget.textDirection,
-              textInputAction: widget.textInputAction,
+              textInputAction: widget.textInputAction ??
+                  (_fillsHeight ? TextInputAction.done : null),
               textCapitalization: widget.textCapitalization,
               autocorrect: widget.autocorrect,
               enableSuggestions: widget.enableSuggestions,
@@ -533,12 +562,12 @@ class _CustomTextFieldState extends State<CustomTextField> {
               },
               onSubmitted: widget.onSubmitted,
               onTap: widget.onTap,
-              style: widget.valueStyle ??
+              style: _centred(widget.valueStyle ??
                   StyleText.value.copyWith(
                     color: isDisabled
                         ? AppColors.text.withOpacity(0.4)
                         : AppColors.text,
-                  ),
+                  )),
               // NEVER show the built-in counter (app-wide rule)
               buildCounter: _effectiveMaxLength != null
                   ? (_,
@@ -547,6 +576,11 @@ class _CustomTextFieldState extends State<CustomTextField> {
                     maxLength}) =>
               const SizedBox.shrink()
                   : null,
+              // A one-line field with a fixed height fills that WHOLE height
+              // (text centred), exactly like the dropdowns next to it — before,
+              // only the text line was painted and the box looked shorter.
+              textAlignVertical:
+                  _fillsHeight ? TextAlignVertical.center : null,
               decoration: InputDecoration(
                 isDense: true,
                 contentPadding: effectivePadding,
@@ -605,7 +639,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
                 // ─────────────────────────────────────────────────────────────
 
                 hintText: widget.hint,
-                hintStyle: widget.hintStyle ?? StyleText.hint,
+                hintStyle: _centred(widget.hintStyle ?? StyleText.hint),
 
                 prefixIcon: widget.prefixIcon != null
                     ? Padding(
@@ -642,6 +676,8 @@ class _CustomTextFieldState extends State<CustomTextField> {
           showMessage
               ? Text(
             messageText!,
+            textDirection:
+                isRtlField ? TextDirection.rtl : TextDirection.ltr, // BUG-291
             style: widget.errorStyle ??
                 StyleText.subTitle.copyWith(color: AppColors.red),
           )

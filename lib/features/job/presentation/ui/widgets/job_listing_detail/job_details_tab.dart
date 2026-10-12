@@ -39,19 +39,28 @@ class _JobDetailsTab extends StatelessWidget {
               'Department',
               job.department.isEmpty ? '—' : job.department,
             ),
-            _infoField('Work Type',
-                job.isUnset('workType') ? '—' : job.workType.label),
+            // QA-Oct11 #22: like the edit form — for Hybrid (and On Site)
+            // the Work Type cell is split in two: Work Type + Location.
+            _hasLocation
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _infoField('Work Type',
+                            job.workType.displayLabel), // BUG-157
+                      ),
+                      SizedBox(width: 8.w),
+                      Expanded(child: _infoField('Location', job.location)),
+                    ],
+                  )
+                : _infoField('Work Type',
+                    job.isUnset('workType') ? '—' : job.workType.displayLabel), // BUG-157
           ),
           SizedBox(height: 10.sp),
           _row(
             _infoField('Employment Type',
                 job.isUnset('employmentType') ? '—' : job.employmentType.label),
-            _infoField(
-              'Employment Duration',
-              job.employmentDurationText.isNotEmpty
-                  ? '${job.employmentDurationText} ${job.employmentDurationType.label}'
-                  : job.employmentDurationType.label,
-            ),
+            _infoField('Employment Duration', job.durationDisplay), // BUG-172
           ),
           SizedBox(height: 10.sp),
           _row(
@@ -59,9 +68,7 @@ class _JobDetailsTab extends StatelessWidget {
                 job.isUnset('experienceLevel') ? '—' : job.experienceLevel.label),
             _infoField(
               'Salary Range',
-              job.salaryMax > 0
-                  ? '${job.salaryMin.toInt()} – ${job.salaryMax.toInt()} ${job.salaryCurrency}'
-                  : '—',
+              job.salaryDisplay, // BUG-304
             ),
           ),
           SizedBox(height: 10.sp),
@@ -248,6 +255,11 @@ class _JobDetailsTab extends StatelessWidget {
     );
   }
 
+  /// QA-Oct11 #22: On Site / Hybrid jobs carry an office location.
+  bool get _hasLocation =>
+      !job.isUnset('workType') &&
+      (job.workType == WorkType.hybrid || job.workType == WorkType.onSite);
+
   Widget _row(Widget left, Widget right) => Row(
     children: [
       Expanded(child: left),
@@ -287,6 +299,7 @@ class _JobDetailsTab extends StatelessWidget {
         height: multi ? 100 : 36,
         maxLines: multi ? 5 : 1,
         enabled: false,
+        readOnlyView: true, // BUG-294: white box, normal text
         submitted: false,
         // The field's own direction — an ambient Directionality is NOT enough,
         // because the widget defaults these to ltr/start and would keep the
@@ -294,7 +307,8 @@ class _JobDetailsTab extends StatelessWidget {
         textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
         textAlign: TextAlign.start, // = right when the direction is rtl
         primaryColor: ColorPick.primary,
-        fillColor: AppColors.card,
+        // QA-Oct11 #16: page-grey field box (was white on the white card).
+        fillColor: ColorPick.background,
         textStyle: StyleText.fieldValue,
         hintStyle: StyleText.fieldHint,
       );

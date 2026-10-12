@@ -953,8 +953,10 @@ class _PublishConfirmDialogState extends State<_PublishConfirmDialog> {
     return PopScope(
       // Prevent back-swipe / back button while saving
       canPop: !_loading,
+      // BUG-287: same size as the job / status confirm dialogs (CMS Main
+      // dialogs were 632 px wide, 474 px everywhere else).
       child: _DialogShell(
-        width: 600.w,
+        width: 450.w,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1023,15 +1025,17 @@ class _PublishConfirmDialogState extends State<_PublishConfirmDialog> {
                         },
                         child: Container(
                           height: 48.h,
+                          // BUG-287: light-grey "Back" with dark text, like
+                          // every other admin dialog (was dark grey #7B7B7B).
                           decoration: BoxDecoration(
-                            color:  ColorPick.back,
+                            color:  const Color(0xFFDCDCDC),
                             borderRadius: BorderRadius.circular(8.r),
                           ),
                           child: Center(
                             child: Text(
                               widget.backLabel,
                               style: StyleText.fontSize14Weight600
-                                  .copyWith(color: Colors.white),
+                                  .copyWith(color: AppColors.text),
                             ),
                           ),
                         ),

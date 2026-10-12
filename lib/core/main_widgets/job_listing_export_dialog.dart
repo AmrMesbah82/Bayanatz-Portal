@@ -458,7 +458,7 @@ class _JobListingExportDialogState extends State<_JobListingExportDialog> {
                 ),
                 SizedBox(height: 6.sp),
                 Text(
-                  '${widget.applications.length} applicant(s) will be exported',
+                  '${widget.applications.length} ${widget.applications.length == 1 ? 'applicant' : 'applicants'} will be exported', // BUG-280
                   style: TextStyle(
                     fontSize: 12.sp,
                     color: const Color(0xFFAAAAAA),

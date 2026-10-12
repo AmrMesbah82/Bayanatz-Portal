@@ -441,7 +441,7 @@ extension _ContactUsEditUi on _ContactUsCmsEditPageState {
       children: [
         SizedBox(height: 15.h),
         _imageUploadCircle(
-          label: 'SVG',
+          label: 'Image', // BUG-251: SVG, PNG, JPG or WebP
           bytes: _confirmSvgBytes,
           url:   _confirmSvgUrl,
           onTap: () async {

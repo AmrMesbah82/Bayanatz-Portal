@@ -40,7 +40,7 @@ extension _HomeEditActions on _HomeEditPageMasterState {
                           Expanded(
                             child: Text(
                               _publishDate != null
-                                  ? DateFormat('dd/MM/yyyy').format(_publishDate!)
+                                  ? DateFormat('d MMM yyyy').format(_publishDate!)
                                   : 'Select Date',
                               style: StyleText.fontSize12Weight400.copyWith(
                                 color: _publishDate != null
@@ -135,7 +135,7 @@ extension _HomeEditActions on _HomeEditPageMasterState {
           context: context,
           title: isScheduled ? 'SCHEDULE PAGE' : 'PUBLISH PAGE',
           subtitle: isScheduled
-              ? 'Your changes will be scheduled for ${DateFormat('dd/MM/yyyy').format(_publishDate!)}. The published version stays live until then.'
+              ? 'Your changes will be scheduled for ${DateFormat('d MMM yyyy').format(_publishDate!)}. The published version stays live until then.'
               : 'Do you want to publish this page now? This replaces the live version.',
           confirmLabel: isScheduled ? 'Schedule' : 'Publish',
           onConfirm: () => _save(

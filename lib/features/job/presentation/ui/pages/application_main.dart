@@ -7,6 +7,7 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/utils/display_format.dart';
 import 'package:web_app_admin/core/widget/auto_close_dialog.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -44,6 +45,7 @@ import '../../controller/job_listing_cubit.dart';
 import 'application_detail.dart';
 import 'job_listing_main.dart';
 import 'package:web_app_admin/core/custom/circle_progress.dart';
+import 'package:web_app_admin/core/widget/empty_lottie.dart'; // QA-Oct11 #24
 
 part '../widgets/application_main/app_card.dart';
 part '../widgets/application_main/app_table.dart';
@@ -136,9 +138,8 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
     try {
       final pdf = pw.Document();
 
-      final dateStr = app.applicationDate != null
-          ? '${app.applicationDate!.day}/${app.applicationDate!.month}/${app.applicationDate!.year}'
-          : 'N/A';
+      // BUG-304: the admin's one date format ("8 Oct 2026").
+      final dateStr = DisplayFormat.date(app.applicationDate, empty: 'N/A');
 
       pdf.addPage(
         pw.MultiPage(
@@ -157,7 +158,7 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
                   pw.Text(
-                    'Application Details',
+                    'Application Summary', // BUG-241: what this file is
                     style: pw.TextStyle(
                       fontSize: 22,
                       fontWeight: pw.FontWeight.bold,
@@ -166,7 +167,7 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                   ),
                   pw.SizedBox(height: 4),
                   pw.Text(
-                    'Generated on: ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
+                    'Generated on: ${DisplayFormat.date(DateTime.now())}',
                     style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
                   ),
                 ],
@@ -178,7 +179,8 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
             _pdfSection('Personal Information', [
               _pdfRow('Full Name', app.fullName),
               _pdfRow('Email', app.email),
-              _pdfRow('Phone', '${app.countryCode}${app.phone}'),
+              // BUG-241: "+20 0000000000" like the cards (was "+200000000000").
+              _pdfRow('Phone', DisplayFormat.phone(app.countryCode, app.phone)),
               _pdfRow('Year of Graduation', app.yearOfGraduation),
             ]),
             pw.SizedBox(height: 16),
@@ -187,12 +189,13 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
             _pdfSection('Job Information', [
               _pdfRow('Job Title', app.jobTitle),
               _pdfRow('Department', app.department),
-              _pdfRow('Work Type', app.workType),
+              _pdfRow('Work Type', DisplayFormat.workType(app.workType)), // BUG-157
               _pdfRow('Employment Type', app.employmentType),
-              _pdfRow('Employment Duration', app.employmentDuration),
+              _pdfRow('Employment Duration',
+                  DisplayFormat.durationText(app.employmentDuration)), // BUG-172
               _pdfRow('Location', app.jobLocation),
               _pdfRow('Experience Level', app.experienceLevel),
-              _pdfRow('Salary Range', app.salaryRange.isNotEmpty ? '${app.salaryRange} ${app.currency}' : 'N/A'),
+              _pdfRow('Salary Range', app.salaryRange.isNotEmpty ? '${app.salaryRange.replaceAll(' - ', ' – ')} ${app.currency}' : 'N/A'),
             ]),
             pw.SizedBox(height: 16),
 
@@ -213,21 +216,34 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
 
             // ── Scoring (Interview) ──
             _pdfSection('Interview Scoring', [
-              _pdfRow('Technical Skills', '${app.technicalSkills}/10'),
-              _pdfRow('Communication Skills', '${app.communicationSkills}/10'),
-              _pdfRow('Experience & Background', '${app.experienceBackground}/10'),
-              _pdfRow('Culture Fit', '${app.cultureFit}/10'),
-              _pdfRow('Leadership Potential', '${app.leadershipPotential}/10'),
+              // BUG-264: scores are 1–5; 0 means "not scored".
+              _pdfRow('Technical Skills', _scoreText(app.technicalSkills)),
+              _pdfRow('Communication Skills', _scoreText(app.communicationSkills)),
+              _pdfRow('Experience & Background', _scoreText(app.experienceBackground)),
+              _pdfRow('Culture Fit', _scoreText(app.cultureFit)),
+              _pdfRow('Leadership Potential', _scoreText(app.leadershipPotential)),
               _pdfRow('Comments', app.comments.isNotEmpty ? app.comments : 'N/A'),
             ]),
             pw.SizedBox(height: 16),
 
             // ── Documents / Links ──
+            // BUG-235 / BUG-241: EVERY document the applicant sent (it listed
+            // only Resume + Cover Letter, and a link's "file name" printed as
+            // "Link"). Files and links are listed with their URL.
             _pdfSection('Documents', [
-              _pdfRow('Resume', app.resumeUrl.isNotEmpty ? app.resumeUrl : 'Not uploaded'),
-              _pdfRow('Resume File Name', app.resumeName.isNotEmpty ? app.resumeName : 'N/A'),
-              _pdfRow('Cover Letter', app.coverLetterUrl.isNotEmpty ? app.coverLetterUrl : 'Not uploaded'),
-              _pdfRow('Cover Letter File Name', app.coverLetterName.isNotEmpty ? app.coverLetterName : 'N/A'),
+              if (app.documents.isEmpty) ...[
+                _pdfRow('Resume', app.resumeUrl.isNotEmpty ? app.resumeUrl : 'Not uploaded'),
+                _pdfRow('Cover Letter', app.coverLetterUrl.isNotEmpty ? app.coverLetterUrl : 'Not uploaded'),
+              ] else
+                for (final d in app.documents)
+                  _pdfRow(
+                    '${d.name} (${d.docType == 'Link' ? 'link' : 'PDF'})',
+                    d.url.isEmpty
+                        ? 'Not provided'
+                        : (d.docType == 'Link' || d.fileName.isEmpty || d.fileName == 'Link'
+                            ? d.url
+                            : '${d.fileName}\n${d.url}'),
+                  ),
             ]),
           ],
         ),
@@ -254,6 +270,8 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
       }
     }
   }
+
+  String _scoreText(int v) => v >= 1 && v <= 5 ? '$v / 5' : 'Not scored';
 
   // ── PDF helper: Section ──
   pw.Widget _pdfSection(String title, List<pw.Widget> rows) {
@@ -365,10 +383,44 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
       },
       child: BlocBuilder<ApplicationCubit, ApplicationState>(
         builder: (context, state) {
+          // BUG-281: keep the header, menu and page title while loading —
+          // the whole window used to be empty with only a spinner.
           if (state is ApplicationInitial || state is ApplicationLoading) {
-            return const Scaffold(
+            return Scaffold(
               backgroundColor: ColorPick.background,
-              body: Center(child: CircleProgress()),
+              body: AdminStickyBody(
+                reflowOnPhone: true,
+                children: [
+                  AppAdminNavbar(
+                    activeLabel: 'Applications',
+                    homePage: CareersMainPageDashboard(),
+                    webPage: MainMainPage(),
+                    jobListingPage: JobListingMainPage(),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                        horizontal: AdminLayout.sidePadding(context),
+                        vertical: 20.h),
+                    child: SizedBox(
+                      width: AdminLayout.contentWidth(context),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Applications',
+                            style: StyleText.fontSize28Weight600.copyWith(
+                              color: ColorPick.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: 60.h),
+                          const Center(child: CircleProgress()),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             );
           }
 
@@ -377,7 +429,7 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
           String activeJobTitle = 'All';
           Map<String, int> jobTitleCounts = {};
           int totalCount = 0;
-          int appliedQualified = 0, appliedUnqualified = 0;
+          int appliedPending = 0, appliedQualified = 0, appliedUnqualified = 0;
           int interviewPassed = 0, interviewWithdrew = 0, interviewFailed = 0;
           int offerApproved = 0, offerPending = 0, offerRejected = 0;
           int hiredCompleted = 0;
@@ -387,6 +439,7 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
             activeJobTitle = state.activeJobTitleFilter;
             jobTitleCounts = state.jobTitleCounts;
             totalCount = state.totalCount;
+            appliedPending = state.appliedPending; // BUG-170
             appliedQualified = state.appliedQualified;
             appliedUnqualified = state.appliedUnqualified;
             interviewPassed = state.interviewPassed;
@@ -479,15 +532,17 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                                   tabCounts.putIfAbsent(t, () => 0);
                                 }
                               }
-                              return SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  children: [
-                                    _filterTab('All', apps.length, activeJobTitle == 'All', () => cubit.setJobTitleFilter('All')),
-                                    ...tabCounts.entries.map((e) =>
-                                        _filterTab(e.key, e.value, activeJobTitle == e.key, () => cubit.setJobTitleFilter(e.key))),
-                                  ],
-                                ),
+                              // BUG-218: the job chips WRAP onto more lines, so
+                              // the last jobs are reachable with a mouse (the
+                              // scroll row was cut with no hint).
+                              return Wrap(
+                                spacing: 0,
+                                runSpacing: 8,
+                                children: [
+                                  _filterTab('All', apps.length, activeJobTitle == 'All', () => cubit.setJobTitleFilter('All')),
+                                  ...tabCounts.entries.map((e) =>
+                                      _filterTab(e.key, e.value, activeJobTitle == e.key, () => cubit.setJobTitleFilter(e.key))),
+                                ],
                               );
                             }),
                             SizedBox(height: 16.h),
@@ -630,7 +685,8 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                               children: [
                                 _summaryCard(
                                   'Applied',
-                                  'Qualified: $appliedQualified  Unqualified: $appliedUnqualified',
+                                  // BUG-170: + not-yet-reviewed, so the cards add up.
+                                  'Pending: $appliedPending  Qualified: $appliedQualified  Unqualified: $appliedUnqualified',
                                   'assets/images/job_list/applied.svg',
                                 ),
                                 _summaryCard(
@@ -657,7 +713,10 @@ class _ApplicationMainPageState extends State<ApplicationMainPage> {
                               Center(
                                 child: Padding(
                                   padding: EdgeInsets.all(40.sp),
-                                  child: Text('No applications found', style: StyleText.fontSize14Weight400.copyWith(fontSize: 14.sp, color: AppColors.secondaryText)),
+                                  // QA-Oct11 #24: Lottie, no text.
+                                  child: const EmptyLottie(
+                                      size: 220,
+                                      semanticLabel: 'No applications found'),
                                 ),
                               )
                             else

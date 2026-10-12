@@ -130,10 +130,8 @@ class _CareersSectionEditPageState extends State<CareersSectionEditPage> {
 
       if (item.descEn.text.trim().isEmpty) return false;
       if (item.descAr.text.trim().isEmpty) return false;
-      // The per-reason SVG picker was removed from the form — the section icon
-      // above is the only image. An existing svgUrl is still carried through on
-      // save, so nothing already published is lost; it just can't block
-      // Publish any more.
+      // BUG-211: the per-reason SVG illustration is back but OPTIONAL — it
+      // never blocks Publish.
     }
 
     return true;
@@ -224,6 +222,8 @@ class _CareersSectionEditPageState extends State<CareersSectionEditPage> {
           titleAr: it.titleAr.text.trim(),
           descEn:  it.descEn.text.trim(),
           descAr:  it.descAr.text.trim(),
+          // BUG-211: "Remove image" clears the saved illustration.
+          svgCleared: it.svg.isEmpty,
         ),
     ];
 
@@ -236,6 +236,7 @@ class _CareersSectionEditPageState extends State<CareersSectionEditPage> {
       cubit.updateTitle(id, en: snapshot[i].titleEn, ar: snapshot[i].titleAr);
       cubit.updateDescription(id,
           en: snapshot[i].descEn, ar: snapshot[i].descAr);
+      if (snapshot[i].svgCleared) cubit.clearSvg(id); // BUG-211
     }
     _seededHash = _hashOf(cubit.current);
   }
@@ -371,6 +372,7 @@ class _CareersSectionEditPageState extends State<CareersSectionEditPage> {
           children: [
             Scaffold(
               body: AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   children: [
                       AppAdminNavbar(
                         activeLabel: 'Web Page',

@@ -37,7 +37,12 @@ extension _HomeEditSections1 on _MainEditPageState {
       publishDisabledTooltip: _isFormValid
           ? 'Nothing to publish — no changes made yet'
           : 'Fill in all required fields to publish',
-      onPreview: () => navigateTo(context, MainPreviewPage()),
+      // BUG-53: copy the unsaved edits into the cubit first — the preview
+      // showed the PUBLISHED nav labels / colours.
+      onPreview: () {
+        _syncFormToCubit(cubit);
+        navigateTo(context, MainPreviewPage());
+      },
       onPublish: () {
         showPublishConfirmDialog(
           // BUG-79: this is the Main (site frame) page, not the Homepage.

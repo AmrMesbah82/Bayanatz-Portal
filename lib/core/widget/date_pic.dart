@@ -73,11 +73,15 @@ class DatePicker {
           centerAlignModePicker: true,
           dayBorderRadius: BorderRadius.circular(8),
 
+          // BUG-153: same icons as the Post Job picker
+          // (CustomDropdownCalendar). This picker pointed at
+          // assets/images/downArrow.svg and assets/icons/back_icon.svg,
+          // which do not exist — so it had NO month arrows.
           customModePickerIcon: SvgPicture.asset(
-            'assets/images/downArrow.svg',
+            'assets/arrowdown.svg',
             fit: BoxFit.fitHeight,
-            color: ColorPick.primary,
-            height: isTablet ? 16.sp : null,
+            colorFilter: ColorFilter.mode(ColorPick.primary, BlendMode.srcIn),
+            height: 14.sp,
           ),
 
           okButton: Material(
@@ -129,19 +133,17 @@ class DatePicker {
             ),
           ),
           lastMonthIcon: Transform.rotate(
-            angle: Get.locale.toString().contains('en') ? 0 : 3.14,
+            angle: Get.locale.toString().contains('ar') ? 3.14 : 0,
             child: SvgPicture.asset(
-              'assets/icons/back_icon.svg',
-              // ignore: deprecated_member_use
-              color: ColorPick.primary,
+              'assets/arrow.svg',
+              colorFilter: ColorFilter.mode(ColorPick.primary, BlendMode.srcIn),
             ),
           ),
           nextMonthIcon: Transform.rotate(
-            angle: Get.locale.toString().contains('en') ? 3.14 : 0,
+            angle: Get.locale.toString().contains('ar') ? 0 : 3.14,
             child: SvgPicture.asset(
-              'assets/icons/back_icon.svg',
-              // ignore: deprecated_member_use
-              color: ColorPick.primary,
+              'assets/arrow.svg',
+              colorFilter: ColorFilter.mode(ColorPick.primary, BlendMode.srcIn),
             ),
           ),
           weekdayLabelTextStyle: AppTextStyles.font16BlackRegularCairo
@@ -166,7 +168,8 @@ class DatePicker {
           selectedRangeHighlightColor: ColorPick.primary.withValues(alpha: 0.25),
           calendarType: calendarType, //CalendarDatePicker2Type.range,
         ),
-        dialogSize: isTablet ? Size(460.sp, 320.sp) : Size(320.w, 320.h),
+        // BUG-153: same size as the Post Job picker.
+        dialogSize: Size(320.w, 320.h),
         borderRadius: BorderRadius.circular(10),
         useSafeArea: true);
   }

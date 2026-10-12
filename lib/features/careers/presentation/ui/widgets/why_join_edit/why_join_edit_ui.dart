@@ -51,11 +51,6 @@ extension _WhyJoinEditUi on _CareersSectionEditPageState {
           SizedBox(height: 14.h),
         ],
 
-        // The per-reason "SVG" picker used to sit here. Every reason asked for
-        // its own SVG on top of the section Icon above, which is the only image
-        // the site actually renders — so it was a required field that blocked
-        // Publish for no visible result. Removed; only the Remove control is
-        // left on this row.
         // First reason is mandatory — it can never be removed.
         if (index > 0) ...[
           Row(
@@ -73,6 +68,33 @@ extension _WhyJoinEditUi on _CareersSectionEditPageState {
           ),
           SizedBox(height: 14.h),
         ],
+
+        // BUG-211: per-reason illustration (Figma "Editing Why Join Our Team
+        // Details" — an "SVG" circle on every reason). Optional; the public
+        // page shows it beside the text (Items_N_Svg_Url) instead of an
+        // empty gap.
+        Text('SVG (illustration, optional)',
+            style: StyleText.fontSize12Weight500.copyWith(color: AppColors.text)),
+        SizedBox(height: 6.h),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            _imgBox(picked: item.svg, onPick: () async {
+              final p = await _pickImage();
+              if (p != null) setState(() => item.svg = p);
+            }),
+            if (item.svg.hasImage) ...[
+              SizedBox(width: 12.w),
+              GestureDetector(
+                onTap: () => setState(() => item.svg = const _PickedImage()),
+                child: Text('Remove image',
+                    style: StyleText.fontSize12Weight500
+                        .copyWith(color: ColorPick.red)),
+              ),
+            ],
+          ],
+        ),
+        SizedBox(height: 14.h),
 
         CustomValidatedTextFieldMaster(
           showCharCount: false, maxLength: 500,

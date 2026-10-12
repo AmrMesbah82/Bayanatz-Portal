@@ -97,29 +97,30 @@ extension _BlogEditSections on _BlogCreateEditPageState {
         ]),
         SizedBox(height: 6.h),
         // ── Short description ─────────────────────────────────────────────────
-        // BUG-70: the 150-character limit used to cut text silently. The
-        // limit is now stated and a live "n / 150" note appears under each box.
-        Text('Short Description (max 150 characters)', style: _labelStyle()),
+        // BUG-70: the limit is stated and a live "n / max" note appears under
+        // each box. BUG-213: raised from 150 to 400 so the Figma article intro
+        // (≈330 characters) fits in the article header box.
+        Text('Short Description (max $_kShortDescMax characters)', style: _labelStyle()),
         SizedBox(height: 6.h),
         CustomTextField(
           controller: _shortDescEnCtrl, hint: 'Text Here', fillColor: Colors.white,
-          submitted: _submitted, maxLength: 150, showCharCount: false,
+          submitted: _submitted, maxLength: _kShortDescMax, showCharCount: false,
           isRequired: true, primaryColor: ColorPick.primary,
           textDirection: TextDirection.ltr, maxLines: 4, height: 100,
           onChanged: (_) => setState(() {}),
         ),
-        _charLimitNote(_shortDescEnCtrl, 150, TextAlign.left),
+        _charLimitNote(_shortDescEnCtrl, _kShortDescMax, TextAlign.left),
         Align(alignment: Alignment.centerRight,
-            child: Text('وصف مختصر (150 حرفًا كحد أقصى)', style: _labelStyle())),
+            child: Text('وصف مختصر ($_kShortDescMax حرفًا كحد أقصى)', style: _labelStyle())),
         SizedBox(height: 6.h),
         CustomTextField(
           controller: _shortDescArCtrl, hint: 'أكتب هنا', fillColor: Colors.white,
-          isRequired: true, submitted: _submitted, maxLength: 150, showCharCount: false,
+          isRequired: true, submitted: _submitted, maxLength: _kShortDescMax, showCharCount: false,
           primaryColor: ColorPick.primary, textDirection: TextDirection.rtl,
           textAlign: TextAlign.right, maxLines: 4, height: 100,
           onChanged: (_) => setState(() {}),
         ),
-        _charLimitNote(_shortDescArCtrl, 150, TextAlign.right),
+        _charLimitNote(_shortDescArCtrl, _kShortDescMax, TextAlign.right),
       ],
     );
   }
@@ -352,3 +353,6 @@ extension _BlogEditSections on _BlogCreateEditPageState {
   TextStyle _labelStyle() =>
       StyleText.fontSize12Weight600.copyWith(color: AppColors.text);
 }
+
+/// BUG-213: Important Reads short description limit (was 150).
+const int _kShortDescMax = 400;

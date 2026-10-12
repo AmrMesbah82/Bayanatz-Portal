@@ -70,3 +70,27 @@ class FormDirtyScope extends InheritedNotifier<ValueNotifier<bool>> {
     if (c != null && c.value) c.value = false;
   }
 }
+
+/// BUG-267: marks a page as an EDITOR whose unsaved changes must not be
+/// thrown away silently. AdminStickyBody(guardUnsavedChanges: true) puts it
+/// above the page; the top menu / Web Page tabs then ask "Discard changes?"
+/// before leaving, and the browser warns on refresh / close.
+class UnsavedChangesGuard extends InheritedWidget {
+  const UnsavedChangesGuard({super.key, required super.child});
+
+  static bool _enabled(BuildContext context) =>
+      context.getElementForInheritedWidgetOfExactType<UnsavedChangesGuard>() !=
+      null;
+
+  /// True on a guarded editor that has a real (typed / picked) change.
+  static bool hasUnsavedEdits(BuildContext context) {
+    if (!_enabled(context)) return false;
+    final element =
+        context.getElementForInheritedWidgetOfExactType<FormDirtyScope>();
+    if (element == null) return false;
+    return (element.widget as FormDirtyScope).notifier?.value ?? false;
+  }
+
+  @override
+  bool updateShouldNotify(UnsavedChangesGuard oldWidget) => false;
+}

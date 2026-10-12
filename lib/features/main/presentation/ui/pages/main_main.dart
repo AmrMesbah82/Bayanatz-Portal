@@ -520,7 +520,7 @@ class _MainMainPageState extends State<MainMainPage> {
   // ── Caption-less value boxes (used when the caption is rendered once) ───────
   Widget _valueBox(String value) => Container(
     width: double.infinity, height: 36.h,
-    padding: EdgeInsets.symmetric(horizontal: 10.w),
+    padding: EdgeInsets.symmetric(horizontal: 15.w), // BUG-158: one inset
     decoration: BoxDecoration(
         color: AppColors.card, borderRadius: BorderRadius.circular(4.r)),
     alignment: Alignment.centerLeft,
@@ -532,7 +532,7 @@ class _MainMainPageState extends State<MainMainPage> {
 
   Widget _valueBoxRtl(String value) => Container(
     width: double.infinity, height: 36.h,
-    padding: EdgeInsets.symmetric(horizontal: 10.w),
+    padding: EdgeInsets.symmetric(horizontal: 15.w), // BUG-158: one inset
     decoration: BoxDecoration(
         color: AppColors.card, borderRadius: BorderRadius.circular(4.r)),
     alignment: Alignment.centerRight,
@@ -656,7 +656,7 @@ class _MainMainPageState extends State<MainMainPage> {
       SizedBox(height: 4.h),
       Container(
         width: double.infinity, height: 36.h,
-        padding: EdgeInsets.symmetric(horizontal: 10.w),
+        padding: EdgeInsets.symmetric(horizontal: 15.w), // BUG-158: one inset
         decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(4.r)),
         alignment: Alignment.centerLeft,
         child: Text(
@@ -685,7 +685,7 @@ class _MainMainPageState extends State<MainMainPage> {
         SizedBox(height: 4.h),
         Container(
           height: 36.h,
-          padding: EdgeInsets.symmetric(horizontal: 10.w),
+          padding: EdgeInsets.symmetric(horizontal: 15.w), // BUG-158: one inset
           decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(4.r)),
           child: Row(children: [
             Container(

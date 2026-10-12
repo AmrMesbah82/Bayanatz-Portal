@@ -72,9 +72,11 @@ class BlogRepositoryImpl implements BlogRepository {
   @override
   Future<String> createPost(BlogPostModel post) async {
     try {
+      final now = DateTime.now().toUtc().toIso8601String();
       final ref = await _col.add(FlatCodec.encodeNew({
         ...post.toMap(),
-        'createdAt': DateTime.now().toIso8601String(),
+        'createdAt': now,
+        'statusChangedAt': now, // BUG-196
       }));
       return ref.id;
     } catch (e) {
@@ -85,12 +87,34 @@ class BlogRepositoryImpl implements BlogRepository {
   @override
   Future<void> updatePost(BlogPostModel post) async {
     try {
+      // BUG-196: remember WHEN the status changed (cards said "Inactive
+      // Since <posting date>").
+      final before = await fetchPostById(post.id);
+      final statusChanged = before == null || before.status != post.status;
       // Versioned append write (append-on-change history per field).
       await FlatCodec.writeVersioned(_col.doc(post.id), {
         ...post.toMap(),
         if (post.createdAt != null)
           'createdAt': post.createdAt!.toIso8601String(),
+        if (statusChanged)
+          'statusChangedAt': DateTime.now().toUtc().toIso8601String(),
       });
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// BUG-92: "Remove" is a SOFT delete — the post moves to the "Removed"
+  /// tab (status 'removed', hidden from the public site) and can be restored
+  /// or deleted for good from there. It used to delete the document.
+  @override
+  Future<void> removePost(String id) async {
+    try {
+      await FlatCodec.writeVersioned(_col.doc(id), {
+        'status': 'removed',
+        'statusChangedAt': DateTime.now().toUtc().toIso8601String(),
+      });
+      await deleteDraft(id);
     } catch (e) {
       rethrow;
     }
@@ -219,7 +243,15 @@ class BlogRepositoryImpl implements BlogRepository {
     final created = (createdStr is String && createdStr.isNotEmpty)
         ? DateTime.tryParse(createdStr)
         : null;
-    return created != null ? model.copyWith(createdAt: created) : model;
+    // BUG-196: date of the last status change.
+    final rawChanged = data['Status_Changed_At'];
+    final changedStr = (rawChanged is List && rawChanged.isNotEmpty)
+        ? rawChanged.last
+        : rawChanged;
+    final changed = (changedStr is String && changedStr.isNotEmpty)
+        ? DateTime.tryParse(changedStr)?.toLocal()
+        : null;
+    return model.copyWith(createdAt: created?.toLocal(), statusChangedAt: changed);
   }
 
   String _detectMime(Uint8List b) {

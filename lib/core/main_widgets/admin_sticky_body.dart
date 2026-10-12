@@ -38,6 +38,9 @@
 //
 // Created by: Amr Mesbah
 
+import 'dart:async';
+import 'dart:html' as html;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -57,7 +60,13 @@ class AdminStickyBody extends StatefulWidget {
     this.scrollController,
     this.padding,
     this.reflowOnPhone = false,
+    this.guardUnsavedChanges = false,
   });
+
+  /// BUG-267: this page is an editor — leaving it from the top menu / Web
+  /// Page tabs with unsaved changes asks "Discard changes?" first, and the
+  /// browser warns before a refresh or closing the tab.
+  final bool guardUnsavedChanges;
 
   /// BUG-06 / BUG-16: the page has its own phone layout (see AdminLayout),
   /// so on a phone it is laid out at screen width instead of the scrolling
@@ -104,8 +113,25 @@ class _AdminStickyBodyState extends State<AdminStickyBody> {
   /// BUG-06 / BUG-07 / BUG-16: horizontal scroll for narrow screens.
   final ScrollController _hScroll = ScrollController();
 
+  StreamSubscription<html.Event>? _beforeUnload;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.guardUnsavedChanges) {
+      // BUG-267: browser refresh / close with unsaved edits → native warning.
+      _beforeUnload = html.window.onBeforeUnload.listen((event) {
+        if (_dirty.value && event is html.BeforeUnloadEvent) {
+          event.preventDefault();
+          event.returnValue = '';
+        }
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _beforeUnload?.cancel();
     _showMissing.dispose();
     _dirty.dispose();
     _hScroll.dispose();
@@ -139,14 +165,15 @@ class _AdminStickyBodyState extends State<AdminStickyBody> {
           child: SizedBox(width: canvas, child: content),
         );
       }
-      return Scrollbar(
-        controller:      _hScroll,
-        thumbVisibility: true,
-        child: SingleChildScrollView(
-          controller:      _hScroll,
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(width: canvas, child: content),
-        ),
+      // BUG-265: phones REFLOW instead of scrolling sideways. Create Job
+      // Post and every CMS page were wider than the screen ("Edit Details",
+      // "Preview Screen", the Arabic column off-screen). The content is now
+      // laid out at the screen width with a 16 px gutter: every
+      // `SizedBox(width: 1000.w)` page box is clamped to it, and EN/AR field
+      // pairs (Expanded) share the width instead of running off the edge.
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: content,
       );
     });
   }
@@ -230,8 +257,14 @@ class _AdminStickyBodyState extends State<AdminStickyBody> {
 
   /// Makes the missing-field and has-changed flags available to everything on
   /// this page.
-  Widget _scoped(Widget child) => ValidationScope(
-        controller: _showMissing,
-        child: FormDirtyScope(controller: _dirty, child: child),
-      );
+  Widget _scoped(Widget child) {
+    final scoped = ValidationScope(
+      controller: _showMissing,
+      child: FormDirtyScope(controller: _dirty, child: child),
+    );
+    // BUG-267: editors are marked so navigation can ask before leaving.
+    return widget.guardUnsavedChanges
+        ? UnsavedChangesGuard(child: scoped)
+        : scoped;
+  }
 }

@@ -73,45 +73,12 @@ Widget _readFieldRtl(String label, String value, {double height = 36}) =>
 extension _AboutMainHelpers on _AboutMainPageMasterDashboardState {
 
   // ── Tab bar ────────────────────────────────────────────────────────────
+  // BUG-155: shared sub-tab row (same look on every CMS tab).
   Widget _buildTabBar() {
-    return Row(
-      children: List.generate(_tabLabels.length, (i) {
-        final isActive = _tabIndex == i;
-        return Padding(
-          padding: EdgeInsets.only(right: 24.w),
-          child: GestureDetector(
-            onTap: () => setState(() => _tabIndex = i),
-            child: IntrinsicWidth(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: EdgeInsets.only(bottom: 6.h),
-                    child: Text(
-                      _tabLabels[i],
-                      style: (isActive
-                              ? StyleText.fontSize15Weight600
-                              : StyleText.fontSize15Weight500)
-                          .copyWith(
-                        fontWeight:
-                            isActive ? FontWeight.w700 : FontWeight.w500,
-                        color: isActive
-                            ? ColorPick.primary
-                            : AppColors.secondaryText,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    height: 2,
-                    color:
-                    isActive ? ColorPick.primary : Colors.transparent,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      }),
+    return CmsSubTabs(
+      labels: _tabLabels,
+      activeIndex: _tabIndex,
+      onTap: (i) => setState(() => _tabIndex = i),
     );
   }
 

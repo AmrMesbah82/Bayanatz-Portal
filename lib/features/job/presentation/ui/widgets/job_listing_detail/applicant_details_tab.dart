@@ -41,6 +41,9 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
     return keys;
   }
 
+  /// BUG-271: list item that clears a filter.
+  static const String _kAll = '__all__';
+
   static final List<Map<String, String>> _stageItems = [
     {'key': 'Applied', 'value': 'Applied'},
     {'key': 'Interview', 'value': 'Interview'},
@@ -197,7 +200,8 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
     return _cell(
       Text(
         stage.isEmpty ? '—' : stage,
-        style: _cellStyle.copyWith(color: color, fontWeight: FontWeight.w600),
+        // BUG-302: same weight as every other cell (only Stage was bold).
+        style: _cellStyle.copyWith(color: color),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -267,6 +271,34 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
     );
   }
 
+  /// BUG-235: one clickable line per extra document (PDF opens the file,
+  /// Link opens the URL).
+  Widget _docsCell(List<ApplicationDocument> docs) {
+    final withUrl = docs.where((d) => d.url.isNotEmpty).toList();
+    if (withUrl.isEmpty) return _textCell('');
+    return _cell(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final d in withUrl)
+            MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                onTap: () => html.window.open(d.url, '_blank'),
+                child: Text(
+                  'View ${d.name}',
+                  style: _cellStyle.copyWith(color: const Color(0xFF333333)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   String _fmtDate(DateTime? dt) {
     if (dt == null) return '';
     const m = [
@@ -304,15 +336,7 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
   String _headerLabel(String key) => ColumnKey.labels[key] ?? key;
 
   Widget _cellForKey(String key, ApplicationModel a) {
-    // Total of the five 1–5 degrees (max 25) shown as a percentage of 100.
-    final totalScore =
-    (a.technicalSkills +
-        a.communicationSkills +
-        a.experienceBackground +
-        a.cultureFit +
-        a.leadershipPotential);
-    final scoreText =
-        totalScore > 0 ? '${(totalScore / 25 * 100).round()}%' : '';
+    final scoreText = scorePercentOf(a); // BUG-264
     switch (key) {
       case ColumnKey.firstName:
         return _textCell(FormatHelper.capitalize(a.firstName));
@@ -328,10 +352,13 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
         return _textCell(FormatHelper.capitalize(a.source));
       case ColumnKey.location:
         return _textCell(FormatHelper.capitalize(a.jobLocation));
+      // BUG-302: the link text matches its column ("View Resume").
       case ColumnKey.resume:
-        return _linkCell(a.resumeUrl, label: 'View CV');
+        return _linkCell(a.resumeUrl, label: 'View Resume');
       case ColumnKey.coverLetter:
         return _linkCell(a.coverLetterUrl, label: 'View Cover Letter');
+      case ColumnKey.documents: // BUG-235
+        return _docsCell(otherDocumentsOf(a));
       case ColumnKey.status:
         return _statusBadgeCell(FormatHelper.capitalize(a.status.label));
       case ColumnKey.stage:
@@ -375,6 +402,8 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
         return 140.sp;
       case ColumnKey.coverLetter:
         return 140.sp;
+      case ColumnKey.documents:
+        return 180.sp;
       case ColumnKey.status:
         return 120.sp;
       case ColumnKey.stage:
@@ -400,6 +429,14 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
 
   @override
   Widget build(BuildContext context) {
+    // BUG-272: an empty result scrolls the table back to its start so the
+    // "No applicants match…" message is fully visible.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_horizontalScrollController.hasClients) return;
+      if (_filtered.isEmpty && _horizontalScrollController.offset > 0) {
+        _horizontalScrollController.jumpTo(0);
+      }
+    });
     if (widget.loading)
       return Center(
         child: Padding(
@@ -436,7 +473,11 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
               width: 160.w,
               child: CustomDropdownFormFieldInvMaster(
                 selectedValue: _statusFilter,
-                items: _statusItems,
+                // BUG-271: "All statuses" clears the filter.
+                items: [
+                  {'key': _kAll, 'value': 'All statuses'},
+                  ..._statusItems,
+                ],
                 widthIcon: 18,
                 dropdownColor: Colors.white,
                 heightIcon: 18,
@@ -447,7 +488,8 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
                 ),
                 itemColors: _statusColors,
                 showColorDots: true,
-                onChanged: (v) => setState(() => _statusFilter = v),
+                onChanged: (v) => setState(
+                    () => _statusFilter = (v == null || v == _kAll) ? null : v),
               ),
             ),
             SizedBox(width: 12.w),
@@ -455,7 +497,11 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
               width: 160.w,
               child: CustomDropdownFormFieldInvMaster(
                 selectedValue: _stageFilter,
-                items: _stageItems,
+                // BUG-271: "All stages" clears the filter.
+                items: [
+                  {'key': _kAll, 'value': 'All stages'},
+                  ..._stageItems,
+                ],
                 widthIcon: 18,
                 heightIcon: 18,
                 dropdownColor: Colors.white,
@@ -466,7 +512,8 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
                 ),
                 itemColors: _stageColors,
                 showColorDots: true,
-                onChanged: (v) => setState(() => _stageFilter = v),
+                onChanged: (v) => setState(
+                    () => _stageFilter = (v == null || v == _kAll) ? null : v),
               ),
             ),
             const Spacer(),
@@ -645,12 +692,17 @@ class _ApplicantDetailsTabState extends State<_ApplicantDetailsTab> {
                 ),
 
                     // ── Empty state — full-width panel under the header ──
+                    // BUG-272: the message was centred on the WHOLE table
+                    // width, so after scrolling sideways only "…selected
+                    // filters." was visible. Scroll back to the start and
+                    // put the message at the visible left edge.
                     if (rows.isEmpty)
                       Container(
                         width: tableWidth,
                         color: Colors.white,
-                        padding: EdgeInsets.symmetric(vertical: 30.sp),
-                        alignment: Alignment.center,
+                        padding: EdgeInsets.symmetric(
+                            vertical: 30.sp, horizontal: 20.sp),
+                        alignment: Alignment.centerLeft,
                         child: Text(
                           'No applicants match the selected filters.',
                           style: StyleText.fontSize13Weight400.copyWith(

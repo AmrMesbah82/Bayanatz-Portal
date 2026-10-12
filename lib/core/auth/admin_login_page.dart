@@ -46,9 +46,11 @@ class _S {
   const _S(this.ar);
   final bool ar;
 
-  String get title => ar ? 'لوحة تحكم بيانات' : 'Bayanatz Admin';
+  // BUG-280: one Arabic brand name (About Company says "بيانات زي") and a
+  // masculine adjective for "الأفق" ("الرقمي", was "الرقمية").
+  String get title => ar ? 'لوحة تحكم بيانات زي' : 'Bayanatz Admin';
   String get tagline => ar
-      ? 'انطلق في الأفق الرقمية بكل سهولة'
+      ? 'انطلق في الأفق الرقمي بكل سهولة'
       : 'Navigate the Digital Frontier with Ease';
   String get enterEmail => ar ? 'أدخل بريدك الإلكتروني' : 'Enter Your Email';
   String get enterPassword => ar ? 'أدخل كلمة المرور' : 'Enter Your Password';
@@ -126,6 +128,13 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
   final _confirmPassword = TextEditingController();
   bool _busy = false;
   bool _obscure = true;
+
+  /// BUG-285: empty-field errors are shown under the fields (like every
+  /// admin form) instead of in a "Missing Information" pop-up.
+  String? _emailError;
+  String? _passwordError;
+  String get _requiredMsg =>
+      _arabic ? 'هذا الحقل مطلوب.' : 'This field is required.';
   bool _arabic = false;
   late _Mode _mode =
       AdminAuth.pendingReset.value != null ? _Mode.reset : _Mode.signIn;
@@ -148,10 +157,12 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
     final email = _email.text.trim().toLowerCase();
     final password = _password.text;
 
-    if (email.isEmpty || password.isEmpty) {
-      _showMessage(s.missingTitle, s.missingBody, isError: true);
-      return;
-    }
+    // BUG-285: inline, per field — no modal.
+    setState(() {
+      _emailError = email.isEmpty ? _requiredMsg : null;
+      _passwordError = password.isEmpty ? _requiredMsg : null;
+    });
+    if (email.isEmpty || password.isEmpty) return;
 
     setState(() => _busy = true);
     final result = await AdminAuth.signIn(email, password);
@@ -433,6 +444,10 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
           keyboardType: TextInputType.emailAddress,
           autofill: AutofillHints.email,
           textInputAction: TextInputAction.next,
+          errorText: _emailError, // BUG-285
+          onChanged: (_) {
+            if (_emailError != null) setState(() => _emailError = null);
+          },
         ),
         const SizedBox(height: 14),
         _field(
@@ -443,6 +458,10 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
           autofill: AutofillHints.password,
           textInputAction: TextInputAction.done,
           onSubmitted: (_) => _onSignInPressed(),
+          errorText: _passwordError, // BUG-285
+          onChanged: (_) {
+            if (_passwordError != null) setState(() => _passwordError = null);
+          },
         ),
         const SizedBox(height: 14),
         Row(
@@ -459,8 +478,11 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
           ],
         ),
         const SizedBox(height: 40),
+        // BUG-284: on a phone / narrow window the button spans the same
+        // width as the fields (it was a centred 300 px button that did not
+        // line up with them).
         SizedBox(
-          width: 300,
+          width: MediaQuery.of(context).size.width < 700 ? double.infinity : 300,
           height: 44,
           child: ElevatedButton(
             onPressed: _busy ? null : _onSignInPressed,
@@ -491,6 +513,8 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
     String? autofill,
     TextInputAction? textInputAction,
     ValueChanged<String>? onSubmitted,
+    String? errorText,
+    ValueChanged<String>? onChanged,
   }) {
     final border = OutlineInputBorder(
       borderRadius: BorderRadius.circular(8),
@@ -505,6 +529,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       autofillHints: autofill == null ? null : [autofill],
       textInputAction: textInputAction,
       onSubmitted: onSubmitted,
+      onChanged: onChanged,
       enabled: !_busy,
       style: TextStyle(fontSize: 14, color: _kText),
       cursorColor: ColorPick.primary,
@@ -525,6 +550,13 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
         disabledBorder: border,
         focusedBorder: border.copyWith(
             borderSide: const BorderSide(color: ColorPick.primary, width: 1)),
+        // BUG-285: same error state as the admin forms (red border + text).
+        errorText: errorText,
+        errorStyle: const TextStyle(fontSize: 12, color: ColorPick.red),
+        errorBorder: border.copyWith(
+            borderSide: const BorderSide(color: ColorPick.red, width: 1.5)),
+        focusedErrorBorder: border.copyWith(
+            borderSide: const BorderSide(color: ColorPick.red, width: 1.5)),
         prefixIcon: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: SvgPicture.asset(
@@ -588,13 +620,34 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
         style: TextStyle(fontSize: 13, color: _kText),
       );
 
-  Widget _languageToggle() => MouseRegion(
+  /// BUG-283: on a phone the link sits on the dark photo — white text on a
+  /// dark pill there (dark grey on the photo was 1.38 : 1 contrast).
+  Widget _languageToggle({bool onPhoto = false}) => MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
-          onTap: () => setState(() => _arabic = !_arabic),
-          child: Text(s.toggle,
-              style: TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.w600, color: _kText)),
+          onTap: () => setState(() {
+            _arabic = !_arabic;
+            // Re-word any shown error in the new language.
+            if (_emailError != null) _emailError = _requiredMsg;
+            if (_passwordError != null) _passwordError = _requiredMsg;
+          }),
+          child: onPhoto
+              ? Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.55),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(s.toggle,
+                      style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white)),
+                )
+              : Text(s.toggle,
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w600, color: _kText)),
         ),
       );
 
@@ -623,7 +676,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                 PositionedDirectional(
                   top: 40,
                   end: 16,
-                  child: _languageToggle(),
+                  child: _languageToggle(onPhoto: true), // BUG-283
                 ),
               ],
             ),

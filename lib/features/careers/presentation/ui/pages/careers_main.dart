@@ -14,6 +14,7 @@ import 'package:web_app_admin/core/custom_svg.dart';
 import 'package:web_app_admin/core/widget/format.dart';
 
 import '../../../../../core/constant/color.dart';
+import '../../../../../core/constant/job_status_style.dart';
 import '../../../../../core/custom/1-custom_dropdwon.dart';
 import '../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../core/main_widgets/app_admin_navbar.dart';
@@ -29,11 +30,17 @@ import '../../controller/careers_cubit.dart';
 import '../../controller/careers_state.dart';
 import 'package:web_app_admin/core/custom/circle_progress.dart';
 import 'package:web_app_admin/core/main_widgets/admin_layout.dart';
+import 'package:web_app_admin/core/widget/empty_lottie.dart'; // QA-Oct11 #24
 
 part '../widgets/careers_main/chart_colors.dart';
 part '../widgets/careers_main/legend_item.dart';
 part '../widgets/careers_main/pie_item.dart';
 part '../widgets/careers_main/careers_charts.dart';
+
+// Keeps the EmptyLottie import (used only by the careers_charts part) from
+// being removed by "Optimize Imports".
+// ignore: unused_element
+typedef _KeepEmptyLottie = EmptyLottie;
 
 // ── Chart color palette ──────────────────────────────────────────────────────
 
@@ -282,11 +289,11 @@ class _CareersMainPageDashboardState extends State<CareersMainPageDashboard> {
                           ),
                           SizedBox(height: 16.h),
 
-                          // Row 5: Employment Types (no Gender chart — it is
-                          // not in the Figma dashboard).
+                          // Row 5: Employment Types | Candidate Gender
+                          // (BUG-85: flowchart step 1:9164).
                           _chartRow(
                             left:  _buildEmploymentTypesChart(dash),
-                            right: const SizedBox(),
+                            right: _buildCandidateGenderChart(dash),
                           ),
                           SizedBox(height: 40.h),
                         ],

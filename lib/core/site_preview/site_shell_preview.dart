@@ -20,7 +20,6 @@ import '../../features/home/presentation/controller/home_cubit.dart';
 import '../../features/main/data/models/main_model.dart';
 import '../widget/network_image_view.dart';
 import '../../features/main/presentation/controller/main_cubit.dart';
-import '../../features/main/presentation/controller/main_state.dart';
 
 /// A single device viewport showing the site shell as visitors will see it.
 ///
@@ -100,13 +99,10 @@ class SiteShellPreview extends StatelessWidget {
 /// mid-save or after a transient error.
 MainPageModel _draftMainModel(BuildContext context) {
   final MainCmsCubit cubit = context.watch<MainCmsCubit>();
-  final MainCmsState state = cubit.state;
 
-  if (state is MainCmsLoaded)     return state.data;
-  if (state is MainCmsSaving)     return state.data;
-  if (state is MainCmsSaved)      return state.data;
-  if (state is MainCmsDraftSaved) return state.data;
-  if (state is MainCmsError && state.lastData != null) return state.lastData!;
+  // BUG-53: the cubit's in-memory model holds the edits being made (the
+  // editor copies them in before opening Preview); state.data is the
+  // snapshot taken when the page was LOADED, i.e. the published text.
   return cubit.current;
 }
 

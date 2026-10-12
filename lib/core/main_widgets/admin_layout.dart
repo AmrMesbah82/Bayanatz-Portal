@@ -88,3 +88,17 @@ class AdminCardsRow extends StatelessWidget {
     );
   }
 }
+
+/// BUG-265: the gap between the bottom buttons of a form (Discard … Publish).
+/// 300–400 px on desktop; on a phone that alone was wider than the screen, so
+/// it shrinks to 12 px there.
+class AdminButtonGap extends StatelessWidget {
+  const AdminButtonGap({super.key, this.desktop = 400});
+
+  /// Desktop width in design units (scaled with .w).
+  final double desktop;
+
+  @override
+  Widget build(BuildContext context) =>
+      SizedBox(width: AdminLayout.isPhone(context) ? 12 : desktop.w);
+}

@@ -32,6 +32,13 @@ class AdminBackLink extends StatelessWidget {
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
           onTap: () {
+            // BUG-298: sub-pages are opened both as routes and with
+            // Navigator.push — pop whichever is on top, else go to the parent.
+            final nav = Navigator.of(context);
+            if (nav.canPop()) {
+              nav.pop();
+              return;
+            }
             final router = GoRouter.of(context);
             if (router.canPop()) {
               router.pop();

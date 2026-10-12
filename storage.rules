@@ -17,7 +17,9 @@ service firebase.storage {
     }
 
     match /applications/{jobId}/{file} {
-      allow create: if request.resource.size < 10 * 1024 * 1024 &&
+      // BUG-237: no empty files, max 10 MB, PDF content type only.
+      allow create: if request.resource.size > 0 &&
+                    request.resource.size <= 10 * 1024 * 1024 &&
                     request.resource.contentType == 'application/pdf';
       allow get: if isAdmin() ||
                  request.time < resource.timeCreated + duration.value(10, 'm');

@@ -26,6 +26,7 @@ import '../../features/main/presentation/controller/main_cubit.dart';
 import '../../features/main/presentation/controller/main_state.dart';
 import '../../features/services/presentation/ui/pages/services_main/services_main.dart';
 import '../theme/new_theme.dart';
+import 'leave_guard.dart';
 
 
 class AdminSubNavBar extends StatelessWidget {
@@ -52,7 +53,9 @@ class AdminSubNavBar extends StatelessWidget {
     // Services page is pushed via rootNavigator (outside GoRouter tree).
     // When navigating AWAY from Services, pop it first so it is cleanly
     // removed before GoRouter takes over, preventing the disposed-view crash.
-    void goRoute(String location) => context.go(location);
+    // BUG-267: ask before throwing unsaved edits away.
+    void goRoute(String location) =>
+        guardedLeave(context, () => context.go(location));
 
     switch (i) {
       case 0: goRoute('/admin/dashboard');

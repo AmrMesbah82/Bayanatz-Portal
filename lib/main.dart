@@ -93,6 +93,17 @@ Size _getDesignSize({
     return size;
   }
 
+  // ==================== DESKTOP WEB (≥ 1100) — BUG-282 ====================
+  // The design size used to jump with the window (1024 → 1366 → 1920), so a
+  // WIDER screen got a NARROWER, smaller page: content 1221 px at 1280,
+  // 1054 px at 1440, 1000 px at 1920. On desktop web the design size now IS
+  // the window, i.e. scale 1: the same component sizes at every desktop
+  // width, a 1000 px content column centred, and the margins grow with the
+  // screen.
+  if (screenWidth >= 1100) {
+    return Size(screenWidth, screenHeight < 600 ? 600 : screenHeight);
+  }
+
   // ==================== LARGE DESKTOP / TV (≥ 1920) ====================
   if (screenWidth >= 1920) {
     const size = Size(1920, 1080);

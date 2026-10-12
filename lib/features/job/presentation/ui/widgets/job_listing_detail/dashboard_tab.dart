@@ -319,21 +319,19 @@ class _DashboardTab extends StatelessWidget {
                     PieChartData(
                       sectionsSpace: 2,
                       centerSpaceRadius: 44.sp,
-                      sections: [
+                      // BUG-194: 0 % / 0 % used to draw a half-red,
+                      // half-grey donut — now an empty grey ring.
+                      sections: totalClassified == 0
+                          ? [_emptyRing(30.sp)]
+                          : [
                         PieChartSectionData(
-                          value: qualifiedCount.toDouble().clamp(
-                            0.1,
-                            double.infinity,
-                          ),
+                          value: qualifiedCount.toDouble(),
                           color: _Ch.green,
                           radius: 30.sp,
                           title: '',
                         ),
                         PieChartSectionData(
-                          value: unqualifiedCount.toDouble().clamp(
-                            0.1,
-                            double.infinity,
-                          ),
+                          value: unqualifiedCount.toDouble(),
                           color: _Ch.grey,
                           radius: 30.sp,
                           title: '',
@@ -370,15 +368,14 @@ class _DashboardTab extends StatelessWidget {
 
 
   Widget _buildHiringStage() {
-    // ── Rejected = unqualified + interview failed + offer rejected + interview withdrew
-    final rejected = _unqualified + _interviewFailed + _offerRejected + _interviewWithdrew;
-
+    // BUG-278: the same four stages, names and order as the Home funnel,
+    // the Stage filter and the Applications cards (Applied · Interview ·
+    // Offer · Hired). "Rejected" is a status, not a stage.
     final stages = [
       _FunnelItem('Applied', _appliedStage, ColorPick.primary),
-      _FunnelItem('Interviewed', _interviewStage, ColorPick.primary.withValues(alpha: 0.8)),
-      _FunnelItem('Rejected', rejected, ColorPick.primary.withValues(alpha: 0.6)),
-      _FunnelItem('Offer Sent', _offerStage, ColorPick.primary.withValues(alpha: 0.4)),
-      _FunnelItem('Hired', _hired, ColorPick.primary.withValues(alpha: 0.2)),
+      _FunnelItem('Interview', _interviewStage, ColorPick.primary.withValues(alpha: 0.75)),
+      _FunnelItem('Offer', _offerStage, ColorPick.primary.withValues(alpha: 0.5)),
+      _FunnelItem('Hired', _hired, ColorPick.primary.withValues(alpha: 0.25)),
     ];
 
     final maxVal = stages
@@ -523,21 +520,24 @@ class _DashboardTab extends StatelessWidget {
                 PieChartData(
                   sectionsSpace: 2,
                   centerSpaceRadius: 0,
-                  sections: [
+                  // BUG-194: all 0 % drew three equal coloured slices.
+                  sections: total == 0
+                      ? [_emptyRing(60.sp)]
+                      : [
                     PieChartSectionData(
-                      value: passed.toDouble().clamp(0.1, double.infinity),
+                      value: passed.toDouble(),
                       color: _Ch.green,
                       radius: 60.sp,
                       title: '',
                     ),
                     PieChartSectionData(
-                      value: failed.toDouble().clamp(0.1, double.infinity),
+                      value: failed.toDouble(),
                       color: _Ch.lightGreen,
                       radius: 60.sp,
                       title: '',
                     ),
                     PieChartSectionData(
-                      value: withdrew.toDouble().clamp(0.1, double.infinity),
+                      value: withdrew.toDouble(),
                       color: _Ch.grey,
                       radius: 60.sp,
                       title: '',
@@ -622,10 +622,14 @@ class _DashboardTab extends StatelessWidget {
                     PieChartData(
                       sectionsSpace: 2,
                       centerSpaceRadius: 40.sp,
-                      sections: items
+                      // BUG-194: 0 offers drew a fully coloured donut.
+                      sections: sum == 0
+                          ? [_emptyRing(28.sp)]
+                          : items
+                          .where((item) => item.value > 0)
                           .map(
                             (item) => PieChartSectionData(
-                          value: item.value.clamp(0.1, double.infinity),
+                          value: item.value,
                           color: item.color,
                           radius: 28.sp,
                           title: '',
@@ -745,6 +749,14 @@ class _DashboardTab extends StatelessWidget {
     );
   }
 
+  /// BUG-194: grey placeholder ring for a chart whose values are all 0.
+  PieChartSectionData _emptyRing(double radius) => PieChartSectionData(
+        value: 1,
+        color: const Color(0xFFEEEEEE),
+        radius: radius,
+        title: '',
+      );
+
   Widget _card({
     required String title,
     required double height,
@@ -762,13 +774,12 @@ class _DashboardTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // BUG-296: same card title as the Home dashboard (red 14 px bold;
+          // was dark grey 13 px).
           Text(
             title,
-            style: StyleText.fontSize13Weight600.copyWith(
-              fontSize: 13.sp,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF333333),
-            ),
+            style: StyleText.fontSize14Weight700
+                .copyWith(color: ColorPick.primary),
           ),
           if (subtitle != null) ...[
             SizedBox(height: 2.h),

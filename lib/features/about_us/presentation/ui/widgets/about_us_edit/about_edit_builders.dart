@@ -67,11 +67,11 @@ extension _AboutEditBuilders on _AboutEditPageMasterState {
               svgUrl: _visionSvgUrl,
               onPickIcon: () async {
                 final b = await _pickImageIcon();
-                if (b != null) setState(() => _visionIconBytes = b);
+                if (b != null) setState(() { _visionIconBytes = b; _imageChanged = true; });
               },
               onPickSvg: () async {
                 final b = await _pickSvgFile();
-                if (b != null) setState(() => _visionSvgBytes = b);
+                if (b != null) setState(() { _visionSvgBytes = b; _imageChanged = true; });
               },
               subEnCtrl: _visionSubEnCtrl,
               subArCtrl: _visionSubArCtrl,
@@ -96,11 +96,11 @@ extension _AboutEditBuilders on _AboutEditPageMasterState {
               svgUrl: _missionSvgUrl,
               onPickIcon: () async {
                 final b = await _pickImageIcon();
-                if (b != null) setState(() => _missionIconBytes = b);
+                if (b != null) setState(() { _missionIconBytes = b; _imageChanged = true; });
               },
               onPickSvg: () async {
                 final b = await _pickSvgFile();
-                if (b != null) setState(() => _missionSvgBytes = b);
+                if (b != null) setState(() { _missionSvgBytes = b; _imageChanged = true; });
               },
               subEnCtrl: _missionSubEnCtrl,
               subArCtrl: _missionSubArCtrl,
@@ -178,7 +178,7 @@ extension _AboutEditBuilders on _AboutEditPageMasterState {
           url: _navIconUrl,
           onTap: () async {
             final b = await _pickImageIcon();
-            if (b != null) setState(() => _navIconBytes = b);
+            if (b != null) setState(() { _navIconBytes = b; _imageChanged = true; });
           },
           isSvg: false,
           showError:
@@ -285,7 +285,8 @@ extension _AboutEditBuilders on _AboutEditPageMasterState {
           fillColor: Colors.white,
           height: 100,
           maxLines: 4,
-          maxLength: 500,
+          // BUG-210: was 500 — text was cut silently (Figma mission = 784).
+          maxLength: 10000,
           showCharCount: false,
           submitted: _submitted,
           isRequired: true,
@@ -303,7 +304,8 @@ extension _AboutEditBuilders on _AboutEditPageMasterState {
           height: 100,
           fillColor: Colors.white,
           maxLines: 4,
-          maxLength: 500,
+          // BUG-210: was 500 — text was cut silently (Figma mission = 784).
+          maxLength: 10000,
           showCharCount: false,
           submitted: _submitted,
           isRequired: true,
@@ -399,7 +401,7 @@ extension _AboutEditBuilders on _AboutEditPageMasterState {
                 showError: showIconError,
                 onTap: () async {
                   final b = await _pickImageIcon();
-                  if (b != null) setState(() => v.iconBytes = b);
+                  if (b != null) setState(() { v.iconBytes = b; _imageChanged = true; });
                 },
               ),
               // Main (first) value is mandatory — it can never be removed.
@@ -491,6 +493,8 @@ extension _AboutEditBuilders on _AboutEditPageMasterState {
     // Shared action buttons — style lives in core/main_widgets/edit_action_buttons.dart
     return EditActionButtons(
       publishEnabled: formValid,
+      // BUG-219: a picked icon counts as a change (Publish stayed grey).
+      requireChanges: !_imageChanged,
       onPreview:      formValid ? _onPreview : null,
       onPublish:      () => _showPublishConfirmDialog(),
       onSaveForLater: () { if (formValid) _showSaveDraftDialog(); },

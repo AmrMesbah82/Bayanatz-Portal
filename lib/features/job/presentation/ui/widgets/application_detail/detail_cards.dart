@@ -80,7 +80,9 @@ extension _ApplicationDetailCards on _ApplicationDetailPageState {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionTitle('Personal Information'),
+          // BUG-208: this card holds tags + scoring — it was titled
+          // "Personal Information" a second time.
+          _sectionTitle('Evaluation'),
           SizedBox(height: 12.h),
 
           Row(
@@ -123,11 +125,12 @@ extension _ApplicationDetailCards on _ApplicationDetailPageState {
               Expanded(
                 child: CustomValidatedTextFieldMaster(
                   label: 'Technical Skills',
-                  hint: 'Text Here, 1-5 Scoring',
+                  hint: '1–5 (leave empty if not scored)',
                   controller: _technicalCtrl,
                   height: 36,
                   onlyDigits: true,
                   submitted: false,
+                  errorText: _scoreError(_technicalCtrl), // BUG-264
                   primaryColor: cmsPrimary,
                   fillColor: const Color(0xFFF1F2ED),
                 ),
@@ -136,11 +139,12 @@ extension _ApplicationDetailCards on _ApplicationDetailPageState {
               Expanded(
                 child: CustomValidatedTextFieldMaster(
                   label: 'Communication Skills',
-                  hint: 'Text Here, 1-5 Scoring',
+                  hint: '1–5 (leave empty if not scored)',
                   controller: _communicationCtrl,
                   height: 36,
                   onlyDigits: true,
                   submitted: false,
+                  errorText: _scoreError(_communicationCtrl), // BUG-264
                   primaryColor: cmsPrimary,
                   fillColor: const Color(0xFFF1F2ED),
                 ),
@@ -154,11 +158,12 @@ extension _ApplicationDetailCards on _ApplicationDetailPageState {
               Expanded(
                 child: CustomValidatedTextFieldMaster(
                   label: 'Experience & Background',
-                  hint: 'Text Here, 1-5 Scoring',
+                  hint: '1–5 (leave empty if not scored)',
                   controller: _experienceCtrl,
                   height: 36,
                   onlyDigits: true,
                   submitted: false,
+                  errorText: _scoreError(_experienceCtrl), // BUG-264
                   primaryColor: cmsPrimary,
                   fillColor: const Color(0xFFF1F2ED),
                 ),
@@ -167,11 +172,12 @@ extension _ApplicationDetailCards on _ApplicationDetailPageState {
               Expanded(
                 child: CustomValidatedTextFieldMaster(
                   label: 'Culture Fit',
-                  hint: 'Text Here, 1-5 Scoring',
+                  hint: '1–5 (leave empty if not scored)',
                   controller: _cultureFitCtrl,
                   height: 36,
                   onlyDigits: true,
                   submitted: false,
+                  errorText: _scoreError(_cultureFitCtrl), // BUG-264
                   primaryColor: cmsPrimary,
                   fillColor: const Color(0xFFF1F2ED),
                 ),
@@ -185,11 +191,12 @@ extension _ApplicationDetailCards on _ApplicationDetailPageState {
               Expanded(
                 child: CustomValidatedTextFieldMaster(
                   label: 'Leadership Potential',
-                  hint: 'Text Here, 1-5 Scoring',
+                  hint: '1–5 (leave empty if not scored)',
                   controller: _leadershipCtrl,
                   height: 36,
                   onlyDigits: true,
                   submitted: false,
+                  errorText: _scoreError(_leadershipCtrl), // BUG-264
                   primaryColor: cmsPrimary,
                   fillColor: const Color(0xFFF1F2ED),
                 ),
@@ -236,12 +243,16 @@ extension _ApplicationDetailCards on _ApplicationDetailPageState {
           text: capitalize ? FormatHelper.capitalize(value) : value),
       height: 36,
       enabled: false,
+      // BUG-294: same read-only style as Job Post Details (white, 14 px label).
+      readOnlyView: true,
       submitted: false,
+      labelStyle: StyleText.fieldLabel,
       primaryColor: ColorPick.primary,
-      fillColor: const Color(0xFFF1F2ED),
-      textStyle: StyleText.fontSize12Weight500.copyWith(
-        color: AppColors.secondaryText,
-      ),
+      // QA-Oct11 #16: the field box is the page grey (#F1F2ED), like the
+      // Evaluation / Scoring fields below — it was white on the white card,
+      // so the value looked like loose text.
+      fillColor: ColorPick.background,
+      textStyle: StyleText.fieldValue,
     );
   }
 
@@ -403,7 +414,11 @@ extension _ApplicationDetailCards on _ApplicationDetailPageState {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          fileName.isEmpty ? 'No file' : fileName,
+                          // BUG-235: an uploaded PDF without a stored file
+                          // name ("Certificate") showed "No file".
+                          fileName.isNotEmpty
+                              ? fileName
+                              : (hasFile ? '$label.pdf' : 'No file'),
                           style: StyleText.fontSize11Weight400.copyWith(
                             fontSize: 11.sp,
                             color: hasFile
@@ -415,7 +430,7 @@ extension _ApplicationDetailCards on _ApplicationDetailPageState {
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (fileName.isNotEmpty)
+                        if (hasFile)
                           Text(
                             'Click to open',
                             style: StyleText.fontSize14Weight400.copyWith(

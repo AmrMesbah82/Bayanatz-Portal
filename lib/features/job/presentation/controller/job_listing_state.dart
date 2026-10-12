@@ -36,11 +36,16 @@ class JobListingLoaded extends JobListingState {
       result = result.where((j) {
         return j.status.label.toLowerCase() == activeFilter.toLowerCase();
       }).toList();
+    } else {
+      // BUG-269: "All" = every job that is NOT removed (same number as the
+      // dashboard's "All Jobs"); removed jobs live only under "Removed".
+      result = result.where((j) => j.status != JobStatus.removed).toList();
     }
 
     // ── Filter by search query ───────────────────────────────────────────
-    if (searchQuery.isNotEmpty) {
-      final q = searchQuery.toLowerCase();
+    // BUG-273: leading / trailing spaces are ignored ("   " = no search).
+    if (searchQuery.trim().isNotEmpty) {
+      final q = searchQuery.trim().toLowerCase();
       result = result.where((j) {
         return j.title.en.toLowerCase().contains(q) ||
             j.title.ar.contains(q) ||

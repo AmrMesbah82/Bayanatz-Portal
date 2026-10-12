@@ -755,6 +755,7 @@ class _StrategyEditPageState extends State<StrategyEditPage> {
           body: Stack(
             children: [
               AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   contentWidth: 1000.w,
   children: [
                             AppAdminNavbar(
@@ -997,11 +998,12 @@ class _StrategyEditPageState extends State<StrategyEditPage> {
           onConfirm: () async => _save('published'),
         );
       },
-      onDiscard: () {
+      // BUG-292: ask before throwing the edits away.
+      onDiscard: () => confirmDiscard(context, onDiscard: () {
         if (Navigator.canPop(context)) {
           Navigator.pop(context);
         }
-      },
+      }),
     );
   }
 

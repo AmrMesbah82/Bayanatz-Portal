@@ -15,6 +15,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:web_app_admin/core/widget/success_toast.dart';
 import 'package:web_app_admin/core/theme/appcolors.dart';
 
 import 'package:web_app_admin/core/widget/textfield.dart';
@@ -217,9 +218,13 @@ class _ContactUsCmsEditPageState extends State<ContactUsCmsEditPage> {
     return completer.future;
   }
 
+  /// BUG-251: the confirmation image may also be a PNG / JPG / WebP photo
+  /// (SVG-only forced photos to be wrapped in an SVG, which Safari can't
+  /// draw).
   Future<Uint8List?> _pickSvgFile() async {
     final completer = Completer<Uint8List?>();
-    final input = html.FileUploadInputElement();
+    final input = html.FileUploadInputElement()
+      ..accept = '.svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp';
 
     input.onChange.listen((_) {
       final files = input.files;
@@ -229,7 +234,8 @@ class _ContactUsCmsEditPageState extends State<ContactUsCmsEditPage> {
       }
       final file     = files.first;
       final fileName = file.name.toLowerCase();
-      if (!fileName.endsWith('.svg')) {
+      const allowed = ['.svg', '.png', '.jpg', '.jpeg', '.webp'];
+      if (!allowed.any(fileName.endsWith)) {
         completer.complete(null);
         return;
       }
@@ -486,6 +492,10 @@ class _ContactUsCmsEditPageState extends State<ContactUsCmsEditPage> {
             }
             if (state is ContactUsCmsSaved) {
               setState(() => _isSaving = false);
+              // BUG-197: like every other CMS tab — confirm, then return to
+              // view mode (the editor stayed open with Publish still red).
+              showSuccessToast(context, 'Contact Us page published');
+              GoRouter.of(context).go('/admin/contact-cms');
             }
             if (state is ContactUsCmsError) {
               setState(() => _isSaving = false);
@@ -503,6 +513,7 @@ class _ContactUsCmsEditPageState extends State<ContactUsCmsEditPage> {
             body: Stack(
               children: [
                 AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   contentWidth: 1000.w,
   children: [
                               AppAdminNavbar(

@@ -7,40 +7,12 @@ part of '../../pages/services_main/services_main.dart';
 
 extension _ServicesMainTabs on _ServicesMainPageMasterState {
   // ── Tab bar ──────────────────────────────────────────────────────────────────
+  // BUG-155: shared sub-tab row (same look on every CMS tab).
   Widget _buildTabBar() {
-    return Row(
-      children: List.generate(_statusLabels.length, (i) {
-        final isActive = _statusIndex == i;
-        return Padding(
-          padding: EdgeInsets.only(right: 24.w),
-          child: GestureDetector(
-            onTap: () => setState(() => _statusIndex = i),
-            child: IntrinsicWidth(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // BUG-155: same 6.h gap as About Us / Careers sub-tabs.
-                  Padding(
-                    padding: EdgeInsets.only(bottom: 6.h),
-                    child: Text(
-                      _statusLabels[i],
-                      style: TextStyle(
-                        fontSize: 15.sp,
-                        fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                        color: isActive ? ColorPick.primary : AppColors.secondaryText,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    height: 2,
-                    color: isActive ? ColorPick.primary : Colors.transparent,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      }),
+    return CmsSubTabs(
+      labels: _statusLabels,
+      activeIndex: _statusIndex,
+      onTap: (i) => setState(() => _statusIndex = i),
     );
   }
 
@@ -150,12 +122,15 @@ extension _ServicesMainTabs on _ServicesMainPageMasterState {
           _ => <BlogPostModel>[],
         };
 
+        // BUG-92: removed reads live only in "Removed" (same rule as the
+        // Job Listing "All" tab, BUG-269).
+        final livePosts = allPosts.where((p) => p.status != 'removed').toList();
         int _count(_PostStatus s) => s == _PostStatus.all
-            ? allPosts.length
+            ? livePosts.length
             : allPosts.where((p) => p.status == s.statusKey).length;
 
         List<BlogPostModel> filtered = _activeFilter == _PostStatus.all
-            ? allPosts
+            ? livePosts
             : allPosts.where((p) => p.status == _activeFilter.statusKey).toList();
 
         if (_searchQuery.isNotEmpty) {

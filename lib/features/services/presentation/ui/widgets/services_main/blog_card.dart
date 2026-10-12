@@ -27,13 +27,20 @@ class _BlogCard extends StatelessWidget {
     _           => 'Draft',
   };
 
+  // BUG-196: "Inactive Since <posting date>" / "Started Since …" used the
+  // POSTING date. A changed status now shows the date it changed, and a
+  // draft says "Draft since" ("Started" was unclear).
   String get _datePrefix => switch (post.status) {
     'published' => 'Posted:',
-    'inactive'  => 'Inactive Since',
-    'draft'     => 'Started Since',
-    'removed'   => 'Removed On',
+    'inactive'  => 'Inactive since',
+    'draft'     => 'Draft since',
+    'removed'   => 'Removed on',
     _           => '',
   };
+
+  DateTime? get _cardDate => post.status == 'published'
+      ? post.createdAt
+      : (post.statusChangedAt ?? post.createdAt);
 
   String _fmtDate(DateTime? d) {
     if (d == null) return '—';
@@ -87,7 +94,7 @@ class _BlogCard extends StatelessWidget {
                       ),
                       Flexible(
                         child: Text(
-                          _fmtDate(post.createdAt),
+                          _fmtDate(_cardDate), // BUG-196
                           style: StyleText.fontSize10Weight400
                               .copyWith(color: AppColors.text),
                           overflow: TextOverflow.ellipsis,

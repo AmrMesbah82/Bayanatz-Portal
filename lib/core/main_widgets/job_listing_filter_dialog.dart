@@ -110,8 +110,8 @@ const _kLocations = [
   {'key': 'remote', 'value': 'Remote (Worldwide)'},
 ];
 const _kEmpTypes = [
-  {'key': 'full_time',  'value': 'Full-Time'},
-  {'key': 'part_time',  'value': 'Part-Time'},
+  {'key': 'full_time',  'value': 'Full Time'} /* BUG-157 */,
+  {'key': 'part_time',  'value': 'Part Time'} /* BUG-157 */,
 ];
 // BUG-43: the same Experience Levels as the job form (the filter offered
 // year ranges that don't exist on jobs).

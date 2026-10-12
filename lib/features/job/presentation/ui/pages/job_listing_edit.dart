@@ -13,6 +13,7 @@
 
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/main_widgets/admin_back_link.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_switch/flutter_switch.dart';
@@ -327,7 +328,8 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
         {
           'name': TextEditingController(text: 'Cover Letter'),
           'nameAr': TextEditingController(text: 'خطاب التغطية'), // BUG-34
-          'type': 'PDF',
+          // BUG-207: Figma Apply form — Cover Letter is a link field.
+          'type': 'Link',
           'required': true,
         },
       ]);
@@ -439,7 +441,8 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
         {
           'name': TextEditingController(text: 'Cover Letter'),
           'nameAr': TextEditingController(text: 'خطاب التغطية'), // BUG-34
-          'type': 'PDF',
+          // BUG-207: Figma Apply form — Cover Letter is a link field.
+          'type': 'Link',
           'required': true,
         },
       ]);
@@ -507,6 +510,7 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
     await context.read<JobListingCubit>().removeJob(_editingJobId!);
     if (!mounted) return;
     setState(() => _isSaving = false);
+    showSuccessToast(context, 'Job post removed'); // BUG-293
     // Back past the edit page and the detail page.
     Navigator.of(context).pop();
     Navigator.of(context).pop();
@@ -531,12 +535,7 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
         .updateJobStatus(_editingJobId!, JobStatus.inactive);
     if (!mounted) return;
     setState(() => _isSaving = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Job restored (inactive)'),
-        backgroundColor: Color(0xFF008037),
-      ),
-    );
+    showSuccessToast(context, 'Job restored (inactive)'); // BUG-293
     Navigator.of(context).pop();
   }
 
@@ -554,12 +553,7 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
     await context.read<JobListingCubit>().deleteJob(_editingJobId!);
     if (!mounted) return;
     setState(() => _isSaving = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Job deleted'),
-        backgroundColor: Color(0xFF008037),
-      ),
-    );
+    showSuccessToast(context, 'Job deleted'); // BUG-293
     // Back past the edit page and the (now deleted) job's detail page.
     final nav = Navigator.of(context);
     nav.pop();
@@ -581,7 +575,7 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
     ];
 
     return JobPostModel(
-      id: _editingJobId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      id: _editingJobId ?? newJobItemId(),
       unsetFields: unset,
       title: BilingualTextJob(en: _titleEn.text.trim(), ar: _titleAr.text.trim()),
       department: _department ?? '',
@@ -591,7 +585,8 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
       employmentType: EmploymentTypeExt.fromString(
         _employmentType ?? 'Full Time',
       ),
-      employmentDurationText: _durationText.text,
+      employmentDurationText:
+          _durationType == 'Open' ? '' : _durationText.text, // BUG-216
       employmentDurationType: EmploymentDurationExt.fromString(
         _durationType ?? 'Open',
       ),
@@ -613,7 +608,7 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
               s['ar']!.text.trim().isNotEmpty)
           .map(
             (s) => SkillItem(
-          id: '${DateTime.now().millisecondsSinceEpoch}_${s.hashCode}',
+          id: newJobItemId(), // BUG-240: unique per row
           name: BilingualTextJob(
               en: s['en']!.text.trim(), ar: s['ar']!.text.trim()),
         ),
@@ -631,7 +626,7 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
       benefits: _benefits
           .map(
             (b) => BenefitItem(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          id: newJobItemId(), // BUG-240: unique per row
           title: BilingualTextJob(
             en: b['titleEn']!.text,
             ar: b['titleAr']!.text,
@@ -649,7 +644,7 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
       requiredDocuments: _requiredDocs
           .map(
             (d) => RequiredDocument(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          id: newJobItemId(), // BUG-240: unique per row
           name: (d['name'] as TextEditingController).text,
           nameAr: (d['nameAr'] as TextEditingController).text,
           docType: DocTypeExt.fromString(d['type'] as String? ?? 'PDF'),
@@ -737,7 +732,8 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
         _workType != null &&
         (_workType == 'Remotely' || _jobLocation != null) &&
         _employmentType != null &&
-        filled(_durationText) &&
+        // BUG-216: "Open" has no number.
+        (_durationType == 'Open' || filled(_durationText)) &&
         _durationType != null &&
         _experienceLevel != null &&
         filled(_salaryMin) && filled(_salaryMax) &&
@@ -812,15 +808,22 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
     }
 
     final bool isEdit = _editingJobId != null;
+    // BUG-280: a job whose hiring starts later is SCHEDULED — don't promise
+    // it will be visible "immediately".
+    final bool scheduled =
+        _hiringStart != null && _day(_hiringStart!).isAfter(_today);
+    final String when = scheduled
+        ? 'on ${DateFormat('d MMM yyyy').format(_hiringStart!)}'
+        : 'immediately';
     final confirmed = await CustomDialogManager.showConfirm(
       context: context,
       title: isEdit ? 'SAVE JOB POST' : 'NEW JOB POSTING',
       message: isEdit
           ? 'Your changes will be applied to this job post and shown to '
-              'applicants immediately. Please ensure all details are accurate '
+              'applicants $when. Please ensure all details are accurate '
               'before confirming.'
           : 'You are about to publish a new job opportunity. This action will '
-              'make the post visible to applicants immediately. Please ensure all '
+              'make the post visible to applicants $when. Please ensure all '
               'details are accurate before confirming.',
       confirmText: isEdit ? 'Save' : 'Submit',
     );
@@ -974,8 +977,10 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
         body: Stack(
           children: [
             AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   children: [
-                    SizedBox(height: 20.h),
+                    // BUG-286: no spacer ABOVE the header (it sat 24 px lower
+                    // than on every other page).
                     AppAdminNavbar(
                       activeLabel: 'Job Listing',
                       homePage: CareersMainPageDashboard(),
@@ -988,11 +993,15 @@ class _JobListingEditPageState extends State<JobListingEditPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // BUG-298: same back link as About Company.
+                          const AdminBackLink(parentLabel: 'Job Listing', parentRoute: '/jobs'),
                           Text(
                             isEdit
                                 ? 'Editing Job Post Details'
                                 : 'Create New Job Post',
-                            style: StyleText.fontSize24Weight600.copyWith(
+                            // BUG-286: same title size as every admin page
+                            // (was ≈30 % smaller).
+                            style: StyleText.fontSize28Weight600.copyWith(
                               color: ColorPick.primary,
                               fontWeight: FontWeight.w700,
                             ),

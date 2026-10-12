@@ -200,7 +200,7 @@ class _AboutCompanyMainPageState extends State<AboutCompanyMainPage> {
           SizedBox(height: 16.h),
           _readFieldRtl(
             'عن الشركة',
-            data.aboutAr.isEmpty ? 'ادخل النص هنا' : data.aboutAr,
+            data.aboutAr.isEmpty ? 'أدخل النص هنا' /* BUG-173 */ : data.aboutAr,
           ),
         ],
       ),

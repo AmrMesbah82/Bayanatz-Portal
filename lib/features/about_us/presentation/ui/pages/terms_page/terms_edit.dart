@@ -537,6 +537,7 @@ class _TermsEditPageState extends State<TermsEditPage> {
               SizedBox(
                 width: double.infinity,
                 child: AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   contentWidth: 1000.w,
   children: [
                         AppAdminNavbar(
@@ -572,7 +573,7 @@ class _TermsEditPageState extends State<TermsEditPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Editing Terms of Service Details',
+          'Editing Terms and Conditions Details',
           style: StyleText.fontSize45Weight600.copyWith(
               color: ColorPick.primary, fontWeight: FontWeight.w700),
         ),

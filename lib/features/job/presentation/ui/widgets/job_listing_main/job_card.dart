@@ -7,16 +7,9 @@ class _JobCard extends StatelessWidget {
 
   const _JobCard({required this.job, required this.logoUrl, this.onTap});
 
-  Color get _statusTextColor {
-    switch (job.status) {
-      case JobStatus.active:    return const Color(0xFF008037);
-      case JobStatus.inactive:  return const Color(0xFFFF9800);
-      case JobStatus.ended:     return const Color(0xFFD32F2F);
-      case JobStatus.scheduled: return const Color(0xFFFF9800);
-      case JobStatus.drafted:   return const Color(0xFF757575);
-      case JobStatus.removed:   return const Color(0xFFD32F2F);
-    }
-  }
+  // BUG-295: shared status colours (Inactive and Scheduled were the same
+  // orange here).
+  Color get _statusTextColor => JobStatusStyle.color(job.status);
 
   Color get _bottomBarColor {
     switch (job.status) {
@@ -119,15 +112,21 @@ class _JobCard extends StatelessWidget {
                         // BUG-44: user text is shown exactly as typed (no
                         // auto Title-Case), and it truncates BEFORE the status
                         // badge instead of running underneath it.
-                        child: Text(
-                          job.displayTitle,
-                          style: StyleText.fontSize15Weight600.copyWith(
-                            fontSize: 15.sp,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF333333),
+                        // BUG-303: long titles wrap to 2 lines and the full
+                        // title shows on hover (was cut at ≈190 px).
+                        child: Tooltip(
+                          message: job.displayTitle,
+                          waitDuration: const Duration(milliseconds: 400),
+                          child: Text(
+                            job.displayTitle,
+                            style: StyleText.fontSize15Weight600.copyWith(
+                              fontSize: 15.sp,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF333333),
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       SizedBox(width: 8.w),
@@ -151,14 +150,14 @@ class _JobCard extends StatelessWidget {
                           job.workType != WorkType.remote)
                         _svgTag(_Svg.calendar, job.location.trim()),
                       if (!job.isUnset('workType'))
-                        _svgTag(_workTypeSvg(), job.workType.label),
+                        _svgTag(_workTypeSvg(), job.workType.displayLabel), // BUG-157
                       if (!job.isUnset('experienceLevel'))
                         _svgTag(_Svg.yearsExp, job.experienceLevel.label),
                       if (job.salaryMax > 0)
                         _svgTag(
                           _Svg.calendar,
                           // BUG-44: salary with its currency.
-                          '${job.salaryMin.toInt()} - ${job.salaryMax.toInt()} ${job.salaryCurrency}',
+                          job.salaryDisplay, // BUG-304
                         ),
                     ],
                   ),
@@ -256,7 +255,7 @@ class _JobCard extends StatelessWidget {
         ),
         padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
         child: Text(
-          job.status.label,
+          job.status.displayLabel, // BUG-279: "Draft", not "Drafted"
           style: StyleText.fontSize13Weight600.copyWith(
             fontSize: 13.sp,
             fontWeight: FontWeight.w600,

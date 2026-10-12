@@ -34,6 +34,10 @@ class CustomDropdownFormFieldInvMaster extends StatelessWidget {
   final bool showColorDots;
   final double borderRadius;
 
+  /// BUG-290: error message shown under the dropdown with a red border —
+  /// the same error state as CustomTextField (was a separate small Text).
+  final String? errorText;
+
   /// Overrides the label style so a screen can align dropdown labels with the
   /// labels of its text fields. Defaults to the legacy 14sp / w400 style.
   final TextStyle? labelStyle;
@@ -59,6 +63,7 @@ class CustomDropdownFormFieldInvMaster extends StatelessWidget {
     this.showColorDots = false,
     this.borderRadius = 4,
     this.labelStyle,
+    this.errorText,
   }) : super(key: key);
 
   Color? _getItemColor(Map<String, String> item) {
@@ -113,7 +118,15 @@ class CustomDropdownFormFieldInvMaster extends StatelessWidget {
       //   vertical: ((fieldHeight - 20) / 2).h,
       // ),
       itemHeight: fieldHeight.h,
-      maxOverlayHeight: 225.h,
+      // BUG-289: same height as the text fields in the same row.
+      fieldHeight: height,
+      // BUG-290: same red border + message as text fields.
+      errorText: errorText,
+      // BUG-301: tall enough for the options (the 10-item Status list
+      // showed a scroll bar); very long lists still scroll.
+      maxOverlayHeight: (dropdownItems.length * fieldHeight.h + 16)
+          .clamp(0, 440.h)
+          .toDouble(),
       valueStyle:
           StyleText.fontSize12Weight400.copyWith(color: AppColors.text),
       hintStyle: StyleText.fontSize12Weight400

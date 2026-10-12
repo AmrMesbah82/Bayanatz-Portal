@@ -4,6 +4,9 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/main_widgets/admin_back_link.dart';
+import 'package:web_app_admin/core/custom_dialog.dart' show confirmDiscard;
+import 'package:web_app_admin/core/main_widgets/admin_layout.dart';
 import '../../../../../core/widget/success_toast.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -134,7 +137,9 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
   }
 
   // ── Discard ───────────────────────────────────────────────────────────────
-  void _onDiscard() => Navigator.pop(context);
+  // BUG-292: ask before throwing the edits away.
+  void _onDiscard() =>
+      confirmDiscard(context, onDiscard: () => Navigator.pop(context));
 
   // ── Save ──────────────────────────────────────────────────────────────────
   void _onSave() {
@@ -257,14 +262,15 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
                     onTap: () => Navigator.of(ctx).pop(),
                     child: Container(
                       height: 44.h,
+                      // BUG-287: light-grey Back, dark text (admin pattern).
                       decoration: BoxDecoration(
-                        color:        ColorPick.back,
+                        color:        const Color(0xFFDCDCDC),
                         borderRadius: BorderRadius.circular(6.r),
                       ),
                       alignment: Alignment.center,
                       child: Text('Back',
-                          style: StyleText.fontSize16Weight500
-                              .copyWith(color: Colors.white)),
+                          style: StyleText.fontSize14Weight600
+                              .copyWith(color: AppColors.text)),
                     ),
                   ),
                 ),
@@ -325,6 +331,7 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
         body: Stack(
           children: [
             AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   children: [
                     AppAdminNavbar(
                       activeLabel:    'Job Listing',
@@ -335,12 +342,14 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
 
                     Padding(
                       padding: EdgeInsets.symmetric(
-                          horizontal: 20.w, vertical: 0.h),
+                          horizontal: 20.w, vertical: 20.h) /* BUG-286: same title position as every page */,
                       child: SizedBox(
                         width: 1000.w,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // BUG-298: same back link as About Company.
+                            const AdminBackLink(parentLabel: 'Department Details', parentRoute: '/jobs/departments'),
                             // ── Title ──
                             Text(
                               'Editing Department Details',
@@ -363,7 +372,7 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
                                       color:        ColorPick.red,
                                       borderRadius: BorderRadius.circular(4.r),
                                     ),
-                                    child: Text('Remove',
+                                    child: Text('Delete', /* BUG-157: matches DELETE DEPARTMENT */
                                         style: TextStyle(
                                             fontSize:   12.sp,
                                             fontWeight: FontWeight.w600,
@@ -402,7 +411,7 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
                                     ),
                                   ),
                                 ),
-                                SizedBox(width: 300.w),
+                                AdminButtonGap(desktop: 300), // BUG-265
                                 Expanded(
                                   child: GestureDetector(
                                     onTap: _isSaving ? null : _onSave,
@@ -526,7 +535,7 @@ class _DepartmentEditPageState extends State<DepartmentEditPage> {
                   textDirection: TextDirection.rtl,
                   child: CustomValidatedTextFieldMaster(
                     label:         'اسم القسم',
-                    hint:          'ادخل النص هنا',
+                    hint:          'أدخل النص هنا' /* BUG-173 */,
                     controller:    _nameArController,
                     onChanged: (_) {
                       if (_nameArError != null) setState(() => _nameArError = null);

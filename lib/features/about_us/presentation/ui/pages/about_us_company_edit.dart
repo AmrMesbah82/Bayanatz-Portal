@@ -3,6 +3,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/custom_dialog.dart' show confirmDiscard;
+import 'package:web_app_admin/core/main_widgets/admin_layout.dart';
 import '../../../../../core/widget/success_toast.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -79,7 +81,8 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
     super.dispose();
   }
 
-  void _onDiscard() => _leave();
+  // BUG-292: ask before throwing the edits away.
+  void _onDiscard() => confirmDiscard(context, onDiscard: _leave);
 
   /// After a page reload this page can be the only one in the stack (it has
   /// its own URL now — BUG-05), so fall back to its parent route.
@@ -130,6 +133,7 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
       body: Stack(
         children: [
           AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   children: [
                   AppAdminNavbar(
                     activeLabel:    'Job Listing',
@@ -178,7 +182,7 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
                                   width: double.infinity,
                                 ),
                               ),
-                              SizedBox(width: 400.w),
+                              AdminButtonGap(desktop: 400), // BUG-265
                               Expanded(
                                 child: customPublishButton(
                                   title: 'Save',
@@ -274,7 +278,7 @@ class _AboutCompanyEditPageState extends State<AboutCompanyEditPage> {
             textDirection: TextDirection.rtl,
             child: CustomValidatedTextFieldMaster(
               label: 'عن الشركة',
-              hint: 'ادخل النص هنا',
+              hint: 'أدخل النص هنا' /* BUG-173 */,
               controller: _aboutArController,
               height: 80,
               maxLines: 4,

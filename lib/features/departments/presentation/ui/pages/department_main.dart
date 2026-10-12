@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/main_widgets/admin_back_link.dart';
 import '../../../../../core/widget/success_toast.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -115,8 +116,8 @@ class _DepartmentMainPageState extends State<DepartmentMainPage> {
                       webPage:        MainMainPage(),
                       jobListingPage: JobListingMainPage(),
                     ),
-                    SizedBox(height: 20.h),
-
+                    // BUG-286: no extra 20 px here — the title sat 24 px
+                    // lower than on every other page.
                     Padding(
                       padding: EdgeInsets.symmetric(
                           horizontal: AdminLayout.sidePadding(context), vertical: 20.h),
@@ -125,6 +126,8 @@ class _DepartmentMainPageState extends State<DepartmentMainPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // BUG-298: same back link as About Company.
+                            const AdminBackLink(parentLabel: 'Job Listing', parentRoute: '/jobs'),
                             Text(
                               'Our Departments',
                               style: StyleText.fontSize45Weight600.copyWith(
@@ -221,27 +224,30 @@ class _DepartmentMainPageState extends State<DepartmentMainPage> {
           child: IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: List.generate(cols, (colIndex) {
-                final i = start + colIndex;
-                if (i >= depts.length) {
-                  return const Expanded(child: SizedBox());
-                }
-                return Expanded(
-                  child: Padding(
-                    padding:
-                    EdgeInsets.only(right: colIndex < cols - 1 ? 12.w : 0),
-                    child: _DepartmentCard(
-                      department: depts[i],
-                      allJobs:    allJobs,
-                      // ── tap → detail page ──
-                      onTap: () => navigateTo(
-                        context,
-                        DepartmentDetailPage(department: depts[i]),
+              // BUG-300: equal card widths. The gap was padding INSIDE the
+              // first two Expanded cells, so the 3rd card was 12 px wider
+              // (339 · 339 · 351). Gaps are separate boxes now, like the
+              // Job Listing grid.
+              children: [
+                for (int colIndex = 0; colIndex < cols; colIndex++) ...[
+                  if (colIndex > 0) SizedBox(width: 12.w),
+                  if (start + colIndex >= depts.length)
+                    const Expanded(child: SizedBox())
+                  else
+                    Expanded(
+                      child: _DepartmentCard(
+                        department: depts[start + colIndex],
+                        allJobs:    allJobs,
+                        // ── tap → detail page ──
+                        onTap: () => navigateTo(
+                          context,
+                          DepartmentDetailPage(
+                              department: depts[start + colIndex]),
+                        ),
                       ),
                     ),
-                  ),
-                );
-              }),
+                ],
+              ],
             ),
           ),
         );

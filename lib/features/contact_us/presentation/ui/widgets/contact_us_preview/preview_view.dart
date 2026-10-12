@@ -35,9 +35,16 @@ class _PreviewView extends StatelessWidget {
           }
 
           if (state is ContactUsCmsLoaded) {
-            return SingleChildScrollView(
-              child: Column(
+            // BUG-107: the preview had no admin header and sat flush-left —
+            // same pinned top bars as every other CMS preview now.
+            return AdminStickyBody(
                 children: [
+                  AppAdminNavbar(
+                    activeLabel:    'Web Page',
+                    homePage:       CareersMainPageDashboard(),
+                    webPage:        MainMainPage(),
+                    jobListingPage: JobListingMainPage(),
+                  ),
                   SizedBox(height: 20.h),
                   AdminSubNavBar(activeIndex: 4),
                   // BUG-52: a real way back. Pops to the edit form (which
@@ -59,7 +66,6 @@ class _PreviewView extends StatelessWidget {
                     _DesktopPreview(data: state.data),
                   const AppFooter(),
                 ],
-              ),
             );
           }
 

@@ -33,14 +33,51 @@ extension _HomeEditSections2 on _MainEditPageState {
       ),
       SizedBox(height: 8.h),
 
+      // BUG-212: Group Title EN / AR are editable text (like the labels);
+      // the column's link is chosen separately below. Picking a link only
+      // pre-fills titles that are still empty.
       Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            flex: 1,
-            child: CustomDropdown<String>(
+            child: CustomTextField(
               label: 'Group Title',
-              hint: 'Select navigation item',
+              required: true,
+              controller: col['titleEn'] as TextEditingController,
+              hint: 'e.g. Terms of Service',
+              fillColor: Colors.white,
+              height: 36,
+              submitted: _submitted,
+              textDirection: TextDirection.ltr,
+              textAlign: TextAlign.left,
+            ),
+          ),
+          SizedBox(width: 8.w),
+          Expanded(
+            child: Directionality(
+              textDirection: TextDirection.rtl,
+              child: CustomTextField(
+                label: 'عنوان المجموعة',
+                required: true,
+                controller: col['titleAr'] as TextEditingController,
+                hint: 'أدخل النص هنا',
+                fillColor: Colors.white,
+                height: 36,
+                submitted: _submitted,
+                textDirection: TextDirection.rtl,
+                textAlign: TextAlign.right,
+              ),
+            ),
+          ),
+        ],
+      ),
+      SizedBox(height: 10.h),
+      Row(
+        children: [
+          Expanded(
+            child: CustomDropdown<String>(
+              label: 'Group Title Link',
+              hint: 'Select page',
               value: col['route'] as String?,
               items: navDropdownItems
                   .map((m) => DropdownItem<String>(
@@ -49,65 +86,30 @@ extension _HomeEditSections2 on _MainEditPageState {
               onChanged: (val) {
                 setState(() {
                   col['route'] = val;
-                  if (val.isNotEmpty) {
-                    final idx = _navRoutes.indexOf(val);
-                    if (idx != -1) {
-                      (col['titleEn'] as TextEditingController).text =
-                          _navBtns[idx]['nameEn']!.text;
-                      (col['titleAr'] as TextEditingController).text =
-                          _navBtns[idx]['nameAr']!.text;
-                    } else {
-                      // Careers/About sub-tab destination → use bilingual title.
-                      final dest = _kGroupTitleDestinations.firstWhere(
-                        (d) => d['key'] == val,
-                        orElse: () => const <String, String>{},
-                      );
-                      if (dest.isNotEmpty) {
-                        (col['titleEn'] as TextEditingController).text =
-                            dest['value'] ?? '';
-                        (col['titleAr'] as TextEditingController).text =
-                            dest['ar'] ?? '';
-                      }
-                    }
+                  final enCtrl = col['titleEn'] as TextEditingController;
+                  final arCtrl = col['titleAr'] as TextEditingController;
+                  if (val.isEmpty) return;
+                  String en = '', ar = '';
+                  final idx = _navRoutes.indexOf(val);
+                  if (idx != -1) {
+                    en = _navBtns[idx]['nameEn']!.text;
+                    ar = _navBtns[idx]['nameAr']!.text;
                   } else {
-                    (col['titleEn'] as TextEditingController).clear();
-                    (col['titleAr'] as TextEditingController).clear();
+                    final dest = _kGroupTitleDestinations.firstWhere(
+                      (d) => d['key'] == val,
+                      orElse: () => const <String, String>{},
+                    );
+                    en = dest['value'] ?? '';
+                    ar = dest['ar'] ?? '';
                   }
+                  if (enCtrl.text.trim().isEmpty) enCtrl.text = en;
+                  if (arCtrl.text.trim().isEmpty) arCtrl.text = ar;
                 });
               },
             ),
           ),
           SizedBox(width: 8.w),
-          Expanded(
-            flex: 1,
-            child: Directionality(
-              textDirection: TextDirection.rtl,
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    children: [
-                      Text('عنوان المجموعة',
-                          style: StyleText.fontSize14Weight500
-                              .copyWith(color: AppColors.text)),
-                    ],
-                  ),
-                  SizedBox(height: 8.h),
-                  // BUG-67: read-only and now LOOKS read-only (grey); it
-                  // always shows the Arabic name of the chosen menu item.
-                  CustomTextField(
-                    controller: col['titleAr'] as TextEditingController,
-                    readOnly: true,
-                    textAlign: TextAlign.right,
-                    textDirection: TextDirection.rtl,
-                    hint: 'يتبع اسم عنصر القائمة',
-                    fillColor: const Color(0xFFEDEDED),
-                    height: 36,
-                  ),
-                ],
-              ),
-            ),
-          ),
+          const Expanded(child: SizedBox()),
         ],
       ),
       SizedBox(height: 10.h),

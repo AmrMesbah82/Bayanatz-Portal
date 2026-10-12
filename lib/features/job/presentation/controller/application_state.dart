@@ -37,8 +37,9 @@ class ApplicationLoaded extends ApplicationState {
     }
 
     // ── 2. Search query ───────────────────────────────────────────────────
-    if (searchQuery.isNotEmpty) {
-      final q = searchQuery.toLowerCase();
+    // BUG-273: ignore leading / trailing spaces (" " used to match nothing).
+    if (searchQuery.trim().isNotEmpty) {
+      final q = searchQuery.trim().toLowerCase();
       result = result.where((a) {
         return a.fullName.toLowerCase().contains(q) ||
             a.email.toLowerCase().contains(q) ||
@@ -117,6 +118,10 @@ class ApplicationLoaded extends ApplicationState {
   // ── Summary counts ────────────────────────────────────────────────────────
   int get totalCount => filteredApps.length;
 
+  /// BUG-170: "Applied" applications nobody has reviewed yet — they were in
+  /// no counter, so the stage cards did not add up to the total.
+  int get appliedPending =>
+      filteredApps.where((a) => a.status == ApplicationStatus.applied).length;
   int get appliedQualified =>
       filteredApps.where((a) => a.status == ApplicationStatus.qualified).length;
   int get appliedUnqualified =>

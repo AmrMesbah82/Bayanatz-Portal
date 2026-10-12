@@ -64,6 +64,10 @@ class BlogPostModel {
   final List<BlogDescriptionBlock> blocks;
   final DateTime?          createdAt;
 
+  /// BUG-196: when the post last changed status (Inactive / Draft / Removed
+  /// since …). Stored by the repo as a flat `Status_Changed_At` string.
+  final DateTime?          statusChangedAt;
+
   const BlogPostModel({
     required this.id,
     this.status           = 'draft',
@@ -74,6 +78,7 @@ class BlogPostModel {
     required this.descriptionTitle,
     this.blocks           = const [],
     this.createdAt,
+    this.statusChangedAt,
   });
 
   factory BlogPostModel.empty() => BlogPostModel(
@@ -132,9 +137,11 @@ class BlogPostModel {
     BlogBilingualText? question, BlogBilingualText? shortDescription,
     BlogBilingualText? buttonLabel, BlogBilingualText? descriptionTitle,
     List<BlogDescriptionBlock>? blocks, DateTime? createdAt,
+    DateTime? statusChangedAt,
   }) => BlogPostModel(
       id: id ?? this.id, status: status ?? this.status, imageUrl: imageUrl ?? this.imageUrl,
       question: question ?? this.question, shortDescription: shortDescription ?? this.shortDescription,
       buttonLabel: buttonLabel ?? this.buttonLabel, descriptionTitle: descriptionTitle ?? this.descriptionTitle,
-      blocks: blocks ?? this.blocks, createdAt: createdAt ?? this.createdAt);
+      blocks: blocks ?? this.blocks, createdAt: createdAt ?? this.createdAt,
+      statusChangedAt: statusChangedAt ?? this.statusChangedAt);
 }

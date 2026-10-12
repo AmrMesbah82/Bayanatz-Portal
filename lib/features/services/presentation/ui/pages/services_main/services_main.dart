@@ -26,9 +26,11 @@ import 'package:web_app_admin/features/services/presentation/ui/pages/services_m
 import 'package:web_app_admin/features/services/presentation/ui/pages/services_main/services_preview.dart';
 
 import '../../../../../../core/custom/2-custom_textfield.dart';
+import '../../../../../../core/custom_dialog.dart'; // BUG-92: shared confirm dialog
 import '../../../../../../core/custom_svg.dart';
 import '../../../../../../core/main_widgets/admin_sticky_body.dart';
 import '../../../../../../core/main_widgets/admin_sub_navbar.dart';
+import '../../../../../../core/main_widgets/cms_sub_tabs.dart';
 import '../../../../../../core/main_widgets/app_admin_navbar.dart';
 import '../../../../../../core/theme/appcolors.dart';
 import '../../../../../../core/theme/new_theme.dart';

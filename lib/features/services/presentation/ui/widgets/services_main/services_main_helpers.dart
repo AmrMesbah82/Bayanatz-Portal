@@ -32,27 +32,30 @@ extension _ServicesMainHelpers on _ServicesMainPageMasterState {
     ).then((_) => context.read<BlogCubit>().load());
   }
 
+  // BUG-92: "Remove" moves the read to the "Removed" tab (soft delete). Only
+  // a read that is ALREADY removed can be deleted for good. Uses the shared
+  // admin confirmation dialog (was a bare Material AlertDialog).
   Future<void> _confirmDelete(BlogPostModel post) async {
-    final confirmed = await showDialog<bool>(
+    final cubit = context.read<BlogCubit>();
+    final name = post.question.en.isNotEmpty ? '"${post.question.en}"' : 'this read';
+    final bool permanent = post.status == 'removed';
+    await showPublishConfirmDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete Post'),
-        content: Text(
-            'Delete "${post.question.en.isNotEmpty ? post.question.en : 'this post'}"?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          TextButton(
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete')),
-        ],
-      ),
+      title: permanent ? 'DELETE READ PERMANENTLY' : 'REMOVE READ',
+      subtitle: permanent
+          ? 'This permanently deletes $name. This cannot be undone.'
+          : '$name will be hidden from the website and moved to the '
+              '"Removed" tab, where you can restore it.',
+      confirmLabel: permanent ? 'Delete' : 'Remove',
+      backLabel: 'Back',
+      onConfirm: () async {
+        if (permanent) {
+          await cubit.deletePost(post.id);
+        } else {
+          await cubit.removePost(post.id);
+        }
+      },
     );
-    if (confirmed == true && mounted) {
-      await context.read<BlogCubit>().deletePost(post.id);
-    }
   }
 
   // ── Action button ─────────────────────────────────────────────────────────────
@@ -64,7 +67,7 @@ extension _ServicesMainHelpers on _ServicesMainPageMasterState {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 40.h,
+        height: 36.h, // BUG-155: same height as every toolbar button (Post Job)
         padding: EdgeInsets.symmetric(horizontal: 16.w),
         decoration: BoxDecoration(
           color: outlined ? ColorPick.background : ColorPick.primary,

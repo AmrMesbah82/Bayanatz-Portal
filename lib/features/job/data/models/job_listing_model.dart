@@ -3,6 +3,46 @@
 // Created by: Amr Mesbah
 // Purpose: Model for Job Listing CMS — full job post data
 
+import '../../../../core/utils/display_format.dart';
+
+// ── Unique ids (BUG-240) ──────────────────────────────────────────────────────
+// Every row of a job (document, skill, benefit) used to get
+// DateTime.now().millisecondsSinceEpoch as its id — rows created in the same
+// millisecond (e.g. all 4 Required Documents on Publish) shared ONE id.
+int _jobIdSeq = 0;
+
+/// A new id that is unique even when called many times in the same tick.
+String newJobItemId() {
+  _jobIdSeq = (_jobIdSeq + 1) % 100000;
+  return '${DateTime.now().microsecondsSinceEpoch}${_jobIdSeq.toString().padLeft(5, '0')}';
+}
+
+/// BUG-240: older jobs were saved with duplicate row ids — give every
+/// duplicate (or empty) id a fresh one when the job is loaded.
+List<T> _uniqueIds<T>(
+  List<T> items,
+  String Function(T) idOf,
+  T Function(T, String) withId,
+) {
+  final seen = <String>{};
+  return [
+    for (final it in items)
+      if (idOf(it).isEmpty || !seen.add(idOf(it)))
+        (() {
+          final fresh = withId(it, newJobItemId());
+          seen.add(idOf(fresh));
+          return fresh;
+        })()
+      else
+        it,
+  ];
+}
+
+/// BUG-277: every job date is stored as UTC ISO-8601 ("…Z") and shown in
+/// local time. Posted_Date used to be local time without a zone while
+/// Last_Updated_At was UTC.
+String? jobDateToStore(DateTime? d) => d?.toUtc().toIso8601String();
+
 // ── Bilingual text ────────────────────────────────────────────────────────────
 
 class BilingualTextJob {
@@ -41,8 +81,13 @@ extension JobStatusExt on JobStatus {
     }
   }
 
+  /// BUG-279: the name the admin SHOWS — "Draft" (not "Drafted"). [label]
+  /// stays as stored in Firestore.
+  String get displayLabel => this == JobStatus.drafted ? 'Draft' : label;
+
   static JobStatus fromString(String s) {
     switch (s.toLowerCase()) {
+      case 'draft':     return JobStatus.drafted;
       case 'active':    return JobStatus.active;
       case 'inactive':  return JobStatus.inactive;
       case 'ended':     return JobStatus.ended;
@@ -64,6 +109,10 @@ extension WorkTypeExt on WorkType {
       case WorkType.hybrid: return 'Hybrid';
     }
   }
+
+  /// BUG-157: what the admin SHOWS ("Remote", like the dashboard's "Remote
+  /// Jobs"). [label] stays "Remotely" because that is the stored value.
+  String get displayLabel => this == WorkType.remote ? 'Remote' : label;
 
   static WorkType fromString(String s) {
     switch (s.toLowerCase()) {
@@ -177,14 +226,13 @@ class BenefitItem {
   });
 
   factory BenefitItem.empty() => BenefitItem(
-    id: DateTime.now().millisecondsSinceEpoch.toString(),
+    id: newJobItemId(), // BUG-240
     title: const BilingualTextJob(),
     shortDescription: const BilingualTextJob(),
   );
 
   factory BenefitItem.fromMap(Map<String, dynamic> map) => BenefitItem(
-    id: map['id'] as String? ??
-        DateTime.now().millisecondsSinceEpoch.toString(),
+    id: map['id'] as String? ?? newJobItemId(), // BUG-240
     title: BilingualTextJob.fromMap(
         (map['title'] as Map<String, dynamic>?) ?? {}),
     shortDescription: BilingualTextJob.fromMap(
@@ -227,7 +275,7 @@ class RequiredDocument {
   });
 
   factory RequiredDocument.empty({String name = 'Resume'}) => RequiredDocument(
-    id: DateTime.now().millisecondsSinceEpoch.toString(),
+    id: newJobItemId(), // BUG-240
     name: name,
     nameAr: '',
     docType: DocType.pdf,
@@ -236,8 +284,7 @@ class RequiredDocument {
 
   factory RequiredDocument.fromMap(Map<String, dynamic> map) =>
       RequiredDocument(
-        id: map['id'] as String? ??
-            DateTime.now().millisecondsSinceEpoch.toString(),
+        id: map['id'] as String? ?? newJobItemId(), // BUG-240
         name: map['name'] as String? ?? '',
         nameAr: map['nameAr'] as String? ?? '',
         docType: DocTypeExt.fromString(map['docType'] as String? ?? 'pdf'),
@@ -278,13 +325,12 @@ class SkillItem {
   const SkillItem({required this.id, required this.name});
 
   factory SkillItem.empty() => SkillItem(
-    id: DateTime.now().millisecondsSinceEpoch.toString(),
+    id: newJobItemId(), // BUG-240
     name: const BilingualTextJob(),
   );
 
   factory SkillItem.fromMap(Map<String, dynamic> map) => SkillItem(
-    id: map['id'] as String? ??
-        DateTime.now().millisecondsSinceEpoch.toString(),
+    id: map['id'] as String? ?? newJobItemId(), // BUG-240
     name: BilingualTextJob.fromMap(
         (map['name'] as Map<String, dynamic>?) ?? {}),
   );
@@ -401,6 +447,19 @@ class JobPostModel {
 
   bool isUnset(String field) => unsetFields.contains(field);
 
+  /// BUG-172: "12 Months" / "1 Month" / "Open" (was "12 Month").
+  String get durationDisplay {
+    if (isUnset('employmentDurationType')) {
+      return employmentDurationText.trim().isEmpty ? '—' : employmentDurationText.trim();
+    }
+    return DisplayFormat.duration(
+        employmentDurationText, employmentDurationType.label);
+  }
+
+  /// BUG-304: "45,000 – 65,000 EGP" everywhere.
+  String get salaryDisplay =>
+      DisplayFormat.salaryRange(salaryMin, salaryMax, salaryCurrency);
+
   /// Title for display: never a raw id, never empty (BUG-19).
   String get displayTitle =>
       title.en.trim().isNotEmpty
@@ -478,7 +537,7 @@ class JobPostModel {
   });
 
   factory JobPostModel.empty() => JobPostModel(
-    id: DateTime.now().millisecondsSinceEpoch.toString(),
+    id: newJobItemId(),
     title: const BilingualTextJob(),
     requiredDocuments: [
       RequiredDocument.empty(name: 'Resume'),
@@ -508,20 +567,26 @@ class JobPostModel {
       salaryCurrency: map[SALARY_CURRENCY] as String? ?? 'SAR',
       requiredQualification: BilingualTextJob.fromMap(
           (map[REQUIRED_QUALIFICATION] as Map<String, dynamic>?) ?? {}),
-      requiredSkills: ((map[REQUIRED_SKILLS] as List<dynamic>?) ?? [])
-          .whereType<Map<String, dynamic>>()
-          .map((s) => SkillItem.fromMap(s))
-          .toList(),
+      requiredSkills: _uniqueIds<SkillItem>( // BUG-240
+          ((map[REQUIRED_SKILLS] as List<dynamic>?) ?? [])
+              .whereType<Map<String, dynamic>>()
+              .map((s) => SkillItem.fromMap(s))
+              .toList(),
+          (s) => s.id,
+          (s, id) => s.copyWith(id: id)),
       aboutThisPosition: BilingualTextJob.fromMap(
           (map[ABOUT_THIS_POSITION] as Map<String, dynamic>?) ?? {}),
       requirements: BilingualTextJob.fromMap(
           (map[REQUIREMENTS] as Map<String, dynamic>?) ?? {}),
       preferredSkills: BilingualTextJob.fromMap(
           (map[PREFERRED_SKILLS] as Map<String, dynamic>?) ?? {}),
-      benefits: ((map[BENEFITS] as List<dynamic>?) ?? [])
-          .whereType<Map<String, dynamic>>()
-          .map((b) => BenefitItem.fromMap(b))
-          .toList(),
+      benefits: _uniqueIds<BenefitItem>( // BUG-240
+          ((map[BENEFITS] as List<dynamic>?) ?? [])
+              .whereType<Map<String, dynamic>>()
+              .map((b) => BenefitItem.fromMap(b))
+              .toList(),
+          (b) => b.id,
+          (b, id) => b.copyWith(id: id)),
       hiringStartDate: map[HIRING_START_DATE] != null
           ? _asDate(map[HIRING_START_DATE])
           : null,
@@ -530,11 +595,13 @@ class JobPostModel {
           : null,
       // BUG-34: tolerate num/String — a strict `as int?` could lose the value.
       maxApplications: _asInt(map[MAX_APPLICATIONS]),
-      requiredDocuments:
-      ((map[REQUIRED_DOCUMENTS] as List<dynamic>?) ?? [])
-          .whereType<Map<String, dynamic>>()
-          .map((d) => RequiredDocument.fromMap(d))
-          .toList(),
+      requiredDocuments: _uniqueIds<RequiredDocument>( // BUG-240
+          ((map[REQUIRED_DOCUMENTS] as List<dynamic>?) ?? [])
+              .whereType<Map<String, dynamic>>()
+              .map((d) => RequiredDocument.fromMap(d))
+              .toList(),
+          (d) => d.id,
+          (d, id) => d.copyWith(id: id)),
       status: JobStatusExt.fromString(
           map[STATUS] as String? ?? 'drafted'),
       postedDate: map[POSTED_DATE] != null
@@ -565,13 +632,18 @@ class JobPostModel {
     return 0;
   }
 
+  // BUG-277: dates are stored in UTC ("…Z"); always hand back LOCAL time so
+  // day / month based logic (status, "Posted today", pickers) is unchanged.
+  // Old values without a zone are parsed as local, as before.
   static DateTime? _asDate(dynamic v) {
     if (v == null) return null;
-    if (v is DateTime) return v;
-    if (v is String) return v.trim().isEmpty ? null : DateTime.tryParse(v);
+    if (v is DateTime) return v.toLocal();
+    if (v is String) {
+      return v.trim().isEmpty ? null : DateTime.tryParse(v.trim())?.toLocal();
+    }
     if (v is num) return DateTime.fromMillisecondsSinceEpoch(v.toInt());
     try {
-      return (v as dynamic).toDate() as DateTime; // Firestore Timestamp
+      return ((v as dynamic).toDate() as DateTime).toLocal(); // Timestamp
     } catch (_) {
       return null;
     }
@@ -595,14 +667,14 @@ class JobPostModel {
     REQUIREMENTS: requirements.toMap(),
     PREFERRED_SKILLS: preferredSkills.toMap(),
     BENEFITS: benefits.map((b) => b.toMap()).toList(),
-    HIRING_START_DATE: hiringStartDate?.toIso8601String(),
-    HIRING_END_DATE: hiringEndDate?.toIso8601String(),
+    HIRING_START_DATE: jobDateToStore(hiringStartDate), // BUG-277: UTC
+    HIRING_END_DATE: jobDateToStore(hiringEndDate),
     MAX_APPLICATIONS: maxApplications,
     REQUIRED_DOCUMENTS:
     requiredDocuments.map((d) => d.toMap()).toList(),
     STATUS: status.label,
-    POSTED_DATE: postedDate?.toIso8601String(),
-    ENDED_DATE: endedDate?.toIso8601String(),
+    POSTED_DATE: jobDateToStore(postedDate), // BUG-277: UTC
+    ENDED_DATE: jobDateToStore(endedDate),
     TOTAL_APPLICATIONS: totalApplications,
     PUBLISH_STATUS: publishStatus,
     'unsetFields': unsetFields.join(','),

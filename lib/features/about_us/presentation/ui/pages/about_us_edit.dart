@@ -80,6 +80,10 @@ class _AboutEditPageMasterState extends State<AboutEditPageMaster> {
   final _navTitleEnCtrl = TextEditingController();
   final _navTitleArCtrl = TextEditingController();
   Uint8List? _navIconBytes;
+
+  /// BUG-219: an icon / SVG picked on this page is a change on its own — the
+  /// shared "has the user typed anything?" check only sees text fields.
+  bool _imageChanged = false;
   String _navIconUrl = '';
 
   // ── Vision ──
@@ -562,6 +566,7 @@ class _AboutEditPageMasterState extends State<AboutEditPageMaster> {
         return Scaffold(
           backgroundColor: Color(0xFFF1F2ED),
           body: AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   children: [
                   AppAdminNavbar(
                     activeLabel: 'Web Page',

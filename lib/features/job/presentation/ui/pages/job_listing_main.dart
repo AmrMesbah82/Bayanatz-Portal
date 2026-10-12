@@ -10,6 +10,7 @@
 // FIXED: Filter button opens showJobListingFilterDialog + applies result
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/constant/job_status_style.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -43,6 +44,7 @@ import '../../controller/job_listing_state.dart';
 import 'job_listing_detail.dart';
 import 'job_listing_edit.dart';
 import 'package:web_app_admin/core/custom/circle_progress.dart';
+import 'package:web_app_admin/core/widget/empty_lottie.dart'; // QA-Oct11 #24
 
 part '../widgets/job_listing_main/svg.dart';
 part '../widgets/job_listing_main/job_card.dart';
@@ -310,7 +312,8 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
                                           borderRadius: BorderRadius.circular(8.r),
                                         ),
                                         child: Text(
-                                          f,
+                                          // BUG-279: one name per status.
+                                          f == 'Drafted' ? 'Draft' : f,
                                           style: StyleText.fontSize13Weight500.copyWith(
                                             fontSize: 13.sp,
                                             fontWeight: FontWeight.w500,
@@ -404,11 +407,12 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      CustomSvg(
-                                        assetPath: "assets/images/null.svg",
-                                        width: 200.sp,
-                                        height: 200.sp,
-                                        fit: BoxFit.contain,
+                                      // QA-Oct11 #24: the shared no-data
+                                      // Lottie (was a static SVG).
+                                      EmptyLottie(
+                                        size: 200,
+                                        semanticLabel:
+                                            _emptyJobsMessage(activeFilter),
                                       ),
                                       // BUG-03: say WHY the list is empty.
                                       SizedBox(height: 12.h),
@@ -611,10 +615,10 @@ class _JobListingMainPageState extends State<JobListingMainPage> {
                       job: jobs[start + colIndex],
                       // BUG-86: the department's image when it has one.
                       logoUrl: _deptImageFor(jobs[start + colIndex], ''), // '' → header logo
-                      onTap: () => navigateTo(
-                        context,
-                        JobListingDetailPage(jobId: jobs[start + colIndex].id),
-                      ),
+                      // BUG-259: the job page has its own URL (/jobs/<id>)
+                      // so refresh / Back / bookmarks keep the open job.
+                      onTap: () => context.push(
+                          '/jobs/${jobs[start + colIndex].id}'),
                     ),
                   ),
                 ],

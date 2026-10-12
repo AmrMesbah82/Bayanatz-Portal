@@ -12,6 +12,7 @@
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/main_widgets/admin_back_link.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -20,6 +21,7 @@ import 'package:web_app_admin/core/custom_svg.dart';
 import 'package:web_app_admin/core/widget/format.dart';
 import 'package:web_app_admin/core/widget/custom_dropdwon.dart';
 import 'package:web_app_admin/core/widget/textfield.dart';
+import 'package:web_app_admin/core/widget/success_toast.dart';
 
 import '../../../../../core/constant/color.dart';
 import '../../../../../core/main_widgets/admin_sticky_body.dart';
@@ -121,22 +123,44 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
     }
   }
 
+  // BUG-264: a typed 6 used to be silently turned into 5, "-1" into 1, and
+  // empty / 0 fields were saved as 0 and COUNTED (score 44 % / 20 %). Now
+  // only whole numbers 1–5 are accepted (anything else shows an error and
+  // blocks Save), an empty field means "not scored", and the score is the
+  // average of the criteria that were actually scored.
   void _onScoreChanged(TextEditingController c) {
-    final v = int.tryParse(c.text);
-    if (v != null && v > 5) {
-      c.text = '5';
-      c.selection = TextSelection.collapsed(offset: c.text.length);
-    }
     if (mounted) setState(() {});
   }
 
-  /// Sum of the five 1–5 degrees (max 25).
-  int get _scoreTotal =>
-      _scoreCtrls.fold(0, (sum, c) => sum + (int.tryParse(c.text) ?? 0));
+  String? _scoreError(TextEditingController c) {
+    final t = c.text.trim();
+    if (t.isEmpty) return null;
+    final v = int.tryParse(t);
+    if (v == null || v < 1 || v > 5) return 'Enter a whole number from 1 to 5.';
+    return null;
+  }
 
-  /// Percentage out of 100 — e.g. 25/25 → 100%.
-  String get _scorePercent =>
-      _scoreTotal > 0 ? '${(_scoreTotal / 25 * 100).round()}%' : '—';
+  bool get _scoresValid => _scoreCtrls.every((c) => _scoreError(c) == null);
+
+  List<int> get _scoredValues => [
+        for (final c in _scoreCtrls)
+          if (_scoreError(c) == null && c.text.trim().isNotEmpty)
+            int.parse(c.text.trim()),
+      ];
+
+  /// Average of the scored criteria as a percentage — e.g. one criterion
+  /// scored 5 → 100 %, not 20 %.
+  String get _scorePercent {
+    final v = _scoredValues;
+    if (v.isEmpty) return '—';
+    final sum = v.fold<int>(0, (a, b) => a + b);
+    return '${(sum / (v.length * 5) * 100).round()}%';
+  }
+
+  int _scoreOf(TextEditingController c) {
+    final v = int.tryParse(c.text.trim());
+    return (v != null && v >= 1 && v <= 5) ? v : 0; // 0 = not scored
+  }
 
   void _seedControllers(ApplicationModel app) {
     if (_didLoad) return;
@@ -197,7 +221,7 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
               ),
               SizedBox(height: 12.h),
               Text(
-                'Are you sure you want to change this Submissions status from ${app.status.label} to ${newStatus.label}?',
+                "Are you sure you want to change this application's status from ${app.status.label} to ${newStatus.label}?" /* BUG-280 */,
                 textAlign: TextAlign.center,
                 style: StyleText.fontSize13Weight400.copyWith(
                   fontSize: 13.sp,
@@ -233,13 +257,18 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
                   SizedBox(width: 16.w),
                   Expanded(
                     child: GestureDetector(
-                      onTap: () {
+                      onTap: () async {
                         Navigator.of(ctx).pop();
-                        context.read<ApplicationCubit>().updateStatus(
+                        await context.read<ApplicationCubit>().updateStatus(
                           app.jobId,
                           app.id,
                           newStatus,
                         );
+                        // BUG-293: every save confirms itself.
+                        if (mounted) {
+                          showSuccessToast(
+                              context, 'Status changed to ${newStatus.label}');
+                        }
                       },
                       child: Container(
                         height: 44.h,
@@ -272,15 +301,23 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
   // ── Save scoring ───────────────────────────────────────────────────────────
   Future<void> _saveScoring() async {
     if (_currentApp == null) return;
+    // BUG-264: never save an invalid score.
+    if (!_scoresValid) {
+      showSuccessToast(context, 'Scores must be whole numbers from 1 to 5.',
+          isError: true);
+      setState(() {});
+      return;
+    }
     setState(() => _isSaving = true);
 
     final updated = _currentApp!.copyWith(
       tag: _selectedTag ?? '',
-      technicalSkills: int.tryParse(_technicalCtrl.text) ?? 0,
-      communicationSkills: int.tryParse(_communicationCtrl.text) ?? 0,
-      experienceBackground: int.tryParse(_experienceCtrl.text) ?? 0,
-      cultureFit: int.tryParse(_cultureFitCtrl.text) ?? 0,
-      leadershipPotential: int.tryParse(_leadershipCtrl.text) ?? 0,
+      // 0 = "not scored" (empty field) — excluded from every average.
+      technicalSkills: _scoreOf(_technicalCtrl),
+      communicationSkills: _scoreOf(_communicationCtrl),
+      experienceBackground: _scoreOf(_experienceCtrl),
+      cultureFit: _scoreOf(_cultureFitCtrl),
+      leadershipPotential: _scoreOf(_leadershipCtrl),
       comments: _commentsCtrl.text,
     );
 
@@ -288,9 +325,8 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
 
     if (mounted) {
       setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Scoring saved successfully')),
-      );
+      // BUG-293: the shared success toast (was a grey full-width bar).
+      showSuccessToast(context, 'Scoring saved');
     }
   }
 
@@ -335,21 +371,22 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
           {'key': 'qualified', 'value': 'Qualified'},
           {'key': 'unqualified', 'value': 'Unqualified'},
         ];
+      // BUG-209: the next steps name their stage ("Interview: Passed").
       case ApplicationStatus.qualified:
         return [
-          {'key': 'passed', 'value': 'Passed'},
-          {'key': 'failed', 'value': 'Failed'},
-          {'key': 'withdrew', 'value': 'Withdrew'},
+          {'key': 'passed', 'value': 'Interview: Passed'},
+          {'key': 'failed', 'value': 'Interview: Failed'},
+          {'key': 'withdrew', 'value': 'Interview: Withdrew'},
         ];
       case ApplicationStatus.interviewPassed:
         return [
-          {'key': 'approved', 'value': 'Approved'},
-          {'key': 'rejected', 'value': 'Rejected'},
+          {'key': 'approved', 'value': 'Offer: Approved'},
+          {'key': 'rejected', 'value': 'Offer: Rejected'},
         ];
       case ApplicationStatus.offerApproved:
       case ApplicationStatus.offerPending:
         return [
-          {'key': 'completed', 'value': 'Completed'},
+          {'key': 'completed', 'value': 'Hired: Completed'},
         ];
       default:
         return [];
@@ -379,24 +416,9 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
     }
   }
 
-  String _getDropdownHint(ApplicationStatus status) {
-    if (_isStoppedStatus(status) || status == ApplicationStatus.hired) {
-      return status.label;
-    }
-    switch (status) {
-      case ApplicationStatus.applied:
-        return 'Applied';
-      case ApplicationStatus.qualified:
-        return 'Interview';
-      case ApplicationStatus.interviewPassed:
-        return 'Offer';
-      case ApplicationStatus.offerApproved:
-      case ApplicationStatus.offerPending:
-        return 'Hired';
-      default:
-        return 'Select';
-    }
-  }
+  // BUG-209: the box shows the CURRENT status (it said "Interview" right
+  // after choosing "Qualified"); the next steps are in the list.
+  String _getDropdownHint(ApplicationStatus status) => status.label;
 
   List<Widget> _buildCompletedStageChips(ApplicationStatus status) {
     final List<Widget> chips = [];
@@ -563,6 +585,8 @@ class _ApplicationDetailPageState extends State<ApplicationDetailPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                // BUG-298: same back link as About Company.
+                                const AdminBackLink(parentLabel: 'Applications', parentRoute: '/applications'),
                                 // ── Title ──
                                 Text(
                                   'Applications',

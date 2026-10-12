@@ -16,6 +16,7 @@
 ///          SitePreviewScope.
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/main_widgets/admin_layout.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -219,7 +220,7 @@ class _MainPreviewPageState extends State<MainPreviewPage> {
                                     // opened from "Preview Screen" — see
                                     // MainPreviewPage.showPublish.
                                     if (widget.showPublish) ...[
-                                    SizedBox(width: 400.w),
+                                    AdminButtonGap(desktop: 400), // BUG-265
                                     Expanded(
                                       child: GestureDetector(
                                         onTap: _isSaving

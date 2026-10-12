@@ -77,8 +77,8 @@ const _kScore = [
   {'key': 'weak',     'value': 'Weak'},
 ];
 const _kEmpTypes = [
-  {'key': 'full_time',  'value': 'Full-Time'},
-  {'key': 'part_time',  'value': 'Part-Time'},
+  {'key': 'full_time',  'value': 'Full Time'} /* BUG-157 */,
+  {'key': 'part_time',  'value': 'Part Time'} /* BUG-157 */,
   {'key': 'contract',   'value': 'Contract'},
   {'key': 'internship', 'value': 'Internship'},
   {'key': 'freelance',  'value': 'Freelance'},

@@ -250,10 +250,8 @@ class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
           // !_debugDuringDeviceUpdate assertion on Flutter web debug).
           Future.delayed(Duration.zero, () {
             if (mounted) {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const HomeMainPageMaster()),
-                (route) => false,
-              );
+              // BUG-276: back to the view URL (/admin/home-page).
+              GoRouter.of(context).go('/admin/home-page');
             }
           });
         }
@@ -295,10 +293,8 @@ class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
           // !_debugDuringDeviceUpdate assertion on Flutter web debug).
           Future.delayed(Duration.zero, () {
             if (mounted) {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const HomeMainPageMaster()),
-                (route) => false,
-              );
+              // BUG-276: back to the view URL (/admin/home-page).
+              GoRouter.of(context).go('/admin/home-page');
             }
           });
         }
@@ -309,10 +305,8 @@ class _HomeEditPageMasterState extends State<HomeEditPageMaster> {
           // !_debugDuringDeviceUpdate assertion on Flutter web debug).
           Future.delayed(Duration.zero, () {
             if (mounted) {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const HomeMainPageMaster()),
-                (route) => false,
-              );
+              // BUG-276: back to the view URL (/admin/home-page).
+              GoRouter.of(context).go('/admin/home-page');
             }
           });
         }

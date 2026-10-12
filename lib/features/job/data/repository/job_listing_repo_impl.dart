@@ -160,7 +160,7 @@ class JobListingRepoImp implements JobListingRepo {
       // Partial update — writeVersioned appends only these changed fields.
       await FlatCodec.writeVersioned(_collection.doc(id), {
         'status': JobStatus.removed.label,
-        'endedDate': DateTime.now().toIso8601String(),
+        'endedDate': jobDateToStore(DateTime.now()), // BUG-277: UTC
       }, scalars: {publicFlag: false});
     } catch (e) {
       rethrow;
@@ -176,10 +176,10 @@ class JobListingRepoImp implements JobListingRepo {
     try {
       final Map<String, dynamic> data = {'status': status.label};
       if (status == JobStatus.ended || status == JobStatus.removed || status == JobStatus.inactive) {
-        data['endedDate'] = DateTime.now().toIso8601String();
+        data['endedDate'] = jobDateToStore(DateTime.now()); // BUG-277: UTC
       }
       if (status == JobStatus.active) {
-        data['postedDate'] = DateTime.now().toIso8601String();
+        data['postedDate'] = jobDateToStore(DateTime.now()); // BUG-277: UTC
       }
       // Partial update — writeVersioned appends only these changed fields.
       await FlatCodec.writeVersioned(_collection.doc(id), data,

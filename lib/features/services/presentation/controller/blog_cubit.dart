@@ -50,7 +50,7 @@ class BlogCubit extends Cubit<BlogState> {
 
       // Upload image if provided
       if (imageBytes != null) {
-        final path = 'blog_images/${DateTime.now().millisecondsSinceEpoch}.svg';
+        final path = 'blog_images/${DateTime.now().millisecondsSinceEpoch}.${_ext(imageBytes)}';
         imageUrl = await _repo.uploadImage(bytes: imageBytes, storagePath: path);
       }
 
@@ -91,7 +91,7 @@ class BlogCubit extends Cubit<BlogState> {
 
       // Upload image if provided
       if (imageBytes != null) {
-        final path = 'blog_images/${post.id}_${DateTime.now().millisecondsSinceEpoch}.svg';
+        final path = 'blog_images/${post.id}_${DateTime.now().millisecondsSinceEpoch}.${_ext(imageBytes)}';
         imageUrl = await _repo.uploadImage(bytes: imageBytes, storagePath: path);
       }
 
@@ -163,7 +163,17 @@ class BlogCubit extends Cubit<BlogState> {
     }
   }
 
-  // ── Delete post ───────────────────────────────────────────────────────────
+  // ── Remove post (BUG-92: soft delete → "Removed" tab) ─────────────────────
+  Future<void> removePost(String id) async {
+    try {
+      await _repo.removePost(id);
+      await load(); // Refresh list
+    } catch (e) {
+      emit(BlogError(e.toString()));
+    }
+  }
+
+  // ── Delete post permanently (only offered for an already-removed post) ────
   Future<void> deletePost(String id) async {
     try {
       await _repo.deletePost(id);
@@ -171,5 +181,14 @@ class BlogCubit extends Cubit<BlogState> {
     } catch (e) {
       emit(BlogError(e.toString()));
     }
+  }
+
+  /// BUG-251: keep the real file type in the Storage name (PNG / JPG / WebP
+  /// photos are allowed now, not only SVG).
+  static String _ext(List<int> b) {
+    if (b.length >= 4 && b[0] == 0x89 && b[1] == 0x50) return 'png';
+    if (b.length >= 3 && b[0] == 0xFF && b[1] == 0xD8) return 'jpg';
+    if (b.length >= 12 && b[0] == 0x52 && b[1] == 0x49 && b[8] == 0x57 && b[9] == 0x45) return 'webp';
+    return 'svg';
   }
 }

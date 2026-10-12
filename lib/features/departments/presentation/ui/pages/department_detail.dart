@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/main_widgets/admin_back_link.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -84,56 +85,59 @@ class _DepartmentDetailPageState extends State<DepartmentDetailPage> {
               ),
 
               Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 0.h),
+                padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 20.h) /* BUG-286: same title position as every page */,
                 child: SizedBox(
                   width: 1000.w,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // ── Title ──
-                      Text(
-                        'Department Details',
-                        style: StyleText.fontSize45Weight600.copyWith(
-                          color: ColorPick.primary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      SizedBox(height: 16.h),
-
-                      // ── Edit button (same style as Main page) ──
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: GestureDetector(
-                          onTap: _goToEdit,
-                          child: Container(
-                            width: 130.w, height: 36.h,
-                            decoration: BoxDecoration(
-                              color: ColorPick.white,
-                              borderRadius: BorderRadius.circular(4.r),
-                            ),
-                            child: Center(
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    'Edit Details',
-                                    style: StyleText.fontSize14Weight500
-                                        .copyWith(color: Colors.black),
-                                  ),
-                                  SizedBox(width: 6.w),
-                                  CustomSvg(
-                                    assetPath: 'assets/control/edit_icon_pick.svg',
-                                    width: 20.w, height: 20.h,
-                                    fit: BoxFit.scaleDown,
-                                    color: ColorPick.primary,
-                                  ),
-                                ],
+                      // BUG-298: same back link as About Company.
+                      const AdminBackLink(parentLabel: 'Our Departments', parentRoute: '/jobs/departments'),
+                      // ── Title + Edit (BUG-299: Edit sits on the title row,
+                      // same position as About Company / Main page) ──
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Department Details',
+                              style: StyleText.fontSize45Weight600.copyWith(
+                                color: ColorPick.primary,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
-                        ),
+                          GestureDetector(
+                            onTap: _goToEdit,
+                            child: Container(
+                              width: 130.w, height: 36.h,
+                              decoration: BoxDecoration(
+                                color: ColorPick.white,
+                                borderRadius: BorderRadius.circular(4.r),
+                              ),
+                              child: Center(
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Edit Details',
+                                      style: StyleText.fontSize14Weight500
+                                          .copyWith(color: Colors.black),
+                                    ),
+                                    SizedBox(width: 6.w),
+                                    CustomSvg(
+                                      assetPath: 'assets/control/edit_icon_pick.svg',
+                                      width: 20.w, height: 20.h,
+                                      fit: BoxFit.scaleDown,
+                                      color: ColorPick.primary,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      SizedBox(height: 20.h),
+                      SizedBox(height: 16.h),
 
                       // ── Accordion card ──
                       CustomAccordion(

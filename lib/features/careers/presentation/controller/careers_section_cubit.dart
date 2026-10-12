@@ -100,6 +100,15 @@ class CareersSectionCubit extends Cubit<CareersSectionState> {
     _model = _model.copyWith(items: updated);
   }
 
+  // ── Clear SVG Image (BUG-211) ───────────────────────────────────────────────
+  void clearSvg(String itemId) {
+    final updated = _model.items.map((item) {
+      if (item.id != itemId) return item;
+      return item.copyWith(svgUrl: '');
+    }).toList();
+    _model = _model.copyWith(items: updated);
+  }
+
   // ── Save ────────────────────────────────────────────────────────────────────
   Future<void> save() async {
     emit(CareersSectionLoading());

@@ -75,6 +75,15 @@ class _ColorPickerFieldState extends State<_ColorPickerField> {
             hint: widget.hintText,
             fillColor: AppColors.card,
             height: 36,
+            // BUG-275: hex only, and say so when the value is not #RRGGBB.
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[#0-9A-Fa-f]')),
+              LengthLimitingTextInputFormatter(7),
+            ],
+            errorText: widget.controller.text.trim().isEmpty ||
+                    _isHexColor(widget.controller.text)
+                ? null
+                : 'Use a hex colour like #008037',
             onChanged: (_) { setState(() {}); widget.onColorChanged?.call(); },
             onTap: _openPicker,
             prefixIcon: Container(

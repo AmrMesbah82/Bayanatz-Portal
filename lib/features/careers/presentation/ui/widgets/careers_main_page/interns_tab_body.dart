@@ -312,7 +312,10 @@ class _InternsTabBodyState extends State<_InternsTabBody> {
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             GestureDetector(
-              onTap: _headerSaving ? null : _cancelHeaderEdit,
+              // BUG-292: ask before dropping the header edits.
+              onTap: _headerSaving
+                  ? null
+                  : () => confirmDiscard(context, onDiscard: _cancelHeaderEdit),
               child: Container(
                 height: 36.h,
                 padding: EdgeInsets.symmetric(horizontal: 20.w),
@@ -478,7 +481,7 @@ class _InternsTabBodyState extends State<_InternsTabBody> {
                   if (picked != null) setState(() => _timeFrame = picked);
                 },
                 child: Container(
-                  height: 40.h,
+                  height: 36.h, // BUG-155: same height as every toolbar button
                   padding: EdgeInsets.symmetric(horizontal: 16.w),
                   decoration: BoxDecoration(
                       color: ColorPick.primary, borderRadius: BorderRadius.circular(6.r)),
@@ -505,7 +508,7 @@ class _InternsTabBodyState extends State<_InternsTabBody> {
                       value: cubit, child: const AddInternPage()),
                 )),
                 child: Container(
-                  height: 40.h,
+                  height: 36.h, // BUG-155: same height as every toolbar button
                   padding: EdgeInsets.symmetric(horizontal: 16.w),
                   decoration: BoxDecoration(
                       color: ColorPick.primary, borderRadius: BorderRadius.circular(6.r)),

@@ -10,6 +10,7 @@ import 'dart:ui' as ui;
 
 import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/main_widgets/admin_layout.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:intl/intl.dart';
@@ -189,6 +190,11 @@ class _AddInternPageState extends State<AddInternPage> {
     if (_firstNameCtrl.text.trim().isEmpty) return false;
     if (_lastNameCtrl.text.trim().isEmpty) return false;
     if (_whatLearnedCtrl.text.trim().isEmpty) return false;
+    // BUG-248: interns are bilingual — the Arabic name and "What have I
+    // learned" are required too (the Arabic site showed English cards).
+    if (_firstNameArCtrl.text.trim().isEmpty) return false;
+    if (_lastNameArCtrl.text.trim().isEmpty) return false;
+    if (_whatLearnedArCtrl.text.trim().isEmpty) return false;
 
     // Photo is required for new interns
     if (!_isEdit && _photoBytes == null) return false;
@@ -199,12 +205,14 @@ class _AddInternPageState extends State<AddInternPage> {
     return true;
   }
 
-  // BUG-74: Arabic text field (optional — the site falls back to English).
+  // BUG-74 / BUG-248: Arabic text field. Name and "What have I learned" are
+  // required (isRequired), position / degrees stay optional like in English.
   Widget _arField(String label, TextEditingController ctrl,
-      {double height = 44, int maxLines = 1}) {
+      {double height = 44, int maxLines = 1, bool isRequired = false}) {
     return CustomValidatedTextFieldMaster(
       label:         label,
-      hint:          'اكتب هنا',
+      isRequired:    isRequired,
+      hint:          'أدخل النص هنا', // BUG-173: same spelling everywhere
       fillColor:     AppColors.white,
       controller:    ctrl,
       height:        height,
@@ -368,6 +376,7 @@ class _AddInternPageState extends State<AddInternPage> {
             Scaffold(
 
               body: AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   children: [
 
 
@@ -536,9 +545,9 @@ class _AddInternPageState extends State<AddInternPage> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Row(children: [
-                                            Expanded(child: _arField('الاسم الأول', _firstNameArCtrl)),
+                                            Expanded(child: _arField('الاسم الأول', _firstNameArCtrl, isRequired: true)),
                                             SizedBox(width: 16.w),
-                                            Expanded(child: _arField('اسم العائلة', _lastNameArCtrl)),
+                                            Expanded(child: _arField('اسم العائلة', _lastNameArCtrl, isRequired: true)),
                                           ]),
                                           SizedBox(height: 14.h),
                                           Row(children: [
@@ -548,7 +557,8 @@ class _AddInternPageState extends State<AddInternPage> {
                                           ]),
                                           SizedBox(height: 14.h),
                                           _arField('ماذا تعلمت', _whatLearnedArCtrl,
-                                              height: 100, maxLines: 5),
+                                              height: 100, maxLines: 5,
+                                              isRequired: true),
                                         ],
                                       ),
                                     ),
@@ -561,9 +571,11 @@ class _AddInternPageState extends State<AddInternPage> {
                               Row(children: [
                                 Expanded(
                                   child: GestureDetector(
+                                    // BUG-292: ask before dropping the form.
                                     onTap: busy
                                         ? null
-                                        : () => Navigator.pop(context),
+                                        : () => confirmDiscard(context,
+                                            onDiscard: () => Navigator.pop(context)),
                                     child: Container(
                                       height: 50.h,
                                       decoration: BoxDecoration(
@@ -583,7 +595,7 @@ class _AddInternPageState extends State<AddInternPage> {
                                     ),
                                   ),
                                 ),
-                                SizedBox(width: 400.w),
+                                AdminButtonGap(desktop: 400), // BUG-265
                                 Expanded(
                                   child: GestureDetector(
                                     onTap: busy ? null : _handlePublish,

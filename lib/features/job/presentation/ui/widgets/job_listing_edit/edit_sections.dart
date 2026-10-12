@@ -54,11 +54,11 @@ extension _JobEditSections on _JobListingEditPageState {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Figma (Create New Job Post): "Text Here" placeholders.
-              Expanded(child: _field('Job Title', 'Text Here', _titleEn)),
+              // BUG-129: field-specific placeholders (were "Text Here" everywhere).
+              Expanded(child: _field('Job Title', 'e.g. Senior Flutter Developer', _titleEn)),
               SizedBox(width: 16.w),
               Expanded(
-                child: _fieldRtl('المسمى الوظيفي', 'أدخل النص هنا', _titleAr),
+                child: _fieldRtl('المسمى الوظيفي', 'اكتب هنا بالعربية', _titleAr),
               ),
             ],
           ),
@@ -79,6 +79,7 @@ extension _JobEditSections on _JobListingEditPageState {
                   widthIcon: 18,
                   heightIcon: 18,
                   height: 36,
+                  errorText: _reqMsg(_submitted && _department == null), // BUG-290
                   //dropdownColor: AppColors.card,
                   onChanged: (val) => setState(() => _department = val),
                 ),
@@ -102,6 +103,7 @@ extension _JobEditSections on _JobListingEditPageState {
                         widthIcon: 18,
                         heightIcon: 18,
                         height: 36,
+                        errorText: _reqMsg(_submitted && _workType == null), // BUG-290
                         onChanged: (val) => setState(() {
                           _workType = val;
                           // Location only applies to On Site / Hybrid
@@ -130,6 +132,8 @@ extension _JobEditSections on _JobListingEditPageState {
                           widthIcon: 18,
                           heightIcon: 18,
                           height: 36,
+                          errorText: _reqMsg(
+                              _submitted && _jobLocation == null), // BUG-290
                           onChanged: (val) => setState(() {
                             if (val == _kOtherLocationKey) {
                               _locationIsCustom = true;
@@ -160,7 +164,7 @@ extension _JobEditSections on _JobListingEditPageState {
                 Expanded(
                   child: CustomTextField(
                     controller: _otherLocation,
-                    hint: 'Text Here',
+                    hint: 'e.g. Cairo, Egypt',
                     height: 36,
                     submitted: _submitted,
                     onChanged: (v) => setState(() =>
@@ -174,25 +178,6 @@ extension _JobEditSections on _JobListingEditPageState {
               ],
             ),
           ],
-          Row(
-            children: [
-              Expanded(child: _requiredError(_submitted && _department == null)),
-              SizedBox(width: 16.w),
-              Expanded(
-                child: Row(
-                  children: [
-                    Expanded(child: _requiredError(_submitted && _workType == null)),
-                    if (_workType == 'On Site' || _workType == 'Hybrid') ...[
-                      SizedBox(width: 8.w),
-                      Expanded(
-                          child: _requiredError(
-                              _submitted && _jobLocation == null)),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
           SizedBox(height: 10.sp),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -211,6 +196,7 @@ extension _JobEditSections on _JobListingEditPageState {
                   primaryColor: _cmsPrimary(context),
                   heightIcon: 18,
                   height: 36,
+                  errorText: _reqMsg(_submitted && _employmentType == null), // BUG-290
                   onChanged: (val) => setState(() => _employmentType = val),
                 ),
               ),
@@ -221,17 +207,25 @@ extension _JobEditSections on _JobListingEditPageState {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: _field('Employment Duration', 'Text Number', _durationText,
-                          onlyDigits: true), // numbers only (Figma hint "Text Number")
-                    ),
-                    SizedBox(width: 8.w),
-                    SizedBox(
-                      width: 120.w,
+                    // BUG-216: "Open" = no fixed duration — the number box is
+                    // hidden and not required.
+                    if (_durationType != 'Open') ...[
+                      Expanded(
+                        child: _field('Employment Duration', 'e.g. 6', _durationText,
+                            onlyDigits: true), // numbers only (Figma hint "Text Number")
+                      ),
+                      SizedBox(width: 8.w),
+                    ],
+                    // Fills the row when "Open" (no number box), else 120 wide.
+                    Flexible(
+                      flex: _durationType == 'Open' ? 1 : 0,
+                      fit: FlexFit.tight,
+                      child: SizedBox(
+                      width: _durationType == 'Open' ? null : 120.w,
                       child: CustomDropdownFormFieldInvMaster(
                         // Empty (not null) label: reserves the same label line
                         // so the control lines up with the one beside it.
-                        label: '',
+                        label: _durationType == 'Open' ? 'Employment Duration' : '',
                         labelStyle: _kFieldLabelStyle,
                         hint: Text('Duration',
                             style: StyleText.fontSize12Weight400
@@ -243,20 +237,17 @@ extension _JobEditSections on _JobListingEditPageState {
                         widthIcon: 18,
                         heightIcon: 18,
                         height: 36,
-                        onChanged: (val) =>
-                            setState(() => _durationType = val),
+                        errorText: _reqMsg(_submitted && _durationType == null), // BUG-290
+                        onChanged: (val) => setState(() {
+                          _durationType = val;
+                          if (val == 'Open') _durationText.clear(); // BUG-216
+                        }),
+                      ),
                       ),
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-          Row(
-            children: [
-              Expanded(child: _requiredError(_submitted && _employmentType == null)),
-              SizedBox(width: 16.w),
-              Expanded(child: _requiredError(_submitted && _durationType == null)),
             ],
           ),
           SizedBox(height: 10.sp),
@@ -265,7 +256,7 @@ extension _JobEditSections on _JobListingEditPageState {
             children: [
               Expanded(
                 child: CustomDropdownFormFieldInvMaster(
-                  label: 'Experience Levels',
+                  label: 'Experience Level', // BUG-157
                   labelStyle: _kFieldLabelStyle,
                   // dropdownColor: AppColors.background,
                   hint: Text('Select Experience Level',
@@ -277,6 +268,7 @@ extension _JobEditSections on _JobListingEditPageState {
                   widthIcon: 18,
                   heightIcon: 18,
                   height: 36,
+                  errorText: _reqMsg(_submitted && _experienceLevel == null), // BUG-290
                   onChanged: (val) => setState(() => _experienceLevel = val),
                 ),
               ),
@@ -287,12 +279,18 @@ extension _JobEditSections on _JobListingEditPageState {
                   children: [
                     Expanded(
                       child: _field('Salary Range', 'Min Salary', _salaryMin,
-                          onlyDigits: true), // numbers only
+                          onlyDigits: true, // numbers only
+                          // BUG-274: re-check min ≤ max on every keystroke.
+                          onChanged: (_) => setState(() {})),
                     ),
                     SizedBox(width: 8.w),
                     Expanded(
                         child: _field('  ', 'Max Salary', _salaryMax,
-                            onlyDigits: true)), // numbers only
+                            onlyDigits: true, // numbers only
+                            // BUG-274 / BUG-290: the min>max message sits on
+                            // the field (red border) and clears as you type.
+                            errorText: _salaryError,
+                            onChanged: (_) => setState(() {}))),
                     SizedBox(width: 8.w),
                     SizedBox(
                       width: 90.w,
@@ -308,6 +306,8 @@ extension _JobEditSections on _JobListingEditPageState {
                         primaryColor: _cmsPrimary(context),
                         heightIcon: 18,
                         height: 36,
+                        errorText: _reqMsg(_submitted &&
+                            (_currency == null || _currency!.isEmpty)), // BUG-290
                         // dropdownColor: AppColors.background,
                         onChanged: (val) => setState(() => _currency = val),
                       ),
@@ -317,32 +317,16 @@ extension _JobEditSections on _JobListingEditPageState {
               ),
             ],
           ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _requiredError(_submitted && _experienceLevel == null)),
-              SizedBox(width: 16.w),
-              Expanded(child: _requiredError(_submitted && (_currency == null || _currency!.isEmpty))),
-            ],
-          ),
-          // BUG-28: max salary must be ≥ min salary.
-          Row(
-            children: [
-              const Expanded(child: SizedBox()),
-              SizedBox(width: 16.w),
-              Expanded(child: _inlineError(_salaryError)),
-            ],
-          ),
           SizedBox(height: 10.sp),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: _field('Required Qualification', 'Text Here', _qualificationEn),
+                child: _field('Required Qualification', "e.g. Bachelor's degree in Computer Science", _qualificationEn),
               ),
               SizedBox(width: 16.w),
               Expanded(
-                child: _fieldRtl('المؤهلات المطلوبة', 'أدخل النص هنا', _qualificationAr),
+                child: _fieldRtl('المؤهلات المطلوبة', 'اكتب هنا بالعربية', _qualificationAr),
               ),
             ],
           ),
@@ -356,45 +340,38 @@ extension _JobEditSections on _JobListingEditPageState {
             _skills.length,
             (i) => Padding(
               padding: EdgeInsets.only(bottom: 8.h),
-              // BUG-156: the Arabic field reached only to the (−) button, so
-              // its label ended 34 px before every other Arabic label, and the
-              // (−) showed even with a single skill. The (−) now sits BETWEEN
-              // the two fields and only when there is more than one skill.
+              // BUG-156: same two columns and 16 px gap as every other EN/AR
+              // pair (the (−) used to sit between the fields, making them
+              // 514 px instead of 527 px and pushing the Arabic one 13 px
+              // right). The (−) is now inside the English field (suffix).
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(
                     child: _field(i == 0 ? 'Required Skills' : '',
-                        'Text Here',
+                        'e.g. Flutter',
                         _skills[i]['en']!,
-                        required: false),
+                        required: false,
+                        suffixIcon: _skills.length > 1
+                            ? GestureDetector(
+                                onTap: () => setState(() {
+                                  _skills[i]['en']!.dispose();
+                                  _skills[i]['ar']!.dispose();
+                                  _skills.removeAt(i);
+                                }),
+                                child: Tooltip(
+                                  message: 'Remove skill',
+                                  // Figma zondicons:minus-solid (red).
+                                  child: Icon(Icons.remove_circle,
+                                      size: 18.sp, color: ColorPick.red),
+                                ),
+                              )
+                            : null),
                   ),
-                  SizedBox(width: 8.w),
-                  SizedBox(
-                    width: 24.sp,
-                    child: _skills.length > 1
-                        ? Padding(
-                            padding: EdgeInsets.only(bottom: 6.h),
-                            child: GestureDetector(
-                              onTap: () => setState(() {
-                                _skills[i]['en']!.dispose();
-                                _skills[i]['ar']!.dispose();
-                                _skills.removeAt(i);
-                              }),
-                              child: Tooltip(
-                                message: 'Remove skill',
-                                // Figma zondicons:minus-solid (20×20, red).
-                                child: Icon(Icons.remove_circle,
-                                    size: 20.sp, color: ColorPick.red),
-                              ),
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                  SizedBox(width: 8.w),
+                  SizedBox(width: 16.w),
                   Expanded(
                     child: _fieldRtl(i == 0 ? 'المهارات المطلوبة' : '',
-                        'أدخل النص هنا', _skills[i]['ar']!,
+                        'اكتب هنا بالعربية', _skills[i]['ar']!,
                         required: false),
                   ),
                 ],
@@ -429,18 +406,18 @@ extension _JobEditSections on _JobListingEditPageState {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Figma (Create New Job Post): "Text Here" placeholders.
-          _field('About This Position', 'Text Here', _aboutEn, maxLines: 4, height: 100),
+          // BUG-129: field-specific placeholders (were "Text Here" everywhere).
+          _field('About This Position', 'Describe the role and its main goals', _aboutEn, maxLines: 4, height: 100),
           SizedBox(height: 10.sp),
-          _fieldRtl('', 'أدخل النص هنا', _aboutAr, maxLines: 4, height: 100),
+          _fieldRtl('', 'اكتب هنا بالعربية', _aboutAr, maxLines: 4, height: 100),
           SizedBox(height: 10.sp),
-          _field('Requirements', 'Text Here', _requirementsEn, maxLines: 4, height: 100),
+          _field('Requirements', 'One requirement per line', _requirementsEn, maxLines: 4, height: 100),
           SizedBox(height: 10.sp),
-          _fieldRtl('', 'أدخل النص هنا', _requirementsAr, maxLines: 4, height: 100),
+          _fieldRtl('', 'اكتب هنا بالعربية', _requirementsAr, maxLines: 4, height: 100),
           SizedBox(height: 10.sp),
-          _field('Preferred Skills', 'Text Here', _prefSkillsEn, maxLines: 4, height: 100),
+          _field('Preferred Skills', 'One skill per line', _prefSkillsEn, maxLines: 4, height: 100),
           SizedBox(height: 10.sp),
-          _fieldRtl('', 'أدخل النص هنا', _prefSkillsAr, maxLines: 4, height: 100),
+          _fieldRtl('', 'اكتب هنا بالعربية', _prefSkillsAr, maxLines: 4, height: 100),
         ],
       ),
     );
@@ -495,11 +472,11 @@ extension _JobEditSections on _JobListingEditPageState {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: _field('Title', 'Text Here', b['titleEn']!),
+                      child: _field('Title', 'e.g. Flexible hours', b['titleEn']!),
                     ),
                     SizedBox(width: 16.w),
                     Expanded(
-                      child: _fieldRtl('العنوان', 'أدخل النص هنا', b['titleAr']!),
+                      child: _fieldRtl('العنوان', 'اكتب هنا بالعربية', b['titleAr']!),
                     ),
                   ],
                 ),

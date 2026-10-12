@@ -27,21 +27,38 @@ class ApplicationRepoImp implements ApplicationRepo {
           .collection('jobListings')
           .get(const GetOptions(source: Source.server));
 
-      final List<ApplicationModel> allApps = [];
+      // BUG-261: applications of REMOVED jobs are not counted (the Home
+      // dashboard already excluded them — 12 here vs 7 there).
+      bool isRemoved(Map<String, dynamic> d) {
+        final raw = d['Status'] ?? d['status'];
+        final v = raw is List ? (raw.isEmpty ? null : raw.last) : raw;
+        return (v?.toString().toLowerCase() ?? '') == 'removed';
+      }
 
-      for (final jobDoc in jobsSnapshot.docs) {
+      final liveJobs =
+          jobsSnapshot.docs.where((j) => !isRemoved(j.data())).toList();
+
+      // BUG-281: the sub-collections were read ONE AFTER ANOTHER (5–9 s on
+      // a blank page). They are now fetched in parallel.
+      final perJob = await Future.wait(liveJobs.map((jobDoc) async {
         final appsSnapshot = await jobDoc.reference
             .collection('applications')
             .orderBy('applicationDate', descending: true)
             .get(const GetOptions(source: Source.server));
+        return [
+          for (final appDoc in appsSnapshot.docs)
+            ApplicationModel.fromMap(appDoc.id, {
+              ...appDoc.data(),
+              'jobId': jobDoc.id,
+            }),
+        ];
+      }));
 
-        for (final appDoc in appsSnapshot.docs) {
-          allApps.add(ApplicationModel.fromMap(appDoc.id, {
-            ...appDoc.data(),
-            'jobId': jobDoc.id,
-          }));
-        }
-      }
+      final List<ApplicationModel> allApps = [
+        for (final list in perJob) ...list,
+      ];
+      allApps.sort((a, b) => (b.applicationDate ?? DateTime(0))
+          .compareTo(a.applicationDate ?? DateTime(0)));
 
       return allApps;
     } catch (e) {

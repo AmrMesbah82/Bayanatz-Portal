@@ -15,6 +15,8 @@ import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/main_widgets/admin_back_link.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../../core/custom/3-custom_accordion.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -58,6 +60,30 @@ part '../widgets/job_listing_detail/trapezoid_clipper.dart';
 
 // ── Colors ───────────────────────────────────────────────────────────────────
 
+/// BUG-264: average of the criteria that were actually scored (1–5); an
+/// empty / 0 criterion is "not scored" and no longer drags the score down.
+String scorePercentOf(ApplicationModel a) {
+  final v = [
+    a.technicalSkills,
+    a.communicationSkills,
+    a.experienceBackground,
+    a.cultureFit,
+    a.leadershipPotential,
+  ].where((x) => x >= 1 && x <= 5).toList();
+  if (v.isEmpty) return '';
+  final sum = v.fold<int>(0, (p, x) => p + x);
+  return '${(sum / (v.length * 5) * 100).round()}%';
+}
+
+/// BUG-235: documents other than Resume / Cover Letter.
+List<ApplicationDocument> otherDocumentsOf(ApplicationModel a) => a.documents
+    .where((d) {
+      final n = d.name.trim().toLowerCase();
+      return n != 'resume' && n != 'cv' && n != 'cover letter' &&
+          n != 'cover_letter';
+    })
+    .toList();
+
 class ColumnKey {
   static const String firstName = 'firstName';
   static const String lastName = 'lastName';
@@ -68,6 +94,9 @@ class ColumnKey {
   static const String location = 'location';
   static const String resume = 'resume';
   static const String coverLetter = 'coverLetter';
+  /// BUG-235: every other document the job asked for (Portfolio,
+  /// Certificate …) — the table showed only Resume and Cover Letter.
+  static const String documents = 'documents';
   static const String status = 'status';
   static const String stage = 'stage';
   static const String score = 'score';
@@ -88,6 +117,7 @@ class ColumnKey {
     yearOfGraduation,
     resume,
     coverLetter,
+    documents,
     stage,
     status,
     score,
@@ -109,6 +139,7 @@ class ColumnKey {
     location: 'Location',
     resume: 'Resume',
     coverLetter: 'Cover Letter',
+    documents: 'Other Documents',
     status: 'Status',
     stage: 'Stage',
     score: 'Score',
@@ -131,6 +162,7 @@ class ColumnKey {
       location: true,
       resume: true,
       coverLetter: true,
+      documents: true,
       status: true,
       stage: true,
       score: true,
@@ -144,15 +176,7 @@ class ColumnKey {
   }
 
   static String valueFromApp(String key, ApplicationModel a) {
-    // Total of the five 1–5 degrees (max 25) shown as a percentage of 100.
-    final totalScore =
-    (a.technicalSkills +
-        a.communicationSkills +
-        a.experienceBackground +
-        a.cultureFit +
-        a.leadershipPotential);
-    final scoreText =
-        totalScore > 0 ? '${(totalScore / 25 * 100).round()}%' : '';
+    final scoreText = scorePercentOf(a); // BUG-264
 
     String fmtDate(DateTime? dt) {
       if (dt == null) return '';
@@ -274,7 +298,22 @@ class _JobListingDetailPageState extends State<JobListingDetailPage>
   void _loadJob() {
     final cubit = context.read<JobListingCubit>();
     final matches = cubit.allJobs.where((j) => j.id == widget.jobId).toList();
-    if (matches.isNotEmpty) setState(() => _job = matches.first);
+    if (matches.isNotEmpty) {
+      setState(() => _job = matches.first);
+      return;
+    }
+    // BUG-259: opened straight from its URL (refresh / bookmark / Back) —
+    // the job list is not loaded yet, so load it and look again.
+    cubit.loadJobs().then((_) {
+      if (!mounted) return;
+      final again =
+          cubit.allJobs.where((j) => j.id == widget.jobId).toList();
+      if (again.isNotEmpty) {
+        setState(() => _job = again.first);
+      } else {
+        GoRouter.of(context).go('/jobs'); // unknown / deleted job
+      }
+    });
   }
 
   Future<void> _loadApplications() async {
@@ -383,6 +422,8 @@ class _JobListingDetailPageState extends State<JobListingDetailPage>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // BUG-298: same back link as About Company.
+                        const AdminBackLink(parentLabel: 'Job Listing', parentRoute: '/jobs'),
                         Text(
                           'Job Post Details',
                           style: StyleText.fontSize28Weight600.copyWith(

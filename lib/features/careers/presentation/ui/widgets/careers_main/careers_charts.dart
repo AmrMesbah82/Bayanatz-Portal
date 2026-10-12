@@ -29,7 +29,7 @@ extension _CareersCharts on _CareersMainPageDashboardState {
       return _chartCard(
         title: 'Applications Received',
         height: 280,
-        child: Expanded(child: _emptyState('No applications yet')),
+        child: Expanded(child: _emptyState(_kNoData)),
       );
     }
     return _chartCard(
@@ -105,18 +105,15 @@ extension _CareersCharts on _CareersMainPageDashboardState {
   }
 
   Widget _buildJobPostingStatusChart(CareersDashboardData dash) {
+    // BUG-279 / BUG-295: same status names and colours as the Job Listing
+    // badges and the Job Status donut.
     final legends = [
-      _LegendItem('Active', ColorPick.activeColor),
-      _LegendItem('Closed', ColorPick.red),
-      _LegendItem('Scheduled', ColorPick.scheduled),
-      _LegendItem('Draft', ColorPick.draftColor),
+      for (final l in dash.jobPostingLabels)
+        _LegendItem(l, JobStatusStyle.colorForName(l)),
     ];
     // BUG-21: one bar per STATUS, coloured like the legend.
     final barColors = [
-      ColorPick.activeColor,
-      ColorPick.red,
-      ColorPick.scheduled,
-      ColorPick.draftColor,
+      for (final l in dash.jobPostingLabels) JobStatusStyle.colorForName(l),
     ];
     final totals = List<double>.generate(
       dash.jobPostingLabels.length,
@@ -132,7 +129,7 @@ extension _CareersCharts on _CareersMainPageDashboardState {
       return _chartCard(
         title: 'Job Posting Status',
         height: 280,
-        child: Expanded(child: _emptyState('No jobs yet')),
+        child: Expanded(child: _emptyState(_kNoData)),
       );
     }
 
@@ -217,11 +214,10 @@ extension _CareersCharts on _CareersMainPageDashboardState {
   }
 
   Widget _buildJobStatusChart(CareersDashboardData dash) {
+    // BUG-295: the bar chart and this donut coloured the same statuses
+    // differently — both use the shared status colours now.
     final statusColors = {
-      'Active': ColorPick.primary,
-      'Scheduled': ColorPick.primary.withOpacity(0.7),
-      'Closed': ColorPick.primary.withOpacity(0.4),
-      'Draft': ColorPick.primary.withOpacity(0.2),
+      for (final k in dash.jobStatus.keys) k: JobStatusStyle.colorForName(k),
     };
     // BUG-38: percentages are part / total of the slices (they could read
     // "100%, 100%, 200%"), the centre says "Total Jobs", and an empty dataset
@@ -232,7 +228,7 @@ extension _CareersCharts on _CareersMainPageDashboardState {
       return _chartCard(
         title: 'Job Status',
         height: 280,
-        child: Expanded(child: _emptyState('No jobs yet')),
+        child: Expanded(child: _emptyState(_kNoData)),
       );
     }
     final total = sliceTotal;
@@ -321,7 +317,7 @@ extension _CareersCharts on _CareersMainPageDashboardState {
       return _chartCard(
         title: 'Candidate Quality',
         height: 280,
-        child: Expanded(child: _emptyState('No applicants yet')),
+        child: Expanded(child: _emptyState(_kNoData)),
       );
     }
     return _chartCard(
@@ -339,6 +335,11 @@ extension _CareersCharts on _CareersMainPageDashboardState {
                   _qualityLegendRow('${dash.qualifiedPercent.toInt()}%', 'Qualified', ColorPick.primary),
                   SizedBox(height: 8.sp),
                   _qualityLegendRow('${dash.unqualifiedPercent.toInt()}%', 'Unqualified', _ChartColors.grey),
+                  // BUG-258: unreviewed applicants are not "Unqualified".
+                  if (dash.notReviewedPercent > 0) ...[
+                    SizedBox(height: 8.sp),
+                    _qualityLegendRow('${dash.notReviewedPercent.round()}%', 'Not reviewed', const Color(0xFFE0E0E0)),
+                  ],
                 ],
               ),
             ),
@@ -354,6 +355,8 @@ extension _CareersCharts on _CareersMainPageDashboardState {
                       sections: [
                         PieChartSectionData(value: dash.qualifiedPercent, color: ColorPick.primary, radius: 28.sp, title: ''),
                         PieChartSectionData(value: dash.unqualifiedPercent, color: _ChartColors.grey, radius: 28.sp, title: ''),
+                        if (dash.notReviewedPercent > 0)
+                          PieChartSectionData(value: dash.notReviewedPercent, color: const Color(0xFFE0E0E0), radius: 28.sp, title: ''),
                       ],
                     ),
                   ),
@@ -412,7 +415,7 @@ extension _CareersCharts on _CareersMainPageDashboardState {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final roleCount = dash.performanceRoles.length;
-            if (roleCount == 0) return _emptyState('No jobs yet'); // BUG-151
+            if (roleCount == 0) return _emptyState(_kNoData); // BUG-151
             final rowValues = [dash.performanceApplications, dash.performanceInterviews, dash.performanceHires];
             final cellSpacing = 4.sp;
             final labelHeight = 30.h;
@@ -512,7 +515,7 @@ extension _CareersCharts on _CareersMainPageDashboardState {
       return _chartCard(
         title: 'Job Offer',
         height: 280,
-        child: Expanded(child: _emptyState('No job offers yet')),
+        child: Expanded(child: _emptyState(_kNoData)),
       );
     }
     final items = [
@@ -585,7 +588,7 @@ extension _CareersCharts on _CareersMainPageDashboardState {
       return _chartCard(
         title: 'Candidate Score Distribution',
         height: 280,
-        child: Expanded(child: _emptyState('No scored applicants yet')),
+        child: Expanded(child: _emptyState(_kNoData)),
       );
     }
     return SizedBox(
@@ -602,14 +605,23 @@ extension _CareersCharts on _CareersMainPageDashboardState {
     );
   }
 
-  Widget _buildEmploymentTypesChart(CareersDashboardData dash) {
-    final entries = dash.employmentTypes.entries.toList();
+  Widget _buildEmploymentTypesChart(CareersDashboardData dash) =>
+      _shareChart('Employment Types', dash.employmentTypes);
+
+  /// BUG-85: "Candidate Gender" from the flowchart — applicants per gender
+  /// (Male / Female / Not specified), same card as Employment Types.
+  Widget _buildCandidateGenderChart(CareersDashboardData dash) =>
+      _shareChart('Candidate Gender', dash.genderCounts);
+
+  /// Bars with percentages + a pie, for a share-of-total breakdown.
+  Widget _shareChart(String title, Map<String, double> data) {
+    final entries = data.entries.toList();
     final total = entries.fold<double>(0, (sum, e) => sum + e.value);
     if (total <= 0) {
       return _chartCard(
-        title: 'Employment Types',
+        title: title,
         height: 280,
-        child: Expanded(child: _emptyState('No jobs yet')),
+        child: Expanded(child: _emptyState(_kNoData)),
       );
     }
     final typeColors = [
@@ -620,7 +632,7 @@ extension _CareersCharts on _CareersMainPageDashboardState {
     ];
 
     return _chartCard(
-      title: 'Employment Types',
+      title: title,
       height: 280,
       child: Expanded(
         child: Row(
@@ -735,12 +747,11 @@ extension _CareersCharts on _CareersMainPageDashboardState {
     );
   }
 
-  /// Shared empty state for charts with no data.
-  Widget _emptyState(String text) => Center(
-        child: Text(text,
-            style: StyleText.fontSize12Weight400
-                .copyWith(color: AppColors.secondaryText)),
-      );
+  /// BUG-151: ONE empty state for every chart (wording used to be "No jobs
+  /// yet" / "No data" / "No data yet" / "No options" / bare axes …).
+  // QA-Oct11 #24: the "no data" Lottie instead of a text line.
+  Widget _emptyState(String text) =>
+      EmptyLottie(size: 120, semanticLabel: text);
 
   double _niceMax(List<double> values) {
     if (values.isEmpty) return 10;
@@ -787,3 +798,6 @@ extension _CareersCharts on _CareersMainPageDashboardState {
     }
   }
 }
+
+/// BUG-151: the one empty-chart message.
+const String _kNoData = 'No data yet';

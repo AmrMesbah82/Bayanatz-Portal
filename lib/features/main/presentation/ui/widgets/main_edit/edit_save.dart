@@ -205,8 +205,31 @@ extension _HomeEditSave on _MainEditPageState {
       // cubit.setNavButtons + cubit.save). This editor no longer touches the
       // HOME doc — the Home page nav cards are an independent feature edited on
       // the Home page and stored in homePage/home_page.
+      _syncFormToCubit(cubit);
 
-      _syncFooterTitlesFromNav(); // BUG-67
+      // Picked files are uploaded only on a real save (never for Preview).
+      for (var i = 0; i < _links.length; i++) {
+        if (_links[i].icon.bytes != null) {
+          await cubit.uploadSocialLinkIcon(
+              cubit.current.socialLinks[i].id, _links[i].icon.bytes!);
+        }
+      }
+      if (_logoPicked.bytes != null) {
+        await cubit.uploadLogo(_logoPicked.bytes!);
+      }
+
+      // Save main data (incl. main navbar items) to the MAIN doc ONLY.
+      await cubit.save(publishStatus: publishStatus);
+    } catch (e) {
+      // Errors surface via MainCmsError state
+    }
+  }
+
+  /// BUG-53: copies every value of the form into the cubit's in-memory model
+  /// (no uploads, nothing saved). Used by Publish AND by Preview, so the
+  /// preview shows the edits being made instead of the published version.
+  void _syncFormToCubit(MainCmsCubit cubit) {
+    {
 
       // ── Footer columns — MAIN ─────────────────────────────────────────────
       while (cubit.current.footerColumns.length < _footerColumns.length) {
@@ -252,9 +275,6 @@ extension _HomeEditSave on _MainEditPageState {
         final id = cubit.current.socialLinks[i].id;
         cubit.updateSocialLink(id,
             url: _links[i].text.text, visibility: _links[i].visibility);
-        if (_links[i].icon.bytes != null) {
-          await cubit.uploadSocialLinkIcon(id, _links[i].icon.bytes!);
-        }
       }
 
       // ── Main navbar items — saved to MAIN (mainPage/main) ONLY ────────────
@@ -274,10 +294,7 @@ extension _HomeEditSave on _MainEditPageState {
             ),
       ]);
 
-      // ── Branding / Logo — MAIN ────────────────────────────────────────────
-      if (_logoPicked.bytes != null) {
-        await cubit.uploadLogo(_logoPicked.bytes!);
-      }
+      // ── Branding — MAIN (logo bytes are uploaded by _save) ───────────────
       cubit.updatePrimaryColor(_primaryColor.text);
       cubit.updateSecondaryColor(_secondaryColor.text);
       cubit.updateBackgroundColor(_bgColor.text);
@@ -285,11 +302,6 @@ extension _HomeEditSave on _MainEditPageState {
       cubit.updateMainWidgetColor(_mainWidgetColor.text);
       cubit.updateEnglishFont(_engFont ?? 'Cairo');
       cubit.updateArabicFont(_arFont ?? 'Cairo');
-
-      // Save main data (incl. main navbar items) to the MAIN doc ONLY.
-      await cubit.save(publishStatus: publishStatus);
-    } catch (e) {
-      // Errors surface via MainCmsError state
     }
   }
 }

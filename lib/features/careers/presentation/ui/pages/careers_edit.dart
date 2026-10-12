@@ -20,6 +20,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:web_app_admin/core/widget/success_toast.dart';
 
 import 'package:web_app_admin/core/widget/network_image_view.dart';
 import '../../../../../core/constant/color.dart';
@@ -446,6 +447,7 @@ class _CareersEditPageState extends State<CareersEditPage> {
       body: SizedBox(
         width: double.infinity,
         child: AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
           children: [
             AppAdminNavbar(
               activeLabel:    'Web Page',
@@ -507,12 +509,10 @@ class _CareersEditPageState extends State<CareersEditPage> {
               context.pushNamed('careers-cms-preview');
             } else {
               // ── Publish path ─────────────────────────────────────────────
-              // Replace the entire navigation stack with the main page.
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(
-                    builder: (_) => const CareersMainPageMaster()),
-                    (route) => false,
-              );
+              // BUG-276: go to the VIEW URL (a pushed MaterialPageRoute left
+              // the address on /admin/careers-cms/edit).
+              showSuccessToast(context, 'Careers page published'); // BUG-293
+              context.go('/admin/careers-cms');
             }
           });
         }
@@ -529,6 +529,7 @@ class _CareersEditPageState extends State<CareersEditPage> {
           body: SizedBox(
             width: double.infinity,
             child: AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   children: [
                   AppAdminNavbar(
                     activeLabel:    'Web Page',

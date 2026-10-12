@@ -228,7 +228,7 @@ class _TermsPreviewPageState extends State<TermsPreviewPage> {
                 SizedBox(height: 20.h),
                 AdminSubNavBar(activeIndex: 3),
                 Text(
-                  'Preview Terms of Service Details',
+                  'Preview Terms and Conditions Details',
                   style: StyleText.fontSize45Weight600.copyWith(
                       color: ColorPick.primary, fontWeight: FontWeight.w700),
                 ),

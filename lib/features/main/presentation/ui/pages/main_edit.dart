@@ -14,6 +14,8 @@ import 'dart:typed_data';
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:web_app_admin/core/widget/success_toast.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
@@ -61,6 +63,12 @@ part '../widgets/main_edit/edit_save.dart';
 part '../widgets/main_edit/edit_sections1.dart';
 part '../widgets/main_edit/edit_sections2.dart';
 part '../widgets/main_edit/edit_helpers.dart';
+
+/// BUG-275: only #RRGGBB is a valid colour ("#12zz" / "#xyz" were accepted
+/// and Publish went straight to the confirm dialog).
+final RegExp _kHexColor = RegExp(r'^#[0-9A-Fa-f]{6}$');
+bool _isHexColor(String v) => _kHexColor.hasMatch(v.trim());
+
 
 // class _C {
 //   static const Color primary   = Color(0xFF008037);
@@ -261,6 +269,12 @@ class _MainEditPageState extends State<MainEditPage> {
     // Logo required
     if (_logoPicked.isEmpty) return false;
 
+    // BUG-275: every colour must be a real #RRGGBB value.
+    for (final c in [_primaryColor, _secondaryColor, _bgColor,
+        _headerFooterColor, _mainWidgetColor]) {
+      if (!_isHexColor(c.text)) return false;
+    }
+
     // Nav buttons
     for (int i = 0; i < _navBtns.length; i++) {
       final route = _navRoutes[i];
@@ -276,6 +290,11 @@ class _MainEditPageState extends State<MainEditPage> {
     for (final col in _footerColumns) {
       final colRoute = col['route'] as String?;
       if (colRoute == null || colRoute.isEmpty) return false;
+      // BUG-212: typed column title (EN + AR) is required.
+      if ((col['titleEn'] as TextEditingController).text.trim().isEmpty ||
+          (col['titleAr'] as TextEditingController).text.trim().isEmpty) {
+        return false;
+      }
 
       final labels = col['labels'] as List<Map<String, dynamic>>;
       for (final label in labels) {
@@ -310,6 +329,20 @@ class _MainEditPageState extends State<MainEditPage> {
       return 'Please upload a logo image';
     }
 
+    // BUG-275
+    final colours = {
+      'Primary Color': _primaryColor,
+      'Secondary Color': _secondaryColor,
+      'Background': _bgColor,
+      'Header and Footer': _headerFooterColor,
+      'Main Widget Color': _mainWidgetColor,
+    };
+    for (final e in colours.entries) {
+      if (!_isHexColor(e.value.text)) {
+        return '${e.key}: enter a colour as #RRGGBB (e.g. #008037)';
+      }
+    }
+
     for (int i = 0; i < _navBtns.length; i++) {
       final route = _navRoutes[i];
       if (route == null || route.isEmpty) {
@@ -328,6 +361,11 @@ class _MainEditPageState extends State<MainEditPage> {
       final colRoute = col['route'] as String?;
       if (colRoute == null || colRoute.isEmpty) {
         return 'Please select a navigation route for Footer Column ${i + 1}';
+      }
+      // BUG-212: the column title is typed, so it must be filled in.
+      if ((col['titleEn'] as TextEditingController).text.trim().isEmpty ||
+          (col['titleAr'] as TextEditingController).text.trim().isEmpty) {
+        return 'Please enter the Group Title (English and Arabic) for Footer Column ${i + 1}';
       }
 
       final labels = col['labels'] as List<Map<String, dynamic>>;
@@ -393,23 +431,20 @@ class _MainEditPageState extends State<MainEditPage> {
   /// value saved long ago ("اتصل بنا") while the menu item said "تواصل معنا".
   /// Titles are now re-synced from the menu item on load, on every edit of a
   /// menu name, and right before saving.
-  void _syncFooterTitlesFromNav() {
-    for (final col in _footerColumns) {
-      final route = col['route'] as String?;
-      if (route == null || route.isEmpty) continue;
-      final idx = _navRoutes.indexOf(route);
-      if (idx == -1) continue;
-      final en = _navBtns[idx]['nameEn']!.text;
-      final ar = _navBtns[idx]['nameAr']!.text;
-      final enCtrl = col['titleEn'] as TextEditingController;
-      final arCtrl = col['titleAr'] as TextEditingController;
-      if (enCtrl.text != en) enCtrl.text = en;
-      if (arCtrl.text != ar) arCtrl.text = ar;
-    }
-  }
+  ///
+  /// BUG-212: footer column titles are now FREE TEXT (EN + AR), chosen
+  /// separately from the link — the Figma footer has columns such as
+  /// "Terms of Service" that are not a menu item name, and renaming the
+  /// "Careers" menu item renamed the footer column too. Nothing is synced
+  /// any more; the method is kept so existing call sites stay valid.
+  void _syncFooterTitlesFromNav() {}
 
   /// BUG-75: after Discard, stay on Web Page → Main (not the Home dashboard).
-  void _goToMainTab() => GoRouter.of(context).go('/admin/dashboard');
+  void _goToMainTab() {
+    // BUG-53: Preview copies unsaved edits into the cubit — throw them away.
+    context.read<MainCmsCubit>().load();
+    GoRouter.of(context).go('/admin/dashboard');
+  }
 
   void _onFieldChanged() {
     _syncFooterTitlesFromNav(); // BUG-67
@@ -531,9 +566,10 @@ class _MainEditPageState extends State<MainEditPage> {
   }
 
   // ── Footer/label helpers ──────────────────────────────────────────────────
+  // BUG-212: the titles are typed now — repaint Publish while typing.
   Map<String, dynamic> _newFooterColumn() => {
-    'titleEn': TextEditingController(),
-    'titleAr': TextEditingController(),
+    'titleEn': TextEditingController()..addListener(_onFieldChanged),
+    'titleAr': TextEditingController()..addListener(_onFieldChanged),
     'route':   null as String?,
     'labels':  <Map<String, dynamic>>[_newLabelRow()],
   };
@@ -595,11 +631,11 @@ class _MainEditPageState extends State<MainEditPage> {
           // !_debugDuringDeviceUpdate assertion on Flutter web debug).
           Future.delayed(Duration.zero, () {
             if (mounted) {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(
-                    builder: (context) => const MainMainPage()),
-                    (route) => false,
-              );
+              // BUG-276: back to the VIEW URL — a pushed MaterialPageRoute
+              // left the address on /admin/dashboard/edit after Publish.
+              // BUG-293: one success toast for every save.
+              showSuccessToast(context, 'Main page published');
+              GoRouter.of(context).go('/admin/dashboard');
             }
           });
         }
@@ -634,6 +670,7 @@ class _MainEditPageState extends State<MainEditPage> {
             width: double.infinity,
             height: double.infinity,
             child: AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   contentWidth: 1000.w,
   children: [
 

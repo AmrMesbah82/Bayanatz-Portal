@@ -61,6 +61,7 @@ dependencies:
   pdf: ^3.10.0
   printing: ^5.12.0
   uuid: ^4.5.3
+  lottie: ^3.2.0 # QA-Oct11 #24: empty-state animation
 
 
 dev_dependencies:
@@ -99,6 +100,7 @@ flutter:
     - assets/drawer/
     - assets/images/careers/
     - assets/images/login/
+    - assets/lottie/ # QA-Oct11 #24
   #   - images/a_dot_ham.jpeg
 
   # An image asset can refer to one or more resolution-specific "variants", see

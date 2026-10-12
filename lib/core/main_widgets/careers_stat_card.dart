@@ -40,17 +40,26 @@ class CareersStatCardsRow extends StatelessWidget {
         children: cards.map((c) => _StatCard(data: c)).toList(),
       );
     }
-    return Row(
-      children: cards.asMap().entries.map((entry) {
-        final isLast = entry.key == cards.length - 1;
-        return Expanded(
-          child: Padding(
-            padding: EdgeInsets.only(right: isLast ? 0 : 10.w),
-            child: _StatCard(data: entry.value),
-          ),
-        );
-      }).toList(),
-    );
+    // BUG-268: up to 6 cards in one row; more (8 since On Site / Hybrid and
+    // Scheduled got their own card) wrap into rows of 4 equal cards.
+    final int perRow = cards.length > 6 ? 4 : cards.length;
+    final rows = <Widget>[];
+    for (var start = 0; start < cards.length; start += perRow) {
+      if (rows.isNotEmpty) rows.add(SizedBox(height: 10.h));
+      rows.add(Row(
+        children: [
+          for (var i = 0; i < perRow; i++) ...[
+            if (i > 0) SizedBox(width: 10.w),
+            Expanded(
+              child: start + i < cards.length
+                  ? _StatCard(data: cards[start + i])
+                  : const SizedBox(),
+            ),
+          ],
+        ],
+      ));
+    }
+    return Column(children: rows);
   }
 }
 

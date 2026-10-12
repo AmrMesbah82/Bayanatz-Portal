@@ -136,7 +136,7 @@ class _OurTeamsPreviewPageState extends State<OurTeamsPreviewPage> {
                         AdminSubNavBar(activeIndex: 5),
                         // ── Page title ──────────────────────────────────────
                         Text(
-                          'Preview Our Teams Details',
+                          'Preview Our Team Details',
                           style: StyleText.fontSize45Weight600.copyWith(
                             color:      ColorPick.primary,
                             fontWeight: FontWeight.w700,

@@ -214,39 +214,19 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
     );
   }
 
-  // ── SVG-only image picker ──────────────────────────────────────────────────
+  // ── Image picker ────────────────────────────────────────────────────────────
+  // BUG-251: PNG / JPG / WebP photos are accepted as well as SVG. Before,
+  // only SVG was allowed, so photos were wrapped in an SVG (<image href=
+  // "data:image/png…">) — and Safari draws such files as blank boxes.
   Future<void> _pickImage() async {
     final uploadInput = html.FileUploadInputElement()
-      ..accept = '.svg,image/svg+xml';
+      ..accept = '.svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp';
     uploadInput.click();
 
     await uploadInput.onChange.first;
     if (uploadInput.files == null || uploadInput.files!.isEmpty) return;
 
     final file = uploadInput.files!.first;
-
-    // 1. Check file extension
-    final fileName = file.name.toLowerCase();
-    if (!fileName.endsWith('.svg')) {
-      if (mounted) {
-        _showErrorDialog(
-          title: 'Invalid File Type',
-          subtitle: 'Only SVG files are allowed. Please select an SVG file.',
-        );
-      }
-      return;
-    }
-
-    // 2. Check MIME type
-    if (file.type.isNotEmpty && file.type != 'image/svg+xml') {
-      if (mounted) {
-        _showErrorDialog(
-          title: 'Invalid File Type',
-          subtitle: 'Only SVG files are allowed. Please select an SVG file.',
-        );
-      }
-      return;
-    }
 
     final reader = html.FileReader();
     reader.readAsArrayBuffer(file);
@@ -256,23 +236,26 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
     if (result == null) return;
 
     final bytes = Uint8List.fromList((result as List<int>));
-    final fileContent = String.fromCharCodes(bytes.take(100)).toLowerCase().trimLeft();
+    final head = String.fromCharCodes(bytes.take(100)).toLowerCase().trimLeft();
+    final bool isPng = bytes.length > 4 && bytes[0] == 0x89 && bytes[1] == 0x50;
+    final bool isJpg = bytes.length > 3 && bytes[0] == 0xFF && bytes[1] == 0xD8;
+    final bool isWebp = bytes.length > 12 && bytes[0] == 0x52 && bytes[1] == 0x49 &&
+        bytes[8] == 0x57 && bytes[9] == 0x45;
+    final bool isSvg = head.startsWith('<svg') || head.startsWith('<?xml');
 
-    // 3. Validate SVG content (must start with <svg or <?xml)
-    if (!fileContent.startsWith('<svg') && !fileContent.startsWith('<?xml')) {
+    if (!isPng && !isJpg && !isWebp && !isSvg) {
       if (mounted) {
         _showErrorDialog(
-          title: 'Invalid SVG File',
-          subtitle: 'The selected file is not a valid SVG image. Please select a valid SVG file.',
+          title: 'Invalid File Type',
+          subtitle: 'Please select an SVG, PNG, JPG or WebP image.',
         );
       }
       return;
     }
 
-    // 4. Success - update the state
     setState(() {
       _imageBytes = bytes;
-      _isPickedSvg = true;
+      _isPickedSvg = isSvg;
       _existingImageUrl = '';
     });
   }
@@ -384,15 +367,25 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
   // ── Remove handler ─────────────────────────────────────────────────────────
   Future<void> _confirmRemove() async {
     if (!_isEdit) return; // nothing to remove for a new post
+    // BUG-92: Remove = soft delete (moves to the "Removed" tab). Only a read
+    // that is already removed is deleted for good.
+    final bool permanent = widget.existing!.status == 'removed';
     await showPublishConfirmDialog(
       context: context,
-      title: 'REMOVE POST',
-      subtitle: 'Are you sure you want to remove this post?',
-      confirmLabel: 'Remove',
-      backLabel: 'Cancel',
+      title: permanent ? 'DELETE READ PERMANENTLY' : 'REMOVE READ',
+      subtitle: permanent
+          ? 'This permanently deletes this read. This cannot be undone.'
+          : 'This read will be hidden from the website and moved to the '
+              '"Removed" tab, where you can restore it.',
+      confirmLabel: permanent ? 'Delete' : 'Remove',
+      backLabel: 'Back',
       onConfirm: () async {
         final cubit = context.read<BlogCubit>();
-        await cubit.deletePost(widget.existing!.id);
+        if (permanent) {
+          await cubit.deletePost(widget.existing!.id);
+        } else {
+          await cubit.removePost(widget.existing!.id);
+        }
         await cubit.load();
         if (mounted) {
           Future.delayed(Duration.zero, () {
@@ -497,6 +490,7 @@ class _BlogCreateEditPageState extends State<BlogCreateEditPage> {
     return Scaffold(
       backgroundColor: ColorPick.background,
       body: AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   crossAxisAlignment: CrossAxisAlignment.start,
   contentWidth: 1000.w,
   children: [

@@ -4,6 +4,10 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
+import 'package:web_app_admin/core/main_widgets/admin_back_link.dart';
+import 'package:web_app_admin/core/widget/success_toast.dart';
+import 'package:web_app_admin/core/custom_dialog.dart' show confirmDiscard;
+import 'package:web_app_admin/core/main_widgets/admin_layout.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -74,8 +78,9 @@ class _DepartmentCreatePageState extends State<DepartmentCreatePage> {
     super.dispose();
   }
 
+  // BUG-292: ask before throwing the form away (every other editor does).
   void _onDiscard() {
-    Navigator.pop(context);
+    confirmDiscard(context, onDiscard: () => Navigator.pop(context));
   }
 
   // ── Validation ────────────────────────────────────────────────────────────
@@ -179,15 +184,16 @@ class _DepartmentCreatePageState extends State<DepartmentCreatePage> {
                     onTap: () => Navigator.of(ctx).pop(),
                     child: Container(
                       height: 44.h,
+                      // BUG-287: light-grey Back, dark text (admin pattern).
                       decoration: BoxDecoration(
-                        color: Color(0xFF797979),
+                        color: const Color(0xFFDCDCDC),
                         borderRadius: BorderRadius.circular(6.r),
                       ),
                       child: Center(
                         child: Text(
                           'Back',
-                          style: StyleText.fontSize16Weight500.copyWith(
-                            color: Colors.white
+                          style: StyleText.fontSize14Weight600.copyWith(
+                            color: AppColors.text
                           )
                         ),
                       ),
@@ -230,12 +236,13 @@ class _DepartmentCreatePageState extends State<DepartmentCreatePage> {
       listener: (context, state) {
         if (state is DepartmentError) {
           setState(() => _isSaving = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(state.message)),
-          );
+          // BUG-293: one error style (the shared toast).
+          showSuccessToast(context, state.message, isError: true);
         }
         if (state is DepartmentCreated) {
           setState(() => _isSaving = false);
+          // BUG-293: the same success toast as every other save.
+          showSuccessToast(context, 'Department created');
           // Pop handled by DepartmentMainPage BlocListener
         }
       },
@@ -244,6 +251,7 @@ class _DepartmentCreatePageState extends State<DepartmentCreatePage> {
         body: Stack(
           children: [
             AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   children: [
                     AppAdminNavbar(
                       activeLabel:    'Job Listing', // BUG-46: was 'Home'
@@ -260,6 +268,8 @@ class _DepartmentCreatePageState extends State<DepartmentCreatePage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // BUG-298: same back link as About Company.
+                            const AdminBackLink(parentLabel: 'Our Departments', parentRoute: '/jobs/departments'),
                             // ── Title ──
                             Text(
                               'Create New Department',
@@ -301,7 +311,7 @@ class _DepartmentCreatePageState extends State<DepartmentCreatePage> {
                                     ),
                                   ),
                                 ),
-                                SizedBox(width: 400.w),
+                                AdminButtonGap(desktop: 400), // BUG-265
                                 Expanded(
                                   child: GestureDetector(
                                     onTap: _isSaving ? null : _onCreate,
@@ -456,7 +466,7 @@ class _DepartmentCreatePageState extends State<DepartmentCreatePage> {
                     children: [
                       CustomValidatedTextFieldMaster(
                         label: 'اسم القسم',
-                        hint: 'ادخل النص هنا',
+                        hint: 'أدخل النص هنا' /* BUG-173 */,
                         controller: _nameArController,
                         height: 36,
                         maxLines: 1,

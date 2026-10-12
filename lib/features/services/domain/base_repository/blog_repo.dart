@@ -20,6 +20,7 @@ abstract class BlogRepository {
   Future<String>              createPost(BlogPostModel post);
   Future<void>                updatePost(BlogPostModel post);
   Future<void>                deletePost(String id);
+  Future<void>                removePost(String id); // BUG-92: soft delete
   Stream<List<BlogPostModel>> watchAllPosts();
 
   // ── Per-post draft documents ─────────────────────────────────────────────

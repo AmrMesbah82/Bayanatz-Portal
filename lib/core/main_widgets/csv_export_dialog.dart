@@ -210,7 +210,8 @@ class _CsvExportDialogState extends State<_CsvExportDialog> {
               Text(
                 count == 0
                     ? 'Nothing to export yet — the file will contain the column headers only.'
-                    : '$count ${widget.itemLabel} will be exported.',
+                    // BUG-280: "1 application will be exported." (was "1 applications").
+                    : '$count ${count == 1 && widget.itemLabel.endsWith('s') ? widget.itemLabel.substring(0, widget.itemLabel.length - 1) : widget.itemLabel} will be exported.',
                 style: TextStyle(fontSize: 11.sp, color: AppColors.secondaryText),
               ),
               SizedBox(height: 20.sp),

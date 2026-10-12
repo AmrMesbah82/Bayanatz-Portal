@@ -164,7 +164,7 @@ extension _HomeMainReadOnly on _HomeMainPageMasterState {
   );
 
   Widget _readFieldRtl(String label, String value, {double height = 36}) => Directionality(
-    textDirection: TextDirection.rtl,
+    textDirection: ui.TextDirection.rtl,
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -177,7 +177,7 @@ extension _HomeMainReadOnly on _HomeMainPageMasterState {
           alignment: height > 36 ? Alignment.topRight : Alignment.centerRight,
           child: Text(value.isEmpty ? 'أكتب هنا' : value,
               style: StyleText.fontSize12Weight400.copyWith(color: AppColors.secondaryText),
-              textDirection: TextDirection.rtl,
+              textDirection: ui.TextDirection.rtl,
               maxLines: height > 36 ? 4 : 1, overflow: TextOverflow.ellipsis),
         ),
       ],

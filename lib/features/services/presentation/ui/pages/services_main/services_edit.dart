@@ -329,6 +329,7 @@ class _ServicesMainEditPageState extends State<ServicesMainEditPage> {
           return Stack(
             children: [
               AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   children: [
                       AppAdminNavbar(
                         activeLabel:     'Web Page',

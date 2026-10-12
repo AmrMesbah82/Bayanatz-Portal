@@ -20,6 +20,7 @@
 //   )
 
 import 'package:flutter/material.dart';
+import 'admin_layout.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../custom/15-custom_action_buttons.dart';
@@ -79,7 +80,9 @@ class EditActionButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double gap = gapWidth ?? 400.w;
+    // BUG-265: a 400 px gap is wider than a phone screen.
+    final double gap =
+        AdminLayout.isPhone(context) ? 12 : (gapWidth ?? 400.w);
     final bool canPublish = publishEnabled && !isSaving && onPublish != null;
 
     return Column(

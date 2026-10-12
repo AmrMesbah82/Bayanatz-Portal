@@ -135,7 +135,8 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
         _headerTitleArCtrl.text.trim().isEmpty) {
       return 'Please enter the section title (English and Arabic).';
     }
-    if (_items.isEmpty) return 'Please add at least one team.';
+    // BUG-199: the section may be emptied (the public "Our Team" tab then
+    // shows nothing) — the last team could never be removed before.
 
     for (var i = 0; i < _items.length; i++) {
       final item = _items[i];
@@ -324,7 +325,11 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
     await showPublishConfirmDialog(
       context: context,
       title: 'PUBLISH OUR TEAMS',
-      subtitle: 'Do you want to publish the changes made to Our Teams?',
+      subtitle: _items.isEmpty
+          // BUG-199: say clearly what an empty publish does.
+          ? 'There are no teams left. Publishing will remove every team from '
+              'the "Our Team" tab on the website. Continue?'
+          : 'Do you want to publish the changes made to Our Team?',
       confirmLabel: 'Publish',
       backLabel: 'Back',
       onConfirm: () => _performSave(cubit),
@@ -366,6 +371,7 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
             Scaffold(
 
               body: AdminStickyBody(
+  guardUnsavedChanges: true, // BUG-267
   children: [
                       AppAdminNavbar(
                         activeLabel: 'Web Page',
@@ -382,7 +388,7 @@ class _OurTeamsEditPageState extends State<OurTeamsEditPage> {
                           children: [
                             // ── Page title ──────────────────────────────────
                             Text(
-                              'Editing Our Teams Details',
+                              'Editing Our Team Details',
                               style: StyleText.fontSize45Weight600.copyWith(
                                 color:      ColorPick.primary,
                                 fontWeight: FontWeight.w700,
