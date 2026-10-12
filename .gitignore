@@ -45,3 +45,9 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 lib/twailo/twilio_constants.dart
+
+# Local scratch / backups
+.claude_tmp/
+_qa_sync/
+_site_snapshot.tgz
+_src_snapshot.tgz
